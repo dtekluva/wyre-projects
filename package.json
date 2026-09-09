@@ -2,13 +2,20 @@
   "name": "wyre-tracker",
   "private": true,
   "version": "0.1.0",
-  "description": "Wyre Project Portfolio Tracker — lifecycle, compliance, governance, money, evidence",
-  "workspaces": ["apps/*", "packages/*"],
+  "description": "Wyre Project Portfolio Tracker \u2014 lifecycle, compliance, governance, money, evidence",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "tokens": "node packages/tokens/build.mjs",
     "dev": "npm run tokens && npm run dev -w @wyre/web",
     "build": "npm run tokens && npm run build -w @wyre/web",
-    "typecheck": "npm run typecheck -w @wyre/web"
+    "typecheck": "npm run typecheck -w @wyre/web",
+    "test:api": "esbuild packages/api/src/index.ts --bundle --platform=node --format=esm --outfile=packages/api/dist/api.mjs --log-level=warning && node packages/api/test/flow.test.mjs",
+    "test": "npm run typecheck && npm run test:api"
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  }
 }

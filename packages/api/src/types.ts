@@ -89,7 +89,8 @@ export type EventType =
   | "document_added" | "attachment_added" | "check_passed" | "check_rejected"
   | "po_raised" | "po_approved" | "delivery" | "bill_received" | "payment"
   | "visit" | "issue_raised" | "issue_closed" | "change_order"
-  | "role_granted" | "role_revoked" | "note";
+  | "role_granted" | "role_revoked" | "note"
+  | "stock_movement" | "cost_item" | "retention" | "reconciliation";
 
 export interface ChronologyEvent {
   id: string; projectId: string; occurredAt: string; actorId: string; eventType: EventType;
@@ -97,10 +98,10 @@ export interface ChronologyEvent {
   before?: Record<string, unknown>; after?: Record<string, unknown>;
 }
 
-export type ApprovalKind = "gate" | "po" | "change_order" | "retention";
+export type ApprovalKind = "gate" | "po" | "change_order" | "retention" | "write_off";
 export interface ApprovalDecision { approverId: string; role: RoleCode; decision: "approved" | "rejected"; at: string; comment?: string }
 export interface Approval {
-  id: string; projectId: string; kind: ApprovalKind; title: string; description: string;
+  id: string; projectId?: string; kind: ApprovalKind; title: string; description: string;
   requestedBy: string; requestedAt: string;
   /** every listed role must approve once; any rejection rejects */
   requiredRoles: RoleCode[]; decisions: ApprovalDecision[];
@@ -115,4 +116,88 @@ export interface GateEvidenceItem { docType: DocType; label: string; state: Evid
 export interface GateStatus {
   stage: Stage; name: string; nextStage?: Stage; items: GateEvidenceItem[];
   ready: boolean; approverRoles: RoleCode[]; pendingApproval?: Approval; terminal: boolean;
+}
+
+// ============================ Phase 2 — money, assets, stock (spec §4.4, §4.5, §4.10, §4.15) ============================
+
+export interface Vendor { id: string; name: string; category?: string }
+
+export type CostCategory = "equipment" | "civil" | "labour" | "logistics" | "permits" | "contingency" | "om";
+export const COST_CATEGORY_LABEL: Record<CostCategory, string> = {
+  equipment: "Equipment", civil: "Civil & structural", labour: "Labour & install", logistics: "Logistics",
+  permits: "Permits & approvals", contingency: "Contingency", om: "O&M",
+};
+
+/** Budget line — maker-checked (Finance checks) */
+export interface CostItem extends AuditFields, ReviewFields { id: string; projectId: string; category: CostCategory; label: string; plannedAmount: number }
+
+export type PoStatus = "pending_approval" | "approved" | "rejected" | "partially_delivered" | "delivered" | "closed";
+export interface PurchaseItem {
+  id: string; costItemId?: string; inventoryItemId?: string; description: string;
+  qty: number; unitCost: number; lineTotal: number; qtyReceived: number;
+}
+/** PO — the Approval IS its check (spec §4.13) */
+export interface PurchaseOrder extends AuditFields {
+  id: string; projectId: string; poNumber: string; vendorId: string; status: PoStatus;
+  raisedBy: string; raisedAt: string; items: PurchaseItem[]; total: number; notes?: string; approvalId?: string;
+}
+
+export interface GoodsReceiptLine { purchaseItemId: string; qty: number; serials?: string[]; condition: "good" | "damaged" }
+/** GRN — maker-checked (PM / Finance). On check: posts receipt movements, creates assets, recognises actuals. */
+export interface GoodsReceipt extends AuditFields, ReviewFields {
+  id: string; projectId: string; poId: string; grnNumber: string; receivedAt: string; receivedBy: string;
+  lines: GoodsReceiptLine[]; attachmentIds: string[]; locationId: string; notes?: string;
+}
+
+export type AssetType = "panel" | "inverter" | "battery" | "meter" | "ct" | "ats" | "cable" | "mounting" | "other";
+export type AssetStatus = "in_stock" | "installed" | "faulty" | "replaced" | "decommissioned";
+export interface Asset extends AuditFields {
+  id: string; projectId?: string; inventoryItemId: string; assetType: AssetType; make: string; model: string; serial: string;
+  unitCost: number; vendorId?: string; purchaseItemId?: string; grnId?: string;
+  installDate?: string; locationOnSite?: string; warrantyStart?: string; warrantyEnd?: string; status: AssetStatus; locationId?: string;
+}
+
+export type ItemCategory = AssetType | "consumable" | "tool";
+export interface InventoryItem {
+  id: string; sku: string; name: string; category: ItemCategory; unit: string; isSerialised: boolean;
+  reorderLevel: number; reorderQty: number; defaultVendorId?: string; isActive: boolean; make?: string; model?: string; warrantyMonths?: number;
+}
+export interface StockLocation { id: string; name: string; type: "warehouse" | "vehicle" | "site" | "quarantine"; custodianId?: string; isActive: boolean }
+
+export type MovementType = "receipt" | "issue" | "return" | "transfer" | "adjustment" | "write_off";
+export const MOVEMENT_LABEL: Record<MovementType, string> = {
+  receipt: "Receipt", issue: "Issue to project", return: "Return from site", transfer: "Transfer", adjustment: "Adjustment", write_off: "Write-off",
+};
+/** Append-only ledger row. qty is a magnitude; sign comes from movementType. */
+export interface StockMovement extends ReviewFields {
+  id: string; itemId: string; movementType: MovementType; qty: number;
+  locationFromId?: string; locationToId?: string; unitCost: number; totalCost: number;
+  projectId?: string; sourceRef?: { model: string; id: string; label: string }; reason?: string;
+  serials?: string[]; attachmentIds?: string[]; createdBy: string; createdAt: string; approvalId?: string;
+}
+export interface StockBalance { itemId: string; locationId: string; qtyOnHand: number; wacUnitCost: number; value: number; lastMovementAt?: string; belowReorder: boolean }
+
+export type ActualSource = "goods_receipt" | "issue" | "return" | "visit" | "change_order" | "bill" | "payment";
+/** Unified actuals ledger (spec §4.10). Only produced by checked / approved events. */
+export interface Actual {
+  id: string; projectId: string; costItemId?: string; category: CostCategory; source: ActualSource;
+  sourceRef: { model: string; id: string; label: string }; amount: number; date: string; vendorId?: string;
+  attachmentIds: string[]; qbBillId?: string; createdBy: string;
+}
+
+export interface ChangeOrder extends AuditFields {
+  id: string; projectId: string; coNumber: string; title: string; reason: string; scopeDelta: string;
+  costDelta: number; timeDeltaDays: number; status: "pending_approval" | "approved" | "rejected"; approvalId: string;
+}
+export interface Retention { projectId: string; percent: number; amountHeld: number; releaseConditions: string; releasedAt?: string; releasedBy?: string; approvalId?: string }
+
+export interface QbBill {
+  id: string; docNumber: string; vendorName: string; txnDate: string; dueDate: string; totalAmount: number; balance: number;
+  currency: string; projectId?: string; matchedPoId?: string; matchStatus: "matched" | "suggested" | "unmatched"; syncedAt: string;
+}
+
+export interface ProjectMoney {
+  planned: number; committed: number; actual: number; variance: number; burnPct: number; forecast: number;
+  byCategory: Record<CostCategory, { planned: number; committed: number; actual: number }>;
+  changeOrders: number; retentionHeld: number;
 }

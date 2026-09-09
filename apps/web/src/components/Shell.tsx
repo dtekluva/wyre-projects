@@ -19,6 +19,9 @@ export function Shell() {
   const approvals = api.approvalsFor(user.id).length;
   const isAdmin = api.can(user.id, "users.manage");
   const seesThresholds = api.can(user.id, "thresholds.read");
+  const seesRecon = api.can(user.id, "recon.read");
+  const unmatched = seesRecon ? api.listQbBills().filter((b) => b.confidence !== "matched").length : 0;
+  const writeOffs = api.can(user.id, "writeoff.approve") ? api.listApprovals({ status: "pending", kind: "write_off" }).length : 0;
   return (
     <div className="app ns">
       <div className={`scrim ${open ? "scrim--on" : ""}`} onClick={() => setOpen(false)} aria-hidden />
@@ -31,12 +34,15 @@ export function Shell() {
         <div className="nav__section">My work</div>
         <Item to="/work/reviews" label="Review queue" badge={checks} />
         <Item to="/work/approvals" label="Approvals" badge={approvals} />
+        <div className="nav__section">Stores</div>
+        <Item to="/inventory" label="Inventory" badge={writeOffs} />
+        {seesRecon && <><div className="nav__section">Finance</div><Item to="/finance/reconciliation" label="QB reconciliation" badge={unmatched} /></>}
         {(isAdmin || seesThresholds) && <>
           <div className="nav__section">Admin</div>
           {isAdmin && <Item to="/admin/users" label="Users & roles" />}
           {seesThresholds && <Item to="/admin/thresholds" label="Thresholds" />}
         </>}
-        <div className="nav__foot">Phase 1 · frontend-first · mock API
+        <div className="nav__foot">Phase 2 · frontend-first · mock API
           {api.isDirty() && <div style={{ marginTop: 6 }}><button className="ns-btn ns-btn--ghost ns-btn--sm" style={{ color: "inherit", opacity: .9 }}
             onClick={() => { if (confirm("Discard all demo changes and restore the seed data?")) api.reset(); }}>Reset demo data</button></div>}
         </div>

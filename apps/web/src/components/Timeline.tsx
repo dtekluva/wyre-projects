@@ -7,11 +7,12 @@ const LABEL: Record<EventType, string> = {
   po_raised: "PO", po_approved: "PO", delivery: "Delivery", bill_received: "Bill", payment: "Payment",
   visit: "Visit", issue_raised: "Issue", issue_closed: "Issue", change_order: "Change order",
   role_granted: "Access", role_revoked: "Access", note: "Note",
+  stock_movement: "Stock", cost_item: "Budget", retention: "Retention", reconciliation: "Recon",
 };
 export function variantOf(e: ChronologyEvent) {
   if (e.eventType === "check_rejected" || e.summary.startsWith("Rejected")) return "danger";
-  if (["check_passed", "stage_change", "po_approved"].includes(e.eventType) || e.summary.startsWith("Approved")) return "success";
-  if (["document_added", "attachment_added", "gate_requested", "po_raised", "delivery", "change_order", "approval_decided"].includes(e.eventType)) return "info";
+  if (["check_passed", "stage_change", "po_approved", "retention", "reconciliation"].includes(e.eventType) || e.summary.startsWith("Approved")) return "success";
+  if (["document_added", "attachment_added", "gate_requested", "po_raised", "delivery", "change_order", "approval_decided", "stock_movement", "cost_item"].includes(e.eventType)) return "info";
   if (["note", "issue_raised", "visit"].includes(e.eventType)) return "warning";
   return "neutral";
 }

@@ -5,3 +5,4 @@ packages/tokens/dist/
 *.log
 .env
 .env.*
+packages/api/dist/

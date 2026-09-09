@@ -11,6 +11,10 @@ import { ProjectPeople } from "./screens/ProjectPeople";
 import { ReviewQueue } from "./screens/ReviewQueue";
 import { Approvals } from "./screens/Approvals";
 import { AdminUsers, AdminThresholds } from "./screens/Admin";
+import { ProjectMoney } from "./screens/ProjectMoney";
+import { ProjectAssets } from "./screens/ProjectAssets";
+import { Inventory } from "./screens/Inventory";
+import { Reconciliation } from "./screens/Reconciliation";
 
 export function App() {
   return (
@@ -23,9 +27,13 @@ export function App() {
             <Route path="timeline" element={<ProjectTimeline />} />
             <Route path="documents" element={<ProjectDocuments />} />
             <Route path="people" element={<ProjectPeople />} />
+            <Route path="money" element={<ProjectMoney />} />
+            <Route path="assets" element={<ProjectAssets />} />
           </Route>
           <Route path="work/reviews" element={<ReviewQueue />} />
           <Route path="work/approvals" element={<Approvals />} />
+          <Route path="inventory" element={<Inventory />} />
+          <Route path="finance/reconciliation" element={<Reconciliation />} />
           <Route path="admin/users" element={<AdminUsers />} />
           <Route path="admin/thresholds" element={<AdminThresholds />} />
           <Route path="*" element={<Navigate to="/" replace />} />

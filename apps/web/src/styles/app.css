@@ -264,3 +264,31 @@ select.ns-input { min-height: 36px; }
   .page-head__side { align-items: flex-start; width: 100%; }
   .page-sub { font-size: var(--ns-size-caption); }
 }
+
+/* ---------- Phase 2: money & stock ---------- */
+.lines { list-style: none; margin: 0; padding: 4px var(--ns-space-md) var(--ns-space-sm); display: flex; flex-direction: column; gap: 4px; font-size: var(--ns-size-caption); }
+.lines li { display: flex; gap: 10px; align-items: center; }
+.catbar { display: grid; grid-template-columns: 150px 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: var(--ns-border-hairline) solid var(--ns-color-border-subtle); }
+.catbar:last-child { border-bottom: none; }
+.catbar__track { height: 10px; border-radius: var(--ns-radius-full); background: var(--ns-color-bg-secondary); position: relative; overflow: hidden; }
+.catbar__committed { position: absolute; inset: 0 auto 0 0; background: var(--ns-purple-200); }
+.catbar__actual { position: absolute; inset: 0 auto 0 0; background: var(--ns-color-primary); }
+.catbar__actual--over { background: var(--ns-color-danger-fill); }
+.catbar__nums { font-size: var(--ns-size-caption); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ns-color-text-secondary); }
+.legend { display: flex; gap: 14px; font-size: var(--ns-size-caption); color: var(--ns-color-text-tertiary); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.po { border-bottom: var(--ns-border-hairline) solid var(--ns-color-border-subtle); padding: 12px var(--ns-space-md); }
+.po:last-child { border-bottom: none; }
+.po__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.po__lines { margin: 6px 0 0; padding: 0; list-style: none; font-size: var(--ns-size-caption); color: var(--ns-color-text-secondary); }
+.po__lines li { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
+.receive { margin-top: 10px; padding: 12px; border-radius: var(--ns-radius-medium); background: var(--ns-color-surface-subtle); border: var(--ns-border-hairline) solid var(--ns-color-border-subtle); display: flex; flex-direction: column; gap: 10px; }
+.receive__line { display: grid; grid-template-columns: 1fr 90px; gap: 8px; align-items: end; }
+.serials { display: flex; flex-wrap: wrap; gap: 4px; }
+.serials .chip { padding: 2px 8px; font-family: var(--ns-font-mono); font-size: 11px; }
+.polines { display: flex; flex-direction: column; gap: 8px; }
+.poline { display: grid; grid-template-columns: 2fr 1.4fr 1.2fr 70px 120px 32px; gap: 8px; align-items: end; }
+@media (max-width: 860px) { .poline { grid-template-columns: 1fr 1fr; } .catbar { grid-template-columns: 1fr; gap: 4px; } .receive__line { grid-template-columns: 1fr; } }
+.ledger td, .ledger th { padding: 8px 10px; font-size: var(--ns-size-caption); }
+.warn-cell { color: var(--ns-color-danger-text); font-weight: var(--ns-weight-semibold); }
+.select-multi { min-height: 120px; padding: 6px; font-family: var(--ns-font-mono); font-size: var(--ns-size-caption); }

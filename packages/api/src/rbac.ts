@@ -12,7 +12,10 @@ export type Permission =
   | "membership.manage" | "users.manage"
   | "thresholds.read" | "thresholds.manage"
   | "money.read" | "money.write"
-  | "inventory.read" | "inventory.write"
+  | "inventory.read" | "inventory.write" | "inventory.request" | "inventory.check" | "writeoff.approve"
+  | "goods_receipt.create" | "goods_receipt.check"
+  | "cost.create" | "cost.check" | "change_order.create" | "retention.request"
+  | "asset.read" | "asset.write" | "recon.read" | "recon.write"
   | "dashboard.read";
 
 const R = (...p: Permission[]) => p;
@@ -21,21 +24,25 @@ const R = (...p: Permission[]) => p;
 export const MATRIX: Record<RoleCode, Permission[]> = {
   admin: R("project.create","project.read","project.update","chronology.read","document.create","document.read","document.update",
            "attachment.create","attachment.read","po.read","approval.read","membership.manage","users.manage",
-           "thresholds.read","thresholds.manage","money.read","inventory.read","dashboard.read"),
+           "thresholds.read","thresholds.manage","money.read","inventory.read","asset.read","recon.read","dashboard.read"),
   director: R("project.read","gate.approve","chronology.read","document.read","document.check","attachment.read","po.read","po.approve",
-              "approval.read","thresholds.read","money.read","inventory.read","dashboard.read"),
-  finance: R("project.read","gate.approve","chronology.read","document.read","attachment.read","po.read","po.approve","approval.read",
-             "thresholds.read","money.read","money.write","inventory.read","dashboard.read"),
+              "writeoff.approve","approval.read","thresholds.read","money.read","inventory.read","asset.read","recon.read","dashboard.read"),
+  finance: R("project.read","gate.approve","chronology.read","document.read","attachment.read","po.read","po.approve","writeoff.approve",
+             "approval.read","thresholds.read","money.read","money.write","cost.create","cost.check","goods_receipt.check","inventory.read",
+             "inventory.check","retention.request","asset.read","recon.read","recon.write","dashboard.read"),
   pm: R("project.create","project.read","project.update","gate.request","chronology.read","document.create","document.read","document.update",
         "attachment.create","attachment.read","attachment.check","po.create","po.read","approval.read","membership.manage",
-        "thresholds.read","money.read","inventory.read","dashboard.read"),
+        "thresholds.read","money.read","cost.create","change_order.create","goods_receipt.create","goods_receipt.check",
+        "inventory.read","inventory.request","inventory.check","asset.read","asset.write","dashboard.read"),
   lead_engineer: R("project.read","gate.approve","chronology.read","document.create","document.read","document.update","document.check",
-                   "attachment.create","attachment.read","attachment.check","po.read","approval.read","thresholds.read","dashboard.read"),
-  field_tech: R("project.read","chronology.read","document.create","document.read","attachment.create","attachment.read"),
-  store_keeper: R("project.read","chronology.read","attachment.create","attachment.read","po.read","inventory.read","inventory.write",
-                  "thresholds.read","dashboard.read"),
+                   "attachment.create","attachment.read","attachment.check","po.read","approval.read","thresholds.read",
+                   "goods_receipt.create","inventory.read","asset.read","asset.write","dashboard.read"),
+  field_tech: R("project.read","chronology.read","document.create","document.read","attachment.create","attachment.read",
+                "goods_receipt.create","inventory.read","inventory.request","asset.read","asset.write"),
+  store_keeper: R("project.read","chronology.read","attachment.create","attachment.read","po.read","goods_receipt.create",
+                  "inventory.read","inventory.write","asset.read","asset.write","thresholds.read","dashboard.read"),
   auditor: R("project.read","chronology.read","document.read","attachment.read","po.read","approval.read","thresholds.read",
-             "money.read","inventory.read","dashboard.read"),
+             "money.read","inventory.read","asset.read","recon.read","dashboard.read"),
 };
 
 /** Roles a user effectively holds on a given project (global roles + memberships) */
@@ -51,7 +58,10 @@ export function can(user: User, perm: Permission, projectId: string | undefined,
 }
 
 /** Who may check whose input — spec §4.13 */
-export const CHECKER_ROLES: Record<"document" | "attachment", RoleCode[]> = {
+export const CHECKER_ROLES: Record<"document" | "attachment" | "goods_receipt" | "stock_movement" | "cost_item", RoleCode[]> = {
   document: ["lead_engineer", "director"],
   attachment: ["pm", "lead_engineer"],
+  goods_receipt: ["pm", "finance"],
+  stock_movement: ["pm", "finance"],
+  cost_item: ["finance", "director"],
 };

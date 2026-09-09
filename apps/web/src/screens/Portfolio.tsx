@@ -17,7 +17,7 @@ export function Portfolio() {
   const atRisk = all.filter((p) => p.rag !== "green").length;
   const checks = api.reviewQueue(user.id).length; const approvals = api.approvalsFor(user.id).length;
   const contract = all.reduce((s, p) => s + p.contractValue, 0);
-  const budget = all.reduce((s, p) => s + p.approvedBudget, 0); const actual = all.reduce((s, p) => s + p.actual, 0);
+  const budget = all.reduce((s, p) => s + api.money(p.id).planned, 0); const actual = all.reduce((s, p) => s + api.money(p.id).actual, 0);
   return (
     <>
       <div className="page-head"><div><h1 className="page-title">Portfolio</h1><div className="page-sub">{all.length} projects you can see · {atRisk} need attention</div></div></div>
@@ -37,11 +37,11 @@ export function Portfolio() {
       </div>
       {mobile ? (rows.length === 0 ? <Empty title="No projects match" hint="Try clearing the filters." /> : <div className="stack">{rows.map((p) => {
         const planned = p.stagePlanned[p.stage]; const slip = planned && planned < today ? daysBetween(planned, today) : 0;
-        const burn = pct(p.actual, p.approvedBudget); const g = api.gateStatus(p.id); const ok = g.items.filter((i) => i.state === "ok").length; const pending = api.pendingChecks(p.id);
+        const mo = api.money(p.id); const burn = mo.burnPct; const g = api.gateStatus(p.id); const ok = g.items.filter((i) => i.state === "ok").length; const pending = api.pendingChecks(p.id);
         return <Link key={p.id} to={`/projects/${p.id}`} className="card pcard">
           <div className="pcard__top"><RagDot rag={p.rag} title={p.ragReason} /><span className="pcard__name">{p.name}</span><StageChip stage={p.stage} /></div>
           <div className="sm muted"><span className="ns-mono">{p.code}</span> · {p.clientName} · {p.location}</div>
-          <div className="pcard__row"><span className="ns-mono">{naira(p.contractValue, true)}</span><span className="row"><Bar pct={burn} /><span className="sm ns-mono">{p.approvedBudget ? `${burn}%` : "—"}</span></span></div>
+          <div className="pcard__row"><span className="ns-mono">{naira(p.contractValue, true)}</span><span className="row"><Bar pct={burn} /><span className="sm ns-mono">{mo.planned ? `${burn}%` : "—"}</span></span></div>
           <div className="pcard__row row--wrap">
             {slip > 0 ? <Badge variant={slip > 7 ? "danger" : "warning"}>+{slip} d</Badge> : p.stage !== 8 && <Badge variant="success">on track</Badge>}
             {p.openIssues.critical > 0 && <Badge variant="danger">{p.openIssues.critical} crit</Badge>}{p.openIssues.high > 0 && <Badge variant="warning">{p.openIssues.high} high</Badge>}
@@ -55,14 +55,14 @@ export function Portfolio() {
           <thead><tr><th>Project</th><th>Stage</th><th>RAG</th><th className="num">Contract</th><th>Budget burn</th><th>Slip</th><th>Issues</th><th className="num">Checks</th><th>Gate</th></tr></thead>
           <tbody>{rows.map((p) => {
             const planned = p.stagePlanned[p.stage]; const slip = planned && planned < today ? daysBetween(planned, today) : 0;
-            const burn = pct(p.actual, p.approvedBudget); const g = api.gateStatus(p.id); const ok = g.items.filter((i) => i.state === "ok").length;
+            const mo = api.money(p.id); const burn = mo.burnPct; const g = api.gateStatus(p.id); const ok = g.items.filter((i) => i.state === "ok").length;
             const pending = api.pendingChecks(p.id);
             return <tr key={p.id}>
               <td><Link to={`/projects/${p.id}`} className="link">{p.name}</Link><div className="sm muted"><span className="ns-mono">{p.code}</span> · {p.clientName} · {p.location}</div></td>
               <td><StageChip stage={p.stage} /></td>
               <td><span className="row"><RagDot rag={p.rag} title={p.ragReason} /><span className="sm">{p.rag}</span></span></td>
               <td className="num ns-mono">{naira(p.contractValue, true)}</td>
-              <td><span className="row"><Bar pct={burn} /><span className="sm ns-mono">{p.approvedBudget ? `${burn}%` : "—"}</span></span></td>
+              <td><span className="row"><Bar pct={burn} /><span className="sm ns-mono">{mo.planned ? `${burn}%` : "—"}</span></span></td>
               <td>{slip > 0 ? <Badge variant={slip > 7 ? "danger" : "warning"}>+{slip} d</Badge> : p.stage === 8 ? <span className="sm muted">—</span> : <Badge variant="success">on track</Badge>}</td>
               <td><span className="row row--wrap">{p.openIssues.critical > 0 && <Badge variant="danger">{p.openIssues.critical} crit</Badge>}{p.openIssues.high > 0 && <Badge variant="warning">{p.openIssues.high} high</Badge>}
                 {(p.openIssues.medium + p.openIssues.low) > 0 && <span className="sm muted">{p.openIssues.medium + p.openIssues.low} other</span>}{Object.values(p.openIssues).every((n) => n === 0) && <span className="sm muted">none</span>}</span></td>

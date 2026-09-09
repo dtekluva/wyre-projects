@@ -282,6 +282,15 @@ export const approvals: Approval[] = [
     decisions: [{ approverId: "u_dir", role: "director", decision: "rejected", at: d(2), comment: "As-built drawings not yet checked and no final account. Resubmit when gate evidence is complete." }], status: "rejected", targetStage: 7 },
 ];
 
+approvals.push(
+  { id: "ap6", projectId: "p1", kind: "write_off", title: "Write-off · 3 × Jinko 615W panel (₦450,000)", description: "Cracked glass on delivery — rejected by installer, photos attached. Below ₦500k → Finance only.",
+    requestedBy: "u_sk", requestedAt: d(3), requiredRoles: ["finance"], decisions: [], status: "pending", amount: 450_000 },
+  { id: "ap7", projectId: "p6", kind: "change_order", title: "CO-02 · +2 CTs for kitchen feeder", description: "+2 × CT 1200/5, +1 day, +₦350,000.",
+    requestedBy: "u_pm2", requestedAt: d(120), requiredRoles: ["finance"], decisions: [{ approverId: "u_fin", role: "finance", decision: "approved", at: d(119) }], status: "approved", amount: 350_000 },
+  { id: "ap8", projectId: "p8", kind: "retention", title: "Retention release · ₦3,400,000", description: "DLP complete, snag list closed, final reconciliation checked.",
+    requestedBy: "u_fin", requestedAt: d(165), requiredRoles: ["director"], decisions: [{ approverId: "u_dir", role: "director", decision: "approved", at: d(162) }], status: "approved", amount: 3_400_000 },
+);
+
 export const thresholds: Threshold[] = [
   { key: "po.director_threshold", label: "PO — Director co-approval from", value: 5_000_000, unit: "NGN", effectiveFrom: "2026-09-01", updatedBy: "u_admin" },
   { key: "co.director_threshold", label: "Change order — Director co-approval from", value: 2_000_000, unit: "NGN", effectiveFrom: "2026-09-01", updatedBy: "u_admin" },

@@ -6,18 +6,20 @@ import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { Badge } from "./ui";
 
-const KIND: Record<Approval["kind"], string> = { gate: "Stage gate", po: "Purchase order", change_order: "Change order", retention: "Retention release" };
+const KIND: Record<Approval["kind"], string> = { gate: "Stage gate", po: "Purchase order", change_order: "Change order", retention: "Retention release", write_off: "Stock write-off" };
 
 export function ApprovalCard({ a }: { a: Approval }) {
   const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   const [rejecting, setRejecting] = useState(false); const [comment, setComment] = useState("");
-  const project = api.projects.find((p) => p.id === a.projectId)!;
+  const project = a.projectId ? api.projects.find((p) => p.id === a.projectId) : undefined;
+  const po = a.kind === "po" ? api.purchaseOrders.find((p) => p.approvalId === a.id) : undefined;
   const me = api.canDecide(user.id, a);
   const waiting = a.requiredRoles.filter((r) => !a.decisions.some((d) => d.role === r));
+  const link = a.kind === "write_off" ? "/inventory" : a.kind === "gate" ? `/projects/${a.projectId}` : `/projects/${a.projectId}/money`;
   return (
     <article className={`ns-approval ns-approval--${a.status}`}>
       <div className="ns-approval__top">
-        <div><div className="ns-overline">{KIND[a.kind]} · <span className="ns-mono">{project.code}</span></div><h3 className="ns-approval__title">{a.title}</h3></div>
+        <div><div className="ns-overline">{KIND[a.kind]} · <span className="ns-mono">{project?.code ?? "Stores"}</span></div><h3 className="ns-approval__title">{a.title}</h3></div>
         <Badge variant={a.status === "approved" ? "success" : a.status === "rejected" ? "danger" : "warning"}><span className="ns-badge__dot" />{a.status}</Badge>
       </div>
       <div className="ns-approval__meta">
@@ -26,6 +28,7 @@ export function ApprovalCard({ a }: { a: Approval }) {
         <span>Requires <b>{a.requiredRoles.map((r) => ROLE_LABEL[r]).join(" + ")}</b></span>
       </div>
       <div className="review__body"><div className="sm" style={{ color: "var(--ns-color-text-secondary)" }}>{a.description}</div></div>
+      {po && <ul className="lines">{po.items.map((i) => <li key={i.id}><span className="grow">{i.qty} × {i.description}</span><span className="ns-mono">{naira(i.unitCost)}</span><b className="ns-mono">{naira(i.lineTotal)}</b></li>)}</ul>}
       {a.decisions.length > 0 && <ul className="decisions">
         {a.decisions.map((d, i) => <li key={i}>{d.decision === "approved" ? "✓" : "✕"} <b>{api.userName(d.approverId)}</b> ({ROLE_LABEL[d.role]}) {d.decision} {relative(d.at)}{d.comment && <span className="muted"> — “{d.comment}”</span>}</li>)}
       </ul>}
@@ -39,7 +42,7 @@ export function ApprovalCard({ a }: { a: Approval }) {
             <button className="ns-btn ns-btn--secondary ns-btn--sm" onClick={() => setRejecting(true)}>Reject…</button>
           </>)
           : <span className="sm muted">{me.reason} · awaiting {waiting.map((r) => ROLE_LABEL[r]).join(", ")}</span>}
-        <Link className="ns-btn ns-btn--ghost ns-btn--sm right" to={`/projects/${a.projectId}`}>Open project</Link>
+        <Link className="ns-btn ns-btn--ghost ns-btn--sm right" to={link}>Open</Link>
       </div>}
     </article>
   );
