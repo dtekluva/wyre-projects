@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Wyre Field",
+    "slug": "wyre-field",
+    "scheme": "wyrefield",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#5C3592"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.wyreng.field",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Photos are attached as evidence to visits and issues.",
+        "NSPhotoLibraryUsageDescription": "Choose photos to attach as evidence.",
+        "NSLocationWhenInUseUsageDescription": "Visits and photos are GPS-stamped as evidence."
+      }
+    },
+    "android": {
+      "package": "com.wyreng.field",
+      "adaptiveIcon": {
+        "backgroundColor": "#5C3592",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      },
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Photos are attached as evidence to visits and issues."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Visits and photos are GPS-stamped as evidence."
+        }
+      ],
+      "expo-image"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}

@@ -69,26 +69,36 @@ export class MockApi {
   private static PERSISTED = ["projects","memberships","documents","attachments","events","approvals","thresholds",
     "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","seq"] as const;
 
+  /** Synchronous key-value storage (web: localStorage). Native apps hydrate asynchronously via serialize()/hydrate() instead. */
+  private storage: { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void } | null =
+    typeof localStorage !== "undefined" ? localStorage : null;
+  setStorage(s: MockApi["storage"]) { this.storage = s; this.load(); }
   constructor() { this.load(); }
   private load() {
     try {
-      const raw = typeof localStorage !== "undefined" ? localStorage.getItem(MockApi.KEY) : null;
+      const raw = this.storage?.getItem(MockApi.KEY) ?? null;
       if (!raw) return;
-      const st = JSON.parse(raw);
-      for (const k of MockApi.PERSISTED) if (st[k] !== undefined) (this as unknown as Record<string, unknown>)[k] = st[k];
+      this.hydrate(raw);
     } catch { /* ignore corrupt state */ }
   }
+  /** Full state as JSON (for async persistence, e.g. AsyncStorage on native). */
+  serialize(): string {
+    const st: Record<string, unknown> = {};
+    for (const k of MockApi.PERSISTED) st[k] = (this as unknown as Record<string, unknown>)[k];
+    return JSON.stringify(st);
+  }
+  /** Replace state from serialize() output. Notifies listeners. */
+  hydrate(json: string) {
+    const st = JSON.parse(json);
+    for (const k of MockApi.PERSISTED) if (st[k] !== undefined) (this as unknown as Record<string, unknown>)[k] = st[k];
+    this.listeners.forEach((fn) => fn());
+  }
   private persist() {
-    try {
-      if (typeof localStorage === "undefined") return;
-      const st: Record<string, unknown> = {};
-      for (const k of MockApi.PERSISTED) st[k] = (this as unknown as Record<string, unknown>)[k];
-      localStorage.setItem(MockApi.KEY, JSON.stringify(st));
-    } catch { /* quota / private mode */ }
+    try { this.storage?.setItem(MockApi.KEY, this.serialize()); } catch { /* quota / private mode */ }
   }
   /** Restore the seed data set. */
   reset() {
-    try { localStorage.removeItem(MockApi.KEY); } catch { /* ignore */ }
+    try { this.storage?.removeItem(MockApi.KEY); } catch { /* ignore */ }
     Object.assign(this, { projects: clone(seed.projects), memberships: clone(seed.memberships), documents: clone(seed.documents), attachments: clone([...seed.attachments, ...seed3.attachments]),
       events: clone(seed.events), approvals: clone(seed.approvals), thresholds: clone(seed.thresholds),
       vendors: clone(seed2.vendors), locations: clone([...seed2.locations, ...seed3.locations]), items: clone(seed2.items), costItems: clone(seed2.costItems), purchaseOrders: clone(seed2.purchaseOrders),
@@ -97,7 +107,7 @@ export class MockApi {
       visits: clone(seed3.visits), issues: clone(seed3.issues), commissionings: clone(seed3.commissionings), hseIncidents: clone(seed3.hseIncidents), warrantyClaims: clone(seed3.warrantyClaims), stockCounts: clone(seed3.stockCounts), seq: 1000 });
     this.emit();
   }
-  isDirty() { try { return typeof localStorage !== "undefined" && localStorage.getItem(MockApi.KEY) !== null; } catch { return false; } }
+  isDirty() { try { return (this.storage?.getItem(MockApi.KEY) ?? null) !== null; } catch { return false; } }
 
   subscribe(fn: Listener) { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
   private emit() { this.persist(); this.listeners.forEach((fn) => fn()); }
@@ -175,14 +185,14 @@ export class MockApi {
     this.emit(); return doc;
   }
 
-  addAttachment(actorId: string, projectId: string, input: { fileName: string; caption?: string; kind?: "image" | "document"; linkedTo?: Attachment["linkedTo"] }): Attachment {
+  addAttachment(actorId: string, projectId: string, input: { fileName: string; caption?: string; kind?: "image" | "document"; linkedTo?: Attachment["linkedTo"]; gps?: Attachment["gps"] }): Attachment {
     this.require(actorId, "attachment.create", projectId);
     const at = this.now();
     const att: Attachment = {
       id: this.id("att"), projectId, fileName: input.fileName, mime: input.kind === "document" ? "application/pdf" : "image/jpeg",
       sizeBytes: 1_400_000, kind: input.kind ?? "image", capturedAt: at,
       sha256: Array.from({ length: 64 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join(""),
-      uploadedBy: actorId, uploadedAt: at, linkedTo: input.linkedTo, caption: input.caption,
+      uploadedBy: actorId, uploadedAt: at, linkedTo: input.linkedTo, caption: input.caption, gps: input.gps,
       reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1,
     };
     this.attachments.push(att);
@@ -225,7 +235,7 @@ export class MockApi {
     this.attachments.forEach((a) => push("attachment", a, a.projectId, a.caption ?? a.fileName, a.linkedTo ? `${a.linkedTo.model}: ${a.linkedTo.label}` : a.kind === "image" ? "Photo" : "File"));
     this.goodsReceipts.forEach((g) => { const po = this.purchaseOrders.find((p) => p.id === g.poId);
       push("goods_receipt", g, g.projectId, `${g.grnNumber} · ${this.vendorName(po?.vendorId)}`, `${g.lines.length} line${g.lines.length > 1 ? "s" : ""} against ${po?.poNumber}`, this.grnValue(g)); });
-    this.movements.filter((m) => m.movementType === "issue" || m.movementType === "return").forEach((m) =>
+    this.movements.filter((m) => (m.movementType === "issue" || m.movementType === "return" || m.movementType === "transfer") && m.sourceRef?.model !== "SiteVisit").forEach((m) =>
       push("stock_movement", m, m.projectId, `${MOVEMENT_LABEL[m.movementType]} · ${this.itemName(m.itemId)} × ${m.qty}`, m.sourceRef?.label ?? "", m.totalCost));
     this.costItems.forEach((c) => push("cost_item", c, c.projectId, c.label, `Budget line · ${COST_CATEGORY_LABEL[c.category]}`, c.plannedAmount));
     this.visits.forEach((v) => push("site_visit", v, v.projectId, `${VISIT_TYPE_LABEL[v.visitType]} visit · ${v.startedAt.slice(0, 10)}`, `${v.technicianIds.map((t) => this.userName(t)).join(", ")} · ${v.parts.length} part line${v.parts.length === 1 ? "" : "s"} · ${v.attachmentIds.length} photo${v.attachmentIds.length === 1 ? "" : "s"}`, v.costTotal));
