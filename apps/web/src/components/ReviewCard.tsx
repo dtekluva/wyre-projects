@@ -6,8 +6,8 @@ import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { Badge } from "./ui";
 
-const KIND_LABEL: Record<ReviewItem["kind"], string> = { document: "Document", attachment: "Photo / file", goods_receipt: "Goods receipt", stock_movement: "Stock movement", cost_item: "Budget line" };
-const THUMB: Record<ReviewItem["kind"], string> = { document: "PDF", attachment: "IMG", goods_receipt: "GRN", stock_movement: "STK", cost_item: "₦" };
+const KIND_LABEL: Record<ReviewItem["kind"], string> = { document: "Document", attachment: "Photo / file", goods_receipt: "Goods receipt", stock_movement: "Stock movement", cost_item: "Budget line", site_visit: "Site visit", issue: "Issue", commissioning: "Commissioning", hse: "HSE incident", warranty: "Warranty claim" };
+const THUMB: Record<ReviewItem["kind"], string> = { document: "PDF", attachment: "IMG", goods_receipt: "GRN", stock_movement: "STK", cost_item: "₦", site_visit: "VIS", issue: "ISS", commissioning: "COM", hse: "HSE", warranty: "WTY" };
 
 export function ReviewCard({ item, selected, onToggle }: { item: ReviewItem; selected?: boolean; onToggle?: () => void }) {
   const api = useApi(); const { user } = useAuth(); const safe = useSafe();
@@ -19,7 +19,7 @@ export function ReviewCard({ item, selected, onToggle }: { item: ReviewItem; sel
   const mv = item.kind === "stock_movement" ? (item.item as StockMovement) : undefined;
   const ci = item.kind === "cost_item" ? (item.item as CostItem) : undefined;
   const po = grn ? api.purchaseOrders.find((p) => p.id === grn.poId) : undefined;
-  const link = !item.projectId ? "/inventory" : item.kind === "document" || item.kind === "attachment" ? `/projects/${item.projectId}/documents` : item.kind === "stock_movement" ? `/projects/${item.projectId}/assets` : `/projects/${item.projectId}/money`;
+  const link = !item.projectId ? "/inventory" : item.kind === "document" || item.kind === "attachment" ? `/projects/${item.projectId}/documents` : item.kind === "stock_movement" ? `/projects/${item.projectId}/assets` : ["site_visit", "issue", "commissioning", "hse", "warranty"].includes(item.kind) ? `/projects/${item.projectId}/field` : `/projects/${item.projectId}/money`;
   return (
     <article className="ns-approval ns-approval--pending">
       <div className="ns-approval__top">

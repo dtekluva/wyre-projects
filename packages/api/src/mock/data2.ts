@@ -171,7 +171,7 @@ issue("it_panel", 22, "p1", 150_000, 1, "u_sk", { serials: serials("JKM26-", 45,
 issue("it_panel", 100, "p2", 150_000, 1, "u_sk", { serials: serials("JKM26-", 201, 100), rs: "pending", label: "Pick list — strings 1–5" });
 // pending write-off (Finance approval): 3 damaged panels
 export const pendingWriteOff = MV({ itemId: "it_panel", movementType: "write_off", qty: 3, locationFromId: "loc_wh", unitCost: 150_000, reason: "Cracked glass on delivery — rejected by installer, photos attached",
-  serials: serials("JKM26-", 64, 3), attachmentIds: ["att3"], createdBy: "u_sk", createdAt: d(3), rs: "pending", approvalId: "ap6" });
+  serials: serials("JKM26-", 418, 3), attachmentIds: ["att3"], createdBy: "u_sk", createdAt: d(3), rs: "pending", approvalId: "ap6" });
 
 // ---------------- change orders & retention ----------------
 export const changeOrders: ChangeOrder[] = [

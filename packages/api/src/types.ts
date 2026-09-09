@@ -90,7 +90,8 @@ export type EventType =
   | "po_raised" | "po_approved" | "delivery" | "bill_received" | "payment"
   | "visit" | "issue_raised" | "issue_closed" | "change_order"
   | "role_granted" | "role_revoked" | "note"
-  | "stock_movement" | "cost_item" | "retention" | "reconciliation";
+  | "stock_movement" | "cost_item" | "retention" | "reconciliation"
+  | "issue" | "commissioning" | "hse" | "warranty" | "stock_count";
 
 export interface ChronologyEvent {
   id: string; projectId: string; occurredAt: string; actorId: string; eventType: EventType;
@@ -98,7 +99,7 @@ export interface ChronologyEvent {
   before?: Record<string, unknown>; after?: Record<string, unknown>;
 }
 
-export type ApprovalKind = "gate" | "po" | "change_order" | "retention" | "write_off";
+export type ApprovalKind = "gate" | "po" | "change_order" | "retention" | "write_off" | "stock_count";
 export interface ApprovalDecision { approverId: string; role: RoleCode; decision: "approved" | "rejected"; at: string; comment?: string }
 export interface Approval {
   id: string; projectId?: string; kind: ApprovalKind; title: string; description: string;
@@ -177,7 +178,7 @@ export interface StockMovement extends ReviewFields {
 }
 export interface StockBalance { itemId: string; locationId: string; qtyOnHand: number; wacUnitCost: number; value: number; lastMovementAt?: string; belowReorder: boolean }
 
-export type ActualSource = "goods_receipt" | "issue" | "return" | "visit" | "change_order" | "bill" | "payment";
+export type ActualSource = "goods_receipt" | "issue" | "return" | "visit" | "change_order" | "bill" | "payment" | "warranty";
 /** Unified actuals ledger (spec §4.10). Only produced by checked / approved events. */
 export interface Actual {
   id: string; projectId: string; costItemId?: string; category: CostCategory; source: ActualSource;
@@ -200,4 +201,73 @@ export interface ProjectMoney {
   planned: number; committed: number; actual: number; variance: number; burnPct: number; forecast: number;
   byCategory: Record<CostCategory, { planned: number; committed: number; actual: number }>;
   changeOrders: number; retentionHeld: number;
+}
+
+// ============================ Phase 3 — field & quality (spec §4.6, §4.8, §4.9, §4.14, §4.15 phase 3) ============================
+
+export type VisitType = "routine" | "fault" | "warranty" | "inspection" | "upgrade" | "commissioning";
+export const VISIT_TYPE_LABEL: Record<VisitType, string> = { routine: "Routine maintenance", fault: "Fault call-out", warranty: "Warranty", inspection: "Inspection", upgrade: "Upgrade", commissioning: "Commissioning" };
+export interface VisitPart { movementId: string; itemId: string; qty: number; serials?: string[] }
+/** Post-commissioning site visit — maker-checked (PM / Lead Engineer). On check: parts movements post, travel+labour posts as an O&M actual. */
+export interface SiteVisit extends AuditFields, ReviewFields {
+  id: string; projectId: string; stationId?: string; visitType: VisitType; startedAt: string; endedAt: string;
+  technicianIds: string[]; durationHrs: number; findings: string; actionsTaken: string;
+  costTravel: number; costLabour: number; costParts: number; costTotal: number; parts: VisitPart[]; locationId: string;
+  attachmentIds: string[]; issueIds: string[]; clientSignoff?: { name: string; signatureAttachmentId?: string; rating?: number };
+  gps?: { lat: number; lng: number }; offlineCapturedAt?: string;
+}
+
+export type IssueCategory = "electrical" | "mechanical" | "performance" | "data" | "safety" | "client" | "other";
+export type IssueSeverity = "critical" | "high" | "medium" | "low";
+export type IssueStatus = "open" | "in_progress" | "awaiting_parts" | "resolved" | "closed" | "wont_fix";
+export const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = { open: "Open", in_progress: "In progress", awaiting_parts: "Awaiting parts", resolved: "Resolved (pending check)", closed: "Closed", wont_fix: "Won't fix" };
+/** Issue / defect. Report is maker-checked (v1); resolution re-enters review (v2) and closes on check. */
+export interface Issue extends AuditFields, ReviewFields {
+  id: string; projectId: string; stationId?: string; assetId?: string; category: IssueCategory; severity: IssueSeverity;
+  title: string; description: string; raisedBy: string; raisedAt: string; source: "manual" | "visit" | "telemetry_alert";
+  status: IssueStatus; assigneeId?: string; rootCause?: string; resolution?: string; resolvedBy?: string; resolvedAt?: string;
+  costToResolve: number; linkedVisitId?: string; warrantyClaimId?: string;
+  beforeAttachmentIds: string[]; afterAttachmentIds: string[]; isSnag: boolean; slaDueAt: string;
+}
+
+export interface CommissioningItem { key: string; label: string; measuredValue?: string; unit?: string; pass: boolean | null; comment?: string; attachmentId?: string }
+export interface MeterIntegrity { serialAscii: boolean; ctRatioVerified: boolean; firstLiveReading: boolean; historicalOk: boolean }
+export const COMMISSIONING_TEMPLATE: { key: string; label: string; unit?: string }[] = [
+  { key: "insulation_resistance", label: "Insulation resistance (DC strings)", unit: "MΩ" },
+  { key: "earth_resistance", label: "Earth resistance", unit: "Ω" },
+  { key: "string_voc", label: "String Voc per string", unit: "V" },
+  { key: "string_isc", label: "String Isc per string", unit: "A" },
+  { key: "inverter_config", label: "Inverter firmware / configuration" },
+  { key: "battery_bms", label: "Battery SoC / BMS communication" },
+  { key: "ats_changeover", label: "ATS changeover test" },
+  { key: "meter_ct_ratio", label: "Meter CT ratio verified against live reading" },
+  { key: "first_live_reading", label: "First live reading received on platform" },
+  { key: "labelling", label: "Labelling & signage" },
+  { key: "fire_suppression", label: "Fire suppression present & tagged" },
+  { key: "hse_walkdown", label: "HSE walk-down complete" },
+];
+/** Commissioning record — maker Lead Engineer; checker Director or second Lead Engineer. On check (pass) it satisfies gate-5 evidence. */
+export interface CommissioningRecord extends AuditFields, ReviewFields {
+  id: string; projectId: string; stationId?: string; date: string; engineerId: string; result: "pass" | "conditional" | "fail"; notes: string;
+  items: CommissioningItem[]; meter: MeterIntegrity; clientWitness?: { name: string; signatureAttachmentId?: string }; attachmentIds: string[];
+}
+
+export type HseType = "near_miss" | "injury" | "property" | "environmental";
+export const HSE_TYPE_LABEL: Record<HseType, string> = { near_miss: "Near miss", injury: "Injury", property: "Property damage", environmental: "Environmental" };
+export interface HseIncident extends AuditFields, ReviewFields {
+  id: string; projectId: string; visitId?: string; type: HseType; severity: IssueSeverity; description: string; actions: string;
+  occurredAt: string; reportedBy: string; attachmentIds: string[];
+}
+
+export type WarrantyStatus = "raised" | "accepted" | "rejected" | "replaced" | "refunded";
+export interface WarrantyClaim extends AuditFields, ReviewFields {
+  id: string; projectId: string; assetId: string; issueId?: string; vendorId?: string; claimedAt: string; status: WarrantyStatus;
+  outcome?: string; costRecovered: number; notes: string;
+}
+
+export interface StockCountLine { itemId: string; expectedQty: number; countedQty: number | null; variance: number; note?: string; attachmentId?: string }
+/** Physical count. Submit → Finance approval → variance lines post as `adjustment` movements at WAC. */
+export interface StockCount extends AuditFields {
+  id: string; locationId: string; countDate: string; countedBy: string; status: "open" | "submitted" | "approved" | "rejected";
+  lines: StockCountLine[]; approvalId?: string; notes?: string; varianceValue: number;
 }

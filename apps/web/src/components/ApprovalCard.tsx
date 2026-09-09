@@ -6,7 +6,7 @@ import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { Badge } from "./ui";
 
-const KIND: Record<Approval["kind"], string> = { gate: "Stage gate", po: "Purchase order", change_order: "Change order", retention: "Retention release", write_off: "Stock write-off" };
+const KIND: Record<Approval["kind"], string> = { gate: "Stage gate", po: "Purchase order", change_order: "Change order", retention: "Retention release", write_off: "Stock write-off", stock_count: "Stock count" };
 
 export function ApprovalCard({ a }: { a: Approval }) {
   const api = useApi(); const { user } = useAuth(); const safe = useSafe();
@@ -15,7 +15,7 @@ export function ApprovalCard({ a }: { a: Approval }) {
   const po = a.kind === "po" ? api.purchaseOrders.find((p) => p.approvalId === a.id) : undefined;
   const me = api.canDecide(user.id, a);
   const waiting = a.requiredRoles.filter((r) => !a.decisions.some((d) => d.role === r));
-  const link = a.kind === "write_off" ? "/inventory" : a.kind === "gate" ? `/projects/${a.projectId}` : `/projects/${a.projectId}/money`;
+  const link = a.kind === "write_off" || a.kind === "stock_count" ? "/inventory" : a.kind === "gate" ? `/projects/${a.projectId}` : `/projects/${a.projectId}/money`;
   return (
     <article className={`ns-approval ns-approval--${a.status}`}>
       <div className="ns-approval__top">

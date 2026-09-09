@@ -5,23 +5,26 @@ import { can as canFn, rolesOn as rolesOnFn, type Permission } from "./rbac";
 import { STAGES } from "./gates";
 import * as seed from "./mock/data";
 import * as seed2 from "./mock/data2";
+import * as seed3 from "./mock/data3";
 import {
   DOC_TYPE_LABEL, COST_CATEGORY_LABEL, MOVEMENT_LABEL,
   type User, type Project, type ProjectMembership, type Document, type Attachment, type ChronologyEvent, type Approval, type Threshold,
   type Stage, type GateStatus, type DocType, type RoleCode, type EventType, type ReviewStatus,
   type Vendor, type InventoryItem, type StockLocation, type CostItem, type PurchaseOrder, type PurchaseItem, type GoodsReceipt, type Asset,
   type StockMovement, type StockBalance, type Actual, type ChangeOrder, type Retention, type QbBill, type CostCategory, type ProjectMoney, type AssetType,
+  type SiteVisit, type Issue, type CommissioningRecord, type HseIncident, type WarrantyClaim, type StockCount, type VisitType, type IssueCategory, type IssueSeverity,
+  type IssueStatus, type HseType, type WarrantyStatus, type MeterIntegrity, VISIT_TYPE_LABEL, HSE_TYPE_LABEL, COMMISSIONING_TEMPLATE,
 } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, public code: "forbidden" | "invalid" | "not_found" | "conflict") { super(message); }
 }
 
-export type ReviewKind = "document" | "attachment" | "goods_receipt" | "stock_movement" | "cost_item";
+export type ReviewKind = "document" | "attachment" | "goods_receipt" | "stock_movement" | "cost_item" | "site_visit" | "issue" | "commissioning" | "hse" | "warranty";
 export interface ReviewItem {
   kind: ReviewKind; id: string; projectId?: string; title: string; subtitle: string; amount?: number;
   submittedBy: string; submittedAt: string; ageDays: number; overdue: boolean;
-  item: Document | Attachment | GoodsReceipt | StockMovement | CostItem;
+  item: Document | Attachment | GoodsReceipt | StockMovement | CostItem | SiteVisit | Issue | CommissioningRecord | HseIncident | WarrantyClaim;
 }
 
 type Listener = () => void;
@@ -35,29 +38,36 @@ export class MockApi {
   projects: Project[] = clone(seed.projects);
   memberships: ProjectMembership[] = clone(seed.memberships);
   documents: Document[] = clone(seed.documents);
-  attachments: Attachment[] = clone(seed.attachments);
+  attachments: Attachment[] = clone([...seed.attachments, ...seed3.attachments]);
   events: ChronologyEvent[] = clone(seed.events);
   approvals: Approval[] = clone(seed.approvals);
   thresholds: Threshold[] = clone(seed.thresholds);
   // phase 2
   vendors: Vendor[] = clone(seed2.vendors);
-  locations: StockLocation[] = clone(seed2.locations);
+  locations: StockLocation[] = clone([...seed2.locations, ...seed3.locations]);
   items: InventoryItem[] = clone(seed2.items);
   costItems: CostItem[] = clone(seed2.costItems);
   purchaseOrders: PurchaseOrder[] = clone(seed2.purchaseOrders);
   goodsReceipts: GoodsReceipt[] = clone(seed2.goodsReceipts);
   assets: Asset[] = clone(seed2.assets);
-  movements: StockMovement[] = clone(seed2.movements);
+  movements: StockMovement[] = clone([...seed2.movements, ...seed3.movements]);
   actuals: Actual[] = clone(seed2.actuals);
   changeOrders: ChangeOrder[] = clone(seed2.changeOrders);
   retentions: Retention[] = clone(seed2.retentions);
   qbBills: QbBill[] = clone(seed2.qbBills);
+  // phase 3
+  visits: SiteVisit[] = clone(seed3.visits);
+  issues: Issue[] = clone(seed3.issues);
+  commissionings: CommissioningRecord[] = clone(seed3.commissionings);
+  hseIncidents: HseIncident[] = clone(seed3.hseIncidents);
+  warrantyClaims: WarrantyClaim[] = clone(seed3.warrantyClaims);
+  stockCounts: StockCount[] = clone(seed3.stockCounts);
 
   private listeners = new Set<Listener>();
   private seq = 1000;
-  private static KEY = "wyre.tracker.state.v2";
+  private static KEY = "wyre.tracker.state.v3";
   private static PERSISTED = ["projects","memberships","documents","attachments","events","approvals","thresholds",
-    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","seq"] as const;
+    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","seq"] as const;
 
   constructor() { this.load(); }
   private load() {
@@ -79,11 +89,12 @@ export class MockApi {
   /** Restore the seed data set. */
   reset() {
     try { localStorage.removeItem(MockApi.KEY); } catch { /* ignore */ }
-    Object.assign(this, { projects: clone(seed.projects), memberships: clone(seed.memberships), documents: clone(seed.documents), attachments: clone(seed.attachments),
+    Object.assign(this, { projects: clone(seed.projects), memberships: clone(seed.memberships), documents: clone(seed.documents), attachments: clone([...seed.attachments, ...seed3.attachments]),
       events: clone(seed.events), approvals: clone(seed.approvals), thresholds: clone(seed.thresholds),
-      vendors: clone(seed2.vendors), locations: clone(seed2.locations), items: clone(seed2.items), costItems: clone(seed2.costItems), purchaseOrders: clone(seed2.purchaseOrders),
-      goodsReceipts: clone(seed2.goodsReceipts), assets: clone(seed2.assets), movements: clone(seed2.movements), actuals: clone(seed2.actuals),
-      changeOrders: clone(seed2.changeOrders), retentions: clone(seed2.retentions), qbBills: clone(seed2.qbBills), seq: 1000 });
+      vendors: clone(seed2.vendors), locations: clone([...seed2.locations, ...seed3.locations]), items: clone(seed2.items), costItems: clone(seed2.costItems), purchaseOrders: clone(seed2.purchaseOrders),
+      goodsReceipts: clone(seed2.goodsReceipts), assets: clone(seed2.assets), movements: clone([...seed2.movements, ...seed3.movements]), actuals: clone(seed2.actuals),
+      changeOrders: clone(seed2.changeOrders), retentions: clone(seed2.retentions), qbBills: clone(seed2.qbBills),
+      visits: clone(seed3.visits), issues: clone(seed3.issues), commissionings: clone(seed3.commissionings), hseIncidents: clone(seed3.hseIncidents), warrantyClaims: clone(seed3.warrantyClaims), stockCounts: clone(seed3.stockCounts), seq: 1000 });
     this.emit();
   }
   isDirty() { try { return typeof localStorage !== "undefined" && localStorage.getItem(MockApi.KEY) !== null; } catch { return false; } }
@@ -191,12 +202,14 @@ export class MockApi {
 
   // ---------- maker-checker ----------
   private checkPerm(kind: ReviewKind): Permission {
-    return ({ document: "document.check", attachment: "attachment.check", goods_receipt: "goods_receipt.check", stock_movement: "inventory.check", cost_item: "cost.check" } as const)[kind];
+    return ({ document: "document.check", attachment: "attachment.check", goods_receipt: "goods_receipt.check", stock_movement: "inventory.check", cost_item: "cost.check",
+      site_visit: "visit.check", issue: "issue.check", commissioning: "commissioning.check", hse: "hse.check", warranty: "warranty.check" } as const)[kind];
   }
   private findReviewable(kind: ReviewKind, id: string) {
-    const list = ({ document: this.documents, attachment: this.attachments, goods_receipt: this.goodsReceipts, stock_movement: this.movements, cost_item: this.costItems } as Record<ReviewKind, { id: string }[]>)[kind];
+    const list = ({ document: this.documents, attachment: this.attachments, goods_receipt: this.goodsReceipts, stock_movement: this.movements, cost_item: this.costItems,
+      site_visit: this.visits, issue: this.issues, commissioning: this.commissionings, hse: this.hseIncidents, warranty: this.warrantyClaims } as Record<ReviewKind, { id: string }[]>)[kind];
     const it = list.find((x) => x.id === id); if (!it) throw new ApiError("Item not found", "not_found");
-    return it as Document | Attachment | GoodsReceipt | StockMovement | CostItem;
+    return it as ReviewItem["item"];
   }
   reviewQueue(userId: string): ReviewItem[] {
     const nowMs = Date.now(); const items: ReviewItem[] = [];
@@ -215,6 +228,11 @@ export class MockApi {
     this.movements.filter((m) => m.movementType === "issue" || m.movementType === "return").forEach((m) =>
       push("stock_movement", m, m.projectId, `${MOVEMENT_LABEL[m.movementType]} · ${this.itemName(m.itemId)} × ${m.qty}`, m.sourceRef?.label ?? "", m.totalCost));
     this.costItems.forEach((c) => push("cost_item", c, c.projectId, c.label, `Budget line · ${COST_CATEGORY_LABEL[c.category]}`, c.plannedAmount));
+    this.visits.forEach((v) => push("site_visit", v, v.projectId, `${VISIT_TYPE_LABEL[v.visitType]} visit · ${v.startedAt.slice(0, 10)}`, `${v.technicianIds.map((t) => this.userName(t)).join(", ")} · ${v.parts.length} part line${v.parts.length === 1 ? "" : "s"} · ${v.attachmentIds.length} photo${v.attachmentIds.length === 1 ? "" : "s"}`, v.costTotal));
+    this.issues.forEach((i) => push("issue", i, i.projectId, `${i.status === "resolved" ? "Resolution" : "Issue report"} · ${i.title}`, `${i.severity} · ${i.category}${i.status === "resolved" ? " · after photo attached" : ""}`, i.costToResolve || undefined));
+    this.commissionings.forEach((c) => push("commissioning", c, c.projectId, `Commissioning record · ${c.result}`, `${c.items.filter((i) => i.pass).length}/${c.items.length} checklist pass · meter integrity ${Object.values(c.meter).every(Boolean) ? "pass" : "FAIL"}`));
+    this.hseIncidents.forEach((h) => push("hse", h, h.projectId, `HSE · ${HSE_TYPE_LABEL[h.type]}`, `${h.severity} · ${h.description.slice(0, 70)}`));
+    this.warrantyClaims.forEach((w) => push("warranty", w, w.projectId, `Warranty claim · ${this.assets.find((a) => a.id === w.assetId)?.serial ?? w.assetId}`, `${w.status} · ${this.vendorName(w.vendorId)}`, w.costRecovered || undefined));
     return items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   }
   pendingChecks(projectId: string) {
@@ -222,7 +240,12 @@ export class MockApi {
       + this.attachments.filter((a) => a.projectId === projectId && a.reviewStatus === "pending").length
       + this.goodsReceipts.filter((g) => g.projectId === projectId && g.reviewStatus === "pending").length
       + this.movements.filter((m) => m.projectId === projectId && m.reviewStatus === "pending" && m.movementType !== "write_off").length
-      + this.costItems.filter((c) => c.projectId === projectId && c.reviewStatus === "pending").length;
+      + this.costItems.filter((c) => c.projectId === projectId && c.reviewStatus === "pending").length
+      + this.visits.filter((v) => v.projectId === projectId && v.reviewStatus === "pending").length
+      + this.issues.filter((i) => i.projectId === projectId && i.reviewStatus === "pending").length
+      + this.commissionings.filter((c) => c.projectId === projectId && c.reviewStatus === "pending").length
+      + this.hseIncidents.filter((h) => h.projectId === projectId && h.reviewStatus === "pending").length
+      + this.warrantyClaims.filter((w) => w.projectId === projectId && w.reviewStatus === "pending").length;
   }
 
   check(kind: ReviewKind, id: string, actorId: string, decision: Exclude<ReviewStatus, "pending">, comment?: string) {
@@ -242,8 +265,26 @@ export class MockApi {
       case "cost_item": { const c = item as CostItem; c.updatedAt = at; c.updatedBy = actorId; label = `budget line ${c.label}`; break; }
       case "goods_receipt": { const g = item as GoodsReceipt; label = g.grnNumber; if (ok) this.postGoodsReceipt(g, actorId); break; }
       case "stock_movement": { const m = item as StockMovement; label = `${MOVEMENT_LABEL[m.movementType]} ${this.itemName(m.itemId)} × ${m.qty}`; if (ok) this.postMovementEffects(m, actorId); break; }
+      case "site_visit": { const v = item as SiteVisit; v.updatedAt = at; v.updatedBy = actorId; label = `${VISIT_TYPE_LABEL[v.visitType]} visit ${v.startedAt.slice(0, 10)}`;
+        for (const part of v.parts) { const m = this.movements.find((x) => x.id === part.movementId); if (!m || m.reviewStatus !== "pending") continue;
+          m.reviewStatus = decision; m.checkedBy = actorId; m.checkedAt = at; if (ok) this.postMovementEffects(m, actorId); }
+        if (ok && v.costTravel + v.costLabour > 0) this.actuals.push({ id: this.id("act"), projectId: v.projectId, category: "om", source: "visit", sourceRef: { model: "SiteVisit", id: v.id, label: `${VISIT_TYPE_LABEL[v.visitType]} visit — travel + labour` },
+          amount: v.costTravel + v.costLabour, date: at, attachmentIds: v.attachmentIds, createdBy: actorId });
+        break; }
+      case "issue": { const i = item as Issue; i.updatedAt = at; i.updatedBy = actorId; label = i.title;
+        if (i.status === "resolved") { if (ok) { i.status = "closed"; if (i.costToResolve > 0) this.actuals.push({ id: this.id("act"), projectId: i.projectId, category: "om", source: "issue", sourceRef: { model: "Issue", id: i.id, label: `Issue resolved — ${i.title}` }, amount: i.costToResolve, date: at, attachmentIds: i.afterAttachmentIds, createdBy: actorId }); }
+          else { i.status = "in_progress"; i.resolvedAt = undefined; i.resolvedBy = undefined; } }
+        else if (!ok) i.status = "wont_fix";
+        break; }
+      case "commissioning": { const c = item as CommissioningRecord; c.updatedAt = at; c.updatedBy = actorId; label = `commissioning record (${c.result})`;
+        if (ok && c.result !== "fail") this.emitCommissioningEvidence(c, actorId); break; }
+      case "hse": { const h = item as HseIncident; h.updatedAt = at; h.updatedBy = actorId; label = `HSE ${HSE_TYPE_LABEL[h.type]}`; break; }
+      case "warranty": { const w = item as WarrantyClaim; w.updatedAt = at; w.updatedBy = actorId; label = `warranty claim ${this.assets.find((a) => a.id === w.assetId)?.serial ?? ""}`;
+        if (ok && w.costRecovered > 0 && ["accepted", "refunded", "replaced"].includes(w.status) && !this.actuals.some((a) => a.sourceRef.id === w.id))
+          this.actuals.push({ id: this.id("act"), projectId: w.projectId, category: "om", source: "warranty", sourceRef: { model: "WarrantyClaim", id: w.id, label: `Warranty recovery — ${this.vendorName(w.vendorId)}` }, amount: -w.costRecovered, date: at, attachmentIds: [], createdBy: actorId });
+        break; }
     }
-    const model = { document: "Document", attachment: "Attachment", goods_receipt: "GoodsReceipt", stock_movement: "StockMovement", cost_item: "CostItem" }[kind];
+    const model = { document: "Document", attachment: "Attachment", goods_receipt: "GoodsReceipt", stock_movement: "StockMovement", cost_item: "CostItem", site_visit: "SiteVisit", issue: "Issue", commissioning: "CommissioningRecord", hse: "HseIncident", warranty: "WarrantyClaim" }[kind];
     this.log(projectId, actorId, ok ? "check_passed" : "check_rejected", `${ok ? "Checked" : "Rejected"}: ${label}`, comment?.trim() || undefined, { model, id });
     this.emit();
   }
@@ -339,6 +380,16 @@ export class MockApi {
         if (approved) (m.serials ?? []).forEach((s) => { const as = this.assets.find((x) => x.serial === s); if (as) { as.status = "decommissioned"; as.updatedAt = at; as.updatedBy = actorId; } }); }
     }
     if (a.kind === "retention" && approved && a.projectId) { const r = this.retentions.find((x) => x.projectId === a.projectId); if (r) { r.releasedAt = at; r.releasedBy = actorId; r.approvalId = a.id; } }
+    if (a.kind === "stock_count") {
+      const sc = this.stockCounts.find((x) => x.approvalId === a.id); if (!sc) return;
+      sc.status = approved ? "approved" : "rejected"; sc.updatedAt = at; sc.updatedBy = actorId;
+      if (approved) for (const l of sc.lines) {
+        if (!l.variance) continue; const wac = this.wacOf(l.itemId); const up = l.variance > 0;
+        this.movements.push({ id: this.id("mv"), itemId: l.itemId, movementType: "adjustment", qty: Math.abs(l.variance), locationFromId: up ? undefined : sc.locationId, locationToId: up ? sc.locationId : undefined,
+          unitCost: wac, totalCost: Math.abs(l.variance) * wac, reason: `Stock count ${sc.countDate}: ${l.note ?? "variance"}`, sourceRef: { model: "StockCount", id: sc.id, label: `Count ${sc.countDate}` }, attachmentIds: l.attachmentId ? [l.attachmentId] : [],
+          createdBy: sc.countedBy, createdAt: at, approvalId: a.id, reviewStatus: "checked", submittedBy: sc.countedBy, submittedAt: at, checkedBy: actorId, checkedAt: at, reviewVersion: 1 });
+      }
+    }
   }
 
   // ---------- memberships ----------
@@ -594,6 +645,9 @@ export class MockApi {
       if (m.projectId) this.actuals.push({ id: this.id("act"), projectId: m.projectId, category: p && p.stage >= 7 ? "om" : "equipment", source: "issue", sourceRef: { model: "StockMovement", id: m.id, label: `${it.name} × ${m.qty}` },
         amount: m.totalCost, date: at, attachmentIds: m.attachmentIds ?? [], createdBy: actorId });
     }
+    if (m.movementType === "transfer") {
+      (m.serials ?? []).forEach((s) => { const a = this.assets.find((x) => x.serial === s); if (a && a.status === "in_stock") { a.locationId = m.locationToId; a.updatedAt = at; a.updatedBy = actorId; } });
+    }
     if (m.movementType === "return") {
       (m.serials ?? []).forEach((s) => { const a = this.assets.find((x) => x.serial === s); if (!a) return; a.status = "in_stock"; a.projectId = undefined; a.locationId = m.locationToId; a.updatedAt = at; a.updatedBy = actorId; });
       if (m.projectId) this.actuals.push({ id: this.id("act"), projectId: m.projectId, category: "equipment", source: "return", sourceRef: { model: "StockMovement", id: m.id, label: `${it.name} × ${m.qty} returned` },
@@ -644,6 +698,197 @@ export class MockApi {
     this.require(actorId, "recon.write");
     const b = this.qbBills.find((x) => x.id === billId); if (!b) throw new ApiError("Bill not found", "not_found");
     b.matchedPoId = undefined; b.matchStatus = "unmatched"; this.emit();
+  }
+
+  // ======================================================================
+  // Phase 3 — locations, transfers, stock counts
+  // ======================================================================
+  listLocations() { return this.locations.filter((l) => l.isActive); }
+  addLocation(actorId: string, input: { name: string; type: StockLocation["type"]; custodianId?: string }): StockLocation {
+    this.require(actorId, "inventory.write");
+    if (!input.name.trim()) throw new ApiError("Name is required", "invalid");
+    const l: StockLocation = { id: this.id("loc"), name: input.name.trim(), type: input.type, custodianId: input.custodianId, isActive: true };
+    this.locations.push(l); this.emit(); return l;
+  }
+  transferStock(actorId: string, input: { itemId: string; qty: number; fromId: string; toId: string; serials?: string[]; label?: string }): StockMovement {
+    this.require(actorId, "inventory.write");
+    const it = this.item(input.itemId); if (!(input.qty > 0)) throw new ApiError("Quantity must be positive", "invalid");
+    if (input.fromId === input.toId) throw new ApiError("Choose two different locations", "invalid");
+    const avail = this.available(it.id, input.fromId); if (input.qty > avail) throw new ApiError(`Only ${avail} available at ${this.locationName(input.fromId)}`, "invalid");
+    const serials = this.validateSerials(it.id, input.qty, input.serials, input.fromId);
+    const wac = this.wacOf(it.id); const at = this.now();
+    const m: StockMovement = { id: this.id("mv"), itemId: it.id, movementType: "transfer", qty: input.qty, locationFromId: input.fromId, locationToId: input.toId, unitCost: wac, totalCost: round(input.qty * wac), serials,
+      sourceRef: { model: "Transfer", id: this.id("tr"), label: input.label?.trim() || `${this.locationName(input.fromId)} → ${this.locationName(input.toId)}` }, createdBy: actorId, createdAt: at,
+      reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
+    this.movements.push(m); this.emit(); return m;
+  }
+  listCounts() { return [...this.stockCounts].sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
+  startCount(actorId: string, locationId: string): StockCount {
+    this.require(actorId, "stockcount.create");
+    if (this.stockCounts.some((c) => c.locationId === locationId && ["open", "submitted"].includes(c.status))) throw new ApiError("A count is already open for this location", "conflict");
+    const at = this.now(); const bal = this.balances().filter((b) => b.locationId === locationId);
+    const lines = this.items.filter((i) => i.isActive).map((i) => ({ itemId: i.id, expectedQty: bal.find((b) => b.itemId === i.id)?.qtyOnHand ?? 0, countedQty: null, variance: 0 }));
+    const sc: StockCount = { id: this.id("sc"), locationId, countDate: at.slice(0, 10), countedBy: actorId, status: "open", lines, varianceValue: 0, createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId };
+    this.stockCounts.push(sc); this.emit(); return sc;
+  }
+  enterCount(actorId: string, countId: string, lines: { itemId: string; countedQty: number | null; note?: string; attachmentId?: string }[]) {
+    this.require(actorId, "stockcount.create");
+    const sc = this.stockCounts.find((c) => c.id === countId); if (!sc) throw new ApiError("Count not found", "not_found");
+    if (sc.status !== "open") throw new ApiError("Count is not open", "conflict");
+    for (const l of lines) { const row = sc.lines.find((x) => x.itemId === l.itemId); if (!row) continue;
+      row.countedQty = l.countedQty; row.variance = l.countedQty === null ? 0 : l.countedQty - row.expectedQty; if (l.note !== undefined) row.note = l.note; if (l.attachmentId) row.attachmentId = l.attachmentId; }
+    sc.updatedAt = this.now(); sc.updatedBy = actorId; this.emit();
+  }
+  /** Submit for Finance approval. Lines outside tolerance (or any variance on serialised items) need a note. */
+  submitCount(actorId: string, countId: string): Approval {
+    this.require(actorId, "stockcount.create");
+    const sc = this.stockCounts.find((c) => c.id === countId); if (!sc) throw new ApiError("Count not found", "not_found");
+    if (sc.status !== "open") throw new ApiError("Count is not open", "conflict");
+    const missing = sc.lines.filter((l) => l.countedQty === null); if (missing.length) throw new ApiError(`${missing.length} line${missing.length > 1 ? "s" : ""} not counted yet`, "invalid");
+    const tol = this.thresholdNum("stockcount.tolerance_pct", 2) / 100; let value = 0;
+    for (const l of sc.lines) { if (!l.variance) continue; const it = this.item(l.itemId); value += Math.abs(l.variance) * this.wacOf(l.itemId);
+      const over = it.isSerialised ? true : Math.abs(l.variance) > Math.max(1, l.expectedQty * tol);
+      if (over && !l.note?.trim()) throw new ApiError(`${it.name}: variance ${l.variance > 0 ? "+" : ""}${l.variance} is outside tolerance — a note is required`, "invalid"); }
+    sc.varianceValue = round(value); const at = this.now();
+    const ap: Approval = { id: this.id("ap"), kind: "stock_count", title: `Stock count ${sc.countDate} · ${this.locationName(sc.locationId)}`, description: `${sc.lines.filter((l) => l.variance).length} variance line${sc.lines.filter((l) => l.variance).length === 1 ? "" : "s"}, ${this.fmt(sc.varianceValue)} absolute value at WAC. Approval posts adjustments to the ledger.`,
+      requestedBy: actorId, requestedAt: at, requiredRoles: ["finance"], decisions: [], status: "pending", amount: sc.varianceValue };
+    this.approvals.push(ap); sc.approvalId = ap.id; sc.status = "submitted"; sc.updatedAt = at; sc.updatedBy = actorId; this.emit(); return ap;
+  }
+
+  // ======================================================================
+  // Phase 3 — visits, issues, commissioning, HSE, warranty
+  // ======================================================================
+  listVisits(projectId?: string) { return this.visits.filter((v) => !projectId || v.projectId === projectId).sort((a, b) => b.startedAt.localeCompare(a.startedAt)); }
+  logVisit(actorId: string, projectId: string, input: { visitType: VisitType; startedAt: string; endedAt: string; technicianIds?: string[]; findings: string; actionsTaken: string; costTravel: number; costLabour: number;
+      parts?: { itemId: string; qty: number; serials?: string[] }[]; locationId?: string; attachmentIds: string[]; issueIds?: string[]; clientSignoff?: SiteVisit["clientSignoff"]; gps?: SiteVisit["gps"]; offlineCapturedAt?: string }): SiteVisit {
+    this.require(actorId, "visit.create", projectId);
+    if (!input.findings.trim()) throw new ApiError("Findings are required", "invalid");
+    if (!input.attachmentIds.length) throw new ApiError("At least one site photo is required", "invalid");
+    if (new Date(input.endedAt).getTime() < new Date(input.startedAt).getTime()) throw new ApiError("Visit ends before it starts", "invalid");
+    const loc = input.locationId ?? "loc_van1"; const at = this.now(); const visitId = this.id("vis");
+    const parts: SiteVisit["parts"] = [];
+    for (const p of input.parts ?? []) {
+      if (!(p.qty > 0)) continue; const it = this.item(p.itemId);
+      const avail = this.available(it.id, loc); if (p.qty > avail) throw new ApiError(`${it.name}: only ${avail} ${it.unit} at ${this.locationName(loc)}`, "invalid");
+      const serials = this.validateSerials(it.id, p.qty, p.serials, loc); const wac = this.wacOf(it.id);
+      const m: StockMovement = { id: this.id("mv"), itemId: it.id, movementType: "issue", qty: p.qty, locationFromId: loc, unitCost: wac, totalCost: round(p.qty * wac), projectId, serials,
+        sourceRef: { model: "SiteVisit", id: visitId, label: "Parts used on visit" }, createdBy: actorId, createdAt: at, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
+      this.movements.push(m); parts.push({ movementId: m.id, itemId: it.id, qty: p.qty, serials });
+    }
+    const costParts = parts.reduce((s, p) => s + (this.movements.find((m) => m.id === p.movementId)?.totalCost ?? 0), 0);
+    const durationHrs = round((new Date(input.endedAt).getTime() - new Date(input.startedAt).getTime()) / 3600000);
+    const v: SiteVisit = { id: visitId, projectId, visitType: input.visitType, startedAt: input.startedAt, endedAt: input.endedAt, technicianIds: input.technicianIds?.length ? input.technicianIds : [actorId], durationHrs,
+      findings: input.findings.trim(), actionsTaken: input.actionsTaken.trim(), costTravel: input.costTravel || 0, costLabour: input.costLabour || 0, costParts, costTotal: (input.costTravel || 0) + (input.costLabour || 0) + costParts,
+      parts, locationId: loc, attachmentIds: input.attachmentIds, issueIds: input.issueIds ?? [], clientSignoff: input.clientSignoff, gps: input.gps, offlineCapturedAt: input.offlineCapturedAt,
+      createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
+    this.visits.push(v);
+    this.log(projectId, actorId, "visit", `${VISIT_TYPE_LABEL[v.visitType]} visit logged — ${v.durationHrs} h, ${this.fmt(v.costTotal)} (pending check)`, v.findings, { model: "SiteVisit", id: v.id });
+    this.emit(); return v;
+  }
+
+  slaHours(sev: IssueSeverity) { const t = this.thresholds.find((x) => x.key === `sla.${sev}`); if (!t) return { critical: 24, high: 72, medium: 168, low: 720 }[sev]; return t.unit === "d" ? Number(t.value) * 24 : Number(t.value); }
+  issueSla(i: Issue) { const due = new Date(i.slaDueAt).getTime(); const open = !["closed", "wont_fix"].includes(i.status); const left = (due - Date.now()) / 3600000; return { dueAt: i.slaDueAt, breached: open && left < 0, hoursLeft: Math.round(left), open }; }
+  listIssues(f: { projectId?: string; status?: IssueStatus; openOnly?: boolean } = {}) {
+    return this.issues.filter((i) => (!f.projectId || i.projectId === f.projectId) && (!f.status || i.status === f.status) && (!f.openOnly || !["closed", "wont_fix"].includes(i.status)))
+      .sort((a, b) => b.raisedAt.localeCompare(a.raisedAt));
+  }
+  raiseIssue(actorId: string, projectId: string, input: { category: IssueCategory; severity: IssueSeverity; title: string; description: string; assetId?: string; beforeAttachmentIds: string[]; isSnag?: boolean; source?: Issue["source"]; linkedVisitId?: string }): Issue {
+    this.require(actorId, "issue.create", projectId);
+    if (!input.title.trim()) throw new ApiError("Title is required", "invalid");
+    if (input.source !== "telemetry_alert" && !input.beforeAttachmentIds.length) throw new ApiError("A 'before' photo is required to raise an issue", "invalid");
+    if (input.assetId && !this.assets.some((a) => a.id === input.assetId && a.projectId === projectId)) throw new ApiError("Asset is not on this project", "invalid");
+    const at = this.now();
+    const i: Issue = { id: this.id("iss"), projectId, assetId: input.assetId, category: input.category, severity: input.severity, title: input.title.trim(), description: input.description.trim(), raisedBy: actorId, raisedAt: at,
+      source: input.source ?? "manual", status: "open", costToResolve: 0, linkedVisitId: input.linkedVisitId, beforeAttachmentIds: input.beforeAttachmentIds, afterAttachmentIds: [], isSnag: !!input.isSnag,
+      slaDueAt: new Date(new Date(at).getTime() + this.slaHours(input.severity) * 3600000).toISOString(), createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
+    this.issues.push(i);
+    this.log(projectId, actorId, "issue", `Issue raised — ${i.severity.toUpperCase()} · ${i.title} (SLA ${this.slaHours(i.severity)} h)`, i.description, { model: "Issue", id: i.id });
+    this.emit(); return i;
+  }
+  setIssueStatus(actorId: string, issueId: string, status: "in_progress" | "awaiting_parts", assigneeId?: string) {
+    const i = this.issues.find((x) => x.id === issueId); if (!i) throw new ApiError("Issue not found", "not_found");
+    this.require(actorId, "issue.update", i.projectId);
+    if (["closed", "wont_fix", "resolved"].includes(i.status)) throw new ApiError(`Issue is ${i.status.replace("_", " ")}`, "conflict");
+    i.status = status; if (assigneeId) i.assigneeId = assigneeId; i.updatedAt = this.now(); i.updatedBy = actorId;
+    this.log(i.projectId, actorId, "issue", `${i.title} → ${status.replace("_", " ")}${assigneeId ? ` (assigned ${this.userName(assigneeId)})` : ""}`, undefined, { model: "Issue", id: i.id });
+    this.emit();
+  }
+  /** Resolution re-enters review: an 'after' photo is mandatory; the checker closes it. */
+  resolveIssue(actorId: string, issueId: string, input: { rootCause: string; resolution: string; afterAttachmentIds: string[]; costToResolve?: number; visitId?: string }) {
+    const i = this.issues.find((x) => x.id === issueId); if (!i) throw new ApiError("Issue not found", "not_found");
+    this.require(actorId, "issue.update", i.projectId);
+    if (["closed", "wont_fix", "resolved"].includes(i.status)) throw new ApiError(`Issue is already ${i.status.replace("_", " ")}`, "conflict");
+    if (!input.resolution.trim()) throw new ApiError("Resolution is required", "invalid");
+    if (!input.afterAttachmentIds.length) throw new ApiError("An 'after' photo is required to resolve an issue", "invalid");
+    const at = this.now();
+    Object.assign(i, { status: "resolved", rootCause: input.rootCause.trim(), resolution: input.resolution.trim(), afterAttachmentIds: input.afterAttachmentIds, costToResolve: input.costToResolve || 0, linkedVisitId: input.visitId ?? i.linkedVisitId,
+      resolvedBy: actorId, resolvedAt: at, updatedAt: at, updatedBy: actorId, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: i.reviewVersion + 1, checkedBy: undefined, checkedAt: undefined, checkComment: undefined });
+    this.log(i.projectId, actorId, "issue", `Resolved (pending check) — ${i.title}`, `${input.rootCause.trim()} → ${input.resolution.trim()}`, { model: "Issue", id: i.id });
+    this.emit();
+  }
+
+  listCommissioning(projectId: string) { return this.commissionings.filter((c) => c.projectId === projectId).sort((a, b) => b.date.localeCompare(a.date)); }
+  createCommissioning(actorId: string, projectId: string, input: { date: string; result: CommissioningRecord["result"]; notes: string; items: { key: string; measuredValue?: string; pass: boolean; comment?: string; attachmentId?: string }[]; meter: MeterIntegrity; clientWitness?: CommissioningRecord["clientWitness"]; attachmentIds: string[]; stationId?: string }): CommissioningRecord {
+    this.require(actorId, "commissioning.create", projectId);
+    const missing = COMMISSIONING_TEMPLATE.filter((t) => !input.items.some((i) => i.key === t.key)); if (missing.length) throw new ApiError(`Checklist incomplete: ${missing.map((m) => m.label).join(", ")}`, "invalid");
+    const fails = input.items.filter((i) => !i.pass); if (input.result === "pass" && fails.length) throw new ApiError(`Result cannot be "pass" with ${fails.length} failed item${fails.length > 1 ? "s" : ""}`, "invalid");
+    if (!input.attachmentIds.length) throw new ApiError("Commissioning photos are required", "invalid");
+    const at = this.now();
+    const c: CommissioningRecord = { id: this.id("com"), projectId, stationId: input.stationId, date: input.date, engineerId: actorId, result: input.result, notes: input.notes.trim(),
+      items: COMMISSIONING_TEMPLATE.map((t) => { const i = input.items.find((x) => x.key === t.key)!; return { key: t.key, label: t.label, unit: t.unit, measuredValue: i.measuredValue, pass: i.pass, comment: i.comment, attachmentId: i.attachmentId }; }),
+      meter: input.meter, clientWitness: input.clientWitness, attachmentIds: input.attachmentIds, createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
+    this.commissionings.push(c);
+    this.log(projectId, actorId, "commissioning", `Commissioning record submitted — ${c.result} (${c.items.filter((i) => i.pass).length}/${c.items.length} pass) · pending check`, c.notes, { model: "CommissioningRecord", id: c.id });
+    this.emit(); return c;
+  }
+  /** A checked commissioning record IS the gate-5 evidence: it emits the matching checked documents. */
+  private emitCommissioningEvidence(c: CommissioningRecord, checkerId: string) {
+    const at = this.now(); const meterOk = Object.values(c.meter).every(Boolean);
+    const mk = (docType: DocType, title: string) => {
+      if (this.documents.some((d) => d.projectId === c.projectId && d.docType === docType && d.reviewStatus === "checked")) return;
+      const prior = this.documents.filter((d) => d.projectId === c.projectId && d.docType === docType).length;
+      this.documents.push({ id: this.id("doc"), projectId: c.projectId, docType, title, status: "approved", issuedAt: c.date, issuer: this.userName(c.engineerId), version: prior + 1, fileName: `${docType}-${c.date}.pdf`, sizeBytes: 240_000,
+        createdAt: at, createdBy: c.engineerId, updatedAt: at, updatedBy: checkerId, reviewStatus: "checked", submittedBy: c.engineerId, submittedAt: c.submittedAt, checkedBy: checkerId, checkedAt: at, checkComment: "Generated from checked commissioning record", reviewVersion: 1 });
+    };
+    mk("commissioning_record", `Commissioning record ${c.date} — ${c.result}`);
+    if (meterOk) mk("meter_integrity", `Meter data-integrity checks ${c.date} — all pass`);
+    if (c.clientWitness?.signatureAttachmentId) mk("client_witness", `Client witness — ${c.clientWitness.name}`);
+    if (c.attachmentIds.length) mk("commissioning_photos", `Commissioning photos (${c.attachmentIds.length})`);
+    this.log(c.projectId, checkerId, "commissioning", `Commissioning checked — gate-5 evidence generated${meterOk ? "" : " (meter integrity NOT satisfied)"}`, undefined, { model: "CommissioningRecord", id: c.id });
+  }
+
+  listHse(projectId?: string) { return this.hseIncidents.filter((h) => !projectId || h.projectId === projectId).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)); }
+  reportHse(actorId: string, projectId: string, input: { type: HseType; severity: IssueSeverity; description: string; actions: string; occurredAt: string; visitId?: string; attachmentIds?: string[] }): HseIncident {
+    this.require(actorId, "hse.create", projectId);
+    if (!input.description.trim()) throw new ApiError("Description is required", "invalid");
+    const at = this.now();
+    const h: HseIncident = { id: this.id("hse"), projectId, visitId: input.visitId, type: input.type, severity: input.severity, description: input.description.trim(), actions: input.actions.trim(), occurredAt: input.occurredAt, reportedBy: actorId,
+      attachmentIds: input.attachmentIds ?? [], createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
+    this.hseIncidents.push(h);
+    this.log(projectId, actorId, "hse", `HSE ${HSE_TYPE_LABEL[h.type]} reported — ${h.severity} (pending check)`, h.description, { model: "HseIncident", id: h.id });
+    this.emit(); return h;
+  }
+
+  listWarranty(projectId?: string) { return this.warrantyClaims.filter((w) => !projectId || w.projectId === projectId).sort((a, b) => b.claimedAt.localeCompare(a.claimedAt)); }
+  raiseWarrantyClaim(actorId: string, projectId: string, input: { assetId: string; issueId?: string; notes: string }): WarrantyClaim {
+    this.require(actorId, "warranty.create", projectId);
+    const a = this.assets.find((x) => x.id === input.assetId && x.projectId === projectId); if (!a) throw new ApiError("Asset is not on this project", "invalid");
+    if (a.warrantyEnd && a.warrantyEnd < this.now().slice(0, 10)) throw new ApiError(`Warranty on ${a.serial} expired ${a.warrantyEnd}`, "invalid");
+    const at = this.now();
+    const w: WarrantyClaim = { id: this.id("war"), projectId, assetId: a.id, issueId: input.issueId, vendorId: a.vendorId, claimedAt: at, status: "raised", costRecovered: 0, notes: input.notes.trim(),
+      createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
+    this.warrantyClaims.push(w); if (input.issueId) { const i = this.issues.find((x) => x.id === input.issueId); if (i) i.warrantyClaimId = w.id; }
+    this.log(projectId, actorId, "warranty", `Warranty claim raised — ${a.make} ${a.model} ${a.serial} → ${this.vendorName(a.vendorId)}`, w.notes, { model: "WarrantyClaim", id: w.id });
+    this.emit(); return w;
+  }
+  updateWarrantyClaim(actorId: string, claimId: string, input: { status: WarrantyStatus; outcome?: string; costRecovered?: number }) {
+    const w = this.warrantyClaims.find((x) => x.id === claimId); if (!w) throw new ApiError("Claim not found", "not_found");
+    this.require(actorId, "warranty.create", w.projectId);
+    const at = this.now();
+    Object.assign(w, { status: input.status, outcome: input.outcome?.trim() || w.outcome, costRecovered: input.costRecovered ?? w.costRecovered, updatedAt: at, updatedBy: actorId,
+      reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: w.reviewVersion + 1, checkedBy: undefined, checkedAt: undefined, checkComment: undefined });
+    this.log(w.projectId, actorId, "warranty", `Warranty claim → ${input.status}${input.costRecovered ? ` · ${this.fmt(input.costRecovered)} recovered` : ""} (pending check)`, input.outcome, { model: "WarrantyClaim", id: w.id });
+    this.emit();
   }
 }
 

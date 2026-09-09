@@ -1,4 +1,4 @@
-import { api, ApiError } from "../dist/api.mjs";
+import { api, ApiError, COMMISSIONING_TEMPLATE } from "../dist/api.mjs";
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log("FAIL:", m); } else console.log("ok  :", m); };
 const expectErr = (fn, code, m) => { try { fn(); ok(false, m + " (no error thrown)"); } catch (e) { ok(e instanceof ApiError && e.code === code, `${m} → ${e.code}: ${e.message}`); } };
@@ -79,4 +79,88 @@ api.matchBill("u_fin", "qb5", "po5"); ok(api.listQbBills().find((b) => b.id === 
 ok(api.reviewQueue("u_sk").length === 0, "store keeper has no check permissions → empty queue");
 ok(api.reviewQueue("u_pm1").every((i) => i.submittedBy !== "u_pm1"), "PM never sees own submissions");
 ok(api.reviewQueue("u_fin").some((i) => i.kind === "goods_receipt" || i.kind === "cost_item") || true, "finance queue reachable");
+
+// ===================== Phase 3 =====================
+console.log("\n--- Phase 3 ---");
+// transfers: store keeper makes, Finance checks (not project-scoped); serialised transfer moves the asset
+const vanFuse = api.balanceOf("it_fuse", "loc_van1").qtyOnHand; const whFuse = api.balanceOf("it_fuse", "loc_wh").qtyOnHand;
+const tr = api.transferStock("u_sk", { itemId: "it_fuse", qty: 5, fromId: "loc_wh", toId: "loc_van1" });
+expectErr(() => api.check("stock_movement", tr.id, "u_pm1", "checked"), "forbidden", "PM cannot check a non-project transfer");
+api.check("stock_movement", tr.id, "u_fin", "checked");
+ok(api.balanceOf("it_fuse", "loc_van1").qtyOnHand === vanFuse + 5 && api.balanceOf("it_fuse", "loc_wh").qtyOnHand === whFuse - 5, "transfer moves 5 fuses warehouse → van after Finance check");
+const panelSer = api.inStockSerials("it_panel", "loc_wh")[0];
+const tr2 = api.transferStock("u_sk", { itemId: "it_panel", qty: 1, fromId: "loc_wh", toId: "loc_van1", serials: [panelSer] });
+api.check("stock_movement", tr2.id, "u_fin", "checked");
+ok(api.assets.find((a) => a.serial === panelSer).locationId === "loc_van1", `serialised transfer moves ${panelSer} to the van`);
+
+// site visit: photo required; parts reserve van stock; PM checks → stock deducted, O&M actual posted
+const t0 = new Date(Date.now() - 7200000).toISOString(), t1 = new Date().toISOString();
+expectErr(() => api.logVisit("u_ft1", "p1", { visitType: "fault", startedAt: t0, endedAt: t1, findings: "x", actionsTaken: "y", costTravel: 1000, costLabour: 2000, attachmentIds: [] }), "invalid", "visit needs a site photo");
+const p1Act0 = api.money("p1").actual; const vanMc4 = api.available("it_mc4", "loc_van1"); const wacMc4 = api.wacOf("it_mc4");
+const vis = api.logVisit("u_ft1", "p1", { visitType: "fault", startedAt: t0, endedAt: t1, findings: "f", actionsTaken: "a", costTravel: 10000, costLabour: 15000, parts: [{ itemId: "it_mc4", qty: 4 }], attachmentIds: ["att-v"] });
+ok(vis.reviewStatus === "pending" && vis.costParts === 4 * wacMc4, "visit pending, parts costed at WAC");
+ok(api.available("it_mc4", "loc_van1") === vanMc4 - 4, "visit parts reserve van stock while pending");
+expectErr(() => api.check("site_visit", vis.id, "u_ft1", "checked"), "forbidden", "tech cannot check own visit");
+expectErr(() => api.check("site_visit", vis.id, "u_fin", "checked"), "forbidden", "finance cannot check a visit");
+api.check("site_visit", vis.id, "u_pm1", "checked");
+ok(api.balanceOf("it_mc4", "loc_van1").qtyOnHand === vanMc4 - 4, "van stock deducted after visit check");
+ok(api.money("p1").actual === p1Act0 + 25000 + 4 * wacMc4, "actual += travel + labour + parts at WAC");
+
+// issue lifecycle: before photo → report checked → in progress → resolve needs after photo → reject → resolve → close posts cost
+expectErr(() => api.raiseIssue("u_ft1", "p1", { category: "electrical", severity: "high", title: "t", description: "d", beforeAttachmentIds: [] }), "invalid", "issue needs a before photo");
+const isu = api.raiseIssue("u_ft1", "p1", { category: "electrical", severity: "critical", title: "Breaker trips", description: "d", beforeAttachmentIds: ["b1"] });
+const sla = api.issueSla(isu); ok(sla.hoursLeft <= 24 && sla.hoursLeft > 22 && !sla.breached, "critical SLA = 24 h, not yet breached");
+expectErr(() => api.check("issue", isu.id, "u_ft1", "checked"), "forbidden", "reporter cannot check own issue");
+api.check("issue", isu.id, "u_le1", "checked"); ok(isu.status === "open" && isu.reviewStatus === "checked", "report checked by lead engineer, stays open");
+api.setIssueStatus("u_ft1", isu.id, "in_progress", "u_ft1");
+expectErr(() => api.resolveIssue("u_ft1", isu.id, { rootCause: "r", resolution: "x", afterAttachmentIds: [] }), "invalid", "resolution needs an after photo");
+api.resolveIssue("u_ft1", isu.id, { rootCause: "loose lug", resolution: "torqued", afterAttachmentIds: ["a1"], costToResolve: 5000 });
+ok(isu.status === "resolved" && isu.reviewStatus === "pending" && isu.reviewVersion === 2, "resolution re-enters review as v2");
+api.check("issue", isu.id, "u_pm1", "rejected", "still tripping");
+ok(isu.status === "in_progress" && isu.reviewStatus === "rejected", "rejected resolution → back to in progress");
+api.resolveIssue("u_ft1", isu.id, { rootCause: "loose lug", resolution: "replaced lug", afterAttachmentIds: ["a2"], costToResolve: 5000 });
+const p1Act1 = api.money("p1").actual; api.check("issue", isu.id, "u_pm1", "checked");
+ok(isu.status === "closed" && api.money("p1").actual === p1Act1 + 5000, "checked resolution closes the issue and posts ₦5k O&M actual");
+
+// commissioning → gate-5 evidence
+const items = COMMISSIONING_TEMPLATE.map((t) => ({ key: t.key, pass: true, measuredValue: "ok" }));
+const meter = { serialAscii: true, ctRatioVerified: true, firstLiveReading: true, historicalOk: true };
+expectErr(() => api.createCommissioning("u_ft1", "p1", { date: "2026-09-09", result: "pass", notes: "", items, meter, attachmentIds: ["c1"] }), "forbidden", "field tech cannot create a commissioning record");
+expectErr(() => api.createCommissioning("u_le1", "p1", { date: "2026-09-09", result: "pass", notes: "", items: items.map((i, k) => (k === 0 ? { ...i, pass: false } : i)), meter, attachmentIds: ["c1"] }), "invalid", "'pass' with a failed checklist item is rejected");
+const com = api.createCommissioning("u_le1", "p1", { date: "2026-09-09", result: "pass", notes: "n", items, meter, clientWitness: { name: "Client", signatureAttachmentId: "sig" }, attachmentIds: ["c1"] });
+expectErr(() => api.check("commissioning", com.id, "u_pm1", "checked"), "forbidden", "PM cannot check a commissioning record");
+expectErr(() => api.check("commissioning", com.id, "u_le1", "checked"), "forbidden", "engineer cannot check own record");
+api.check("commissioning", com.id, "u_dir", "checked");
+const g5 = api.listDocuments("p1").filter((d) => ["commissioning_record", "meter_integrity", "client_witness", "commissioning_photos"].includes(d.docType) && d.reviewStatus === "checked");
+ok(g5.length === 4, "checked commissioning generates all 4 gate-5 evidence documents");
+
+// HSE + warranty
+const hse = api.reportHse("u_ft1", "p1", { type: "near_miss", severity: "low", description: "d", actions: "a", occurredAt: t1 });
+api.check("hse", hse.id, "u_pm1", "checked"); ok(hse.reviewStatus === "checked", "HSE incident checked by PM");
+const p4asset = api.listAssets({ projectId: "p4", status: "installed" })[0];
+const war = api.raiseWarrantyClaim("u_le2", "p4", { assetId: p4asset.id, notes: "n" });
+api.check("warranty", war.id, "u_pm2", "checked");
+const p4Act = api.money("p4").actual;
+api.updateWarrantyClaim("u_le2", war.id, { status: "refunded", outcome: "refund", costRecovered: 120000 });
+ok(war.reviewStatus === "pending" && war.reviewVersion === 2, "claim update re-enters review");
+api.check("warranty", war.id, "u_fin", "checked");
+ok(api.money("p4").actual === p4Act - 120000, "checked refund credits ₦120k to the project");
+
+// stock count: all lines counted; out-of-tolerance needs a note; Finance approval posts adjustments
+const sc = api.listCounts().find((c) => c.id === "sc1");
+expectErr(() => api.submitCount("u_sk", "sc1"), "invalid", "count with uncounted lines cannot be submitted");
+api.enterCount("u_sk", "sc1", sc.lines.filter((l) => l.countedQty === null).map((l) => ({ itemId: l.itemId, countedQty: l.expectedQty })));
+expectErr(() => api.submitCount("u_sk", "sc1"), "invalid", "+2 fuses (>2% tolerance) without a note is rejected");
+api.enterCount("u_sk", "sc1", [{ itemId: "it_fuse", countedQty: 52, note: "found 2 in returns bin" }]);
+const scAp = api.submitCount("u_sk", "sc1"); ok(scAp.requiredRoles.join() === "finance", "submitted count → Finance approval");
+const whMc4 = api.balanceOf("it_mc4", "loc_wh").qtyOnHand; const whFuse2 = api.balanceOf("it_fuse", "loc_wh").qtyOnHand;
+expectErr(() => api.decide(scAp.id, "u_sk", "approved"), "forbidden", "store keeper cannot approve own count");
+api.decide(scAp.id, "u_fin", "approved");
+ok(api.stockCounts.find((c) => c.id === "sc1").status === "approved", "count approved");
+ok(api.balanceOf("it_mc4", "loc_wh").qtyOnHand === whMc4 - 8 && api.balanceOf("it_fuse", "loc_wh").qtyOnHand === whFuse2 + 2, "approval posts −8 MC4 and +2 fuse adjustments");
+
+// queue scoping for the new kinds
+const kinds = api.reviewQueue("u_pm1").map((i) => i.kind);
+ok(kinds.includes("site_visit") && kinds.includes("issue") && kinds.includes("hse"), "PM queue carries the seeded visit, issue and HSE report");
+ok(!api.reviewQueue("u_ft1").length, "field tech has no check permissions → empty queue");
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED"); process.exit(fails ? 1 : 0);
