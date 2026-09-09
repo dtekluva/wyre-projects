@@ -32,11 +32,39 @@ export class MockApi {
 
   private listeners = new Set<Listener>();
   private seq = 1000;
+  private static KEY = "wyre.tracker.state.v1";
+
+  constructor() { this.load(); }
+  /** Phase 1 only: the mock store survives page reloads via localStorage. The Django backend replaces this. */
+  private load() {
+    try {
+      const raw = typeof localStorage !== "undefined" ? localStorage.getItem(MockApi.KEY) : null;
+      if (!raw) return;
+      const st = JSON.parse(raw);
+      Object.assign(this, { projects: st.projects, memberships: st.memberships, documents: st.documents, attachments: st.attachments,
+        events: st.events, approvals: st.approvals, thresholds: st.thresholds, seq: st.seq ?? 1000 });
+    } catch { /* ignore corrupt state */ }
+  }
+  private persist() {
+    try {
+      if (typeof localStorage === "undefined") return;
+      const { projects, memberships, documents, attachments, events, approvals, thresholds, seq } = this;
+      localStorage.setItem(MockApi.KEY, JSON.stringify({ projects, memberships, documents, attachments, events, approvals, thresholds, seq }));
+    } catch { /* quota / private mode */ }
+  }
+  /** Restore the seed data set. */
+  reset() {
+    try { localStorage.removeItem(MockApi.KEY); } catch { /* ignore */ }
+    Object.assign(this, { projects: clone(seed.projects), memberships: clone(seed.memberships), documents: clone(seed.documents),
+      attachments: clone(seed.attachments), events: clone(seed.events), approvals: clone(seed.approvals), thresholds: clone(seed.thresholds), seq: 1000 });
+    this.emit();
+  }
+  isDirty() { try { return typeof localStorage !== "undefined" && localStorage.getItem(MockApi.KEY) !== null; } catch { return false; } }
   private id = (p: string) => `${p}${++this.seq}`;
   private now = () => new Date().toISOString();
 
   subscribe(fn: Listener) { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
-  private emit() { this.listeners.forEach((fn) => fn()); }
+  private emit() { this.persist(); this.listeners.forEach((fn) => fn()); }
 
   // ---------- users & access ----------
   getUsers() { return this.users; }

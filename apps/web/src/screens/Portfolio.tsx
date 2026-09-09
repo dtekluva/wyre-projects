@@ -49,8 +49,8 @@ export function Portfolio() {
               <td className="num ns-mono">{naira(p.contractValue, true)}</td>
               <td><span className="row"><Bar pct={burn} /><span className="sm ns-mono">{p.approvedBudget ? `${burn}%` : "—"}</span></span></td>
               <td>{slip > 0 ? <Badge variant={slip > 7 ? "danger" : "warning"}>+{slip} d</Badge> : p.stage === 8 ? <span className="sm muted">—</span> : <Badge variant="success">on track</Badge>}</td>
-              <td className="row">{p.openIssues.critical > 0 && <Badge variant="danger">{p.openIssues.critical} crit</Badge>}{p.openIssues.high > 0 && <Badge variant="warning">{p.openIssues.high} high</Badge>}
-                {(p.openIssues.medium + p.openIssues.low) > 0 && <span className="sm muted">{p.openIssues.medium + p.openIssues.low} other</span>}{Object.values(p.openIssues).every((n) => n === 0) && <span className="sm muted">none</span>}</td>
+              <td><span className="row row--wrap">{p.openIssues.critical > 0 && <Badge variant="danger">{p.openIssues.critical} crit</Badge>}{p.openIssues.high > 0 && <Badge variant="warning">{p.openIssues.high} high</Badge>}
+                {(p.openIssues.medium + p.openIssues.low) > 0 && <span className="sm muted">{p.openIssues.medium + p.openIssues.low} other</span>}{Object.values(p.openIssues).every((n) => n === 0) && <span className="sm muted">none</span>}</span></td>
               <td className="num">{pending ? <Badge variant="warning">{pending}</Badge> : <span className="sm muted">0</span>}</td>
               <td className="sm">{g.terminal ? <span className="muted">closed</span> : g.pendingApproval ? <Badge variant="info">awaiting approval</Badge> : g.ready ? <Badge variant="success">ready</Badge> : <span className="muted">{ok}/{g.items.length} checked</span>}</td>
             </tr>; })}

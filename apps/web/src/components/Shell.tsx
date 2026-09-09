@@ -30,7 +30,10 @@ export function Shell() {
           {isAdmin && <Item to="/admin/users" label="Users & roles" />}
           {seesThresholds && <Item to="/admin/thresholds" label="Thresholds" />}
         </>}
-        <div className="nav__foot">Phase 1 · frontend-first · mock API</div>
+        <div className="nav__foot">Phase 1 · frontend-first · mock API
+          {api.isDirty() && <div style={{ marginTop: 6 }}><button className="ns-btn ns-btn--ghost ns-btn--sm" style={{ color: "inherit", opacity: .9 }}
+            onClick={() => { if (confirm("Discard all demo changes and restore the seed data?")) api.reset(); }}>Reset demo data</button></div>}
+        </div>
       </nav>
       <div className="app__main">
         <header className="topbar">
