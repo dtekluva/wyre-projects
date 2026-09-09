@@ -1,0 +1,207 @@
+/* ============================================================
+   Northstar Components v1.0 — CNI Group Governance Portal
+   Composes ONLY from tokens.css (--ns-*). No raw values here.
+   Load order: tokens.css THEN components.css.
+   ============================================================ */
+
+/* ---- Base reset scoped to the component root ---- */
+.ns { font-family: var(--ns-font-primary); color: var(--ns-color-text-primary); }
+.ns *, .ns *::before, .ns *::after { box-sizing: border-box; }
+
+/* Universal focus: visible ring, never removed (Ch.37) */
+.ns :focus-visible {
+  outline: none;
+  box-shadow: var(--ns-focus-ring);
+  border-radius: var(--ns-radius-small);
+}
+
+/* ============================================================
+   BUTTON — hierarchy: primary / secondary / ghost / danger
+   ============================================================ */
+.ns-btn {
+  --_h: 40px;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--ns-space-2xs);
+  min-height: var(--_h); padding: 0 var(--ns-space-md);
+  font-family: inherit; font-size: var(--ns-size-body-sm); font-weight: var(--ns-weight-semibold);
+  line-height: 1; white-space: nowrap;
+  border: var(--ns-border-hairline) solid transparent; border-radius: var(--ns-radius-medium);
+  cursor: pointer; user-select: none;
+  transition: background var(--ns-duration-fast) var(--ns-easing-standard),
+              border-color var(--ns-duration-fast) var(--ns-easing-standard),
+              color var(--ns-duration-fast) var(--ns-easing-standard);
+}
+.ns-btn:disabled, .ns-btn[aria-disabled="true"] { opacity: var(--ns-opacity-disabled); cursor: not-allowed; }
+.ns-btn .ns-btn__spinner { width: 14px; height: 14px; border-radius: var(--ns-radius-full);
+  border: 2px solid currentColor; border-right-color: transparent; animation: ns-spin 0.7s linear infinite; }
+@keyframes ns-spin { to { transform: rotate(360deg); } }
+
+.ns-btn--sm { --_h: 32px; padding: 0 var(--ns-space-sm); font-size: var(--ns-size-caption); }
+.ns-btn--lg { --_h: 48px; padding: 0 var(--ns-space-lg); font-size: var(--ns-size-body); }
+.ns-btn--block { display: flex; width: 100%; }
+
+.ns-btn--primary { background: var(--ns-color-primary); color: var(--ns-color-on-primary); }
+.ns-btn--primary:hover:not(:disabled) { background: var(--ns-color-primary-hover); }
+.ns-btn--primary:active:not(:disabled) { background: var(--ns-color-primary-pressed); }
+
+.ns-btn--secondary { background: var(--ns-color-surface); color: var(--ns-color-text-primary); border-color: var(--ns-color-border-default); }
+.ns-btn--secondary:hover:not(:disabled) { background: var(--ns-color-surface-hover); border-color: var(--ns-color-border-strong); }
+
+.ns-btn--ghost { background: transparent; color: var(--ns-color-text-secondary); }
+.ns-btn--ghost:hover:not(:disabled) { background: var(--ns-color-surface-hover); color: var(--ns-color-text-primary); }
+
+.ns-btn--danger { background: var(--ns-color-danger-fill); color: var(--ns-color-danger-on); }
+.ns-btn--danger:hover:not(:disabled) { filter: brightness(0.94); }
+
+.ns-btn--ai { background: var(--ns-color-ai-fill); color: var(--ns-color-on-ai); }
+.ns-btn--ai:hover:not(:disabled) { filter: brightness(0.94); }
+
+/* ============================================================
+   BADGE / STATUS PILL — color = meaning, always with a label
+   ============================================================ */
+.ns-badge {
+  display: inline-flex; align-items: center; gap: var(--ns-space-3xs);
+  padding: 2px var(--ns-space-2xs); border-radius: var(--ns-radius-full);
+  font-size: var(--ns-size-caption); font-weight: var(--ns-weight-semibold); line-height: 1.4;
+  white-space: nowrap;
+}
+.ns-badge__dot { width: 6px; height: 6px; border-radius: var(--ns-radius-full); background: currentColor; }
+.ns-badge--neutral { background: var(--ns-color-bg-secondary); color: var(--ns-color-text-secondary); }
+.ns-badge--success { background: var(--ns-color-success-subtle); color: var(--ns-color-success-text); }
+.ns-badge--warning { background: var(--ns-color-warning-subtle); color: var(--ns-color-warning-text); }
+.ns-badge--danger  { background: var(--ns-color-danger-subtle);  color: var(--ns-color-danger-text); }
+.ns-badge--info    { background: var(--ns-color-info-subtle);    color: var(--ns-color-info-text); }
+.ns-badge--ai      { background: var(--ns-color-ai-subtle);      color: var(--ns-color-ai-text); }
+
+/* ============================================================
+   FIELD / INPUT
+   ============================================================ */
+.ns-field { display: flex; flex-direction: column; gap: var(--ns-space-3xs); }
+.ns-field__label { font-size: var(--ns-size-body-sm); font-weight: var(--ns-weight-medium); color: var(--ns-color-text-primary); }
+.ns-field__hint { font-size: var(--ns-size-caption); color: var(--ns-color-text-tertiary); }
+.ns-field__error { font-size: var(--ns-size-caption); color: var(--ns-color-danger-text); }
+.ns-input {
+  min-height: 40px; padding: 0 var(--ns-space-xs); width: 100%;
+  font-family: inherit; font-size: var(--ns-size-body); color: var(--ns-color-text-primary);
+  background: var(--ns-color-surface);
+  border: var(--ns-border-hairline) solid var(--ns-color-border-default);
+  border-radius: var(--ns-radius-medium);
+  transition: border-color var(--ns-duration-fast) var(--ns-easing-standard);
+}
+.ns-input::placeholder { color: var(--ns-color-text-disabled); }
+.ns-input:hover { border-color: var(--ns-color-border-strong); }
+.ns-input:focus-visible { outline: none; border-color: var(--ns-color-border-focus); box-shadow: var(--ns-focus-ring); }
+.ns-input[aria-invalid="true"] { border-color: var(--ns-color-danger-fill); }
+.ns-input:disabled { opacity: var(--ns-opacity-disabled); cursor: not-allowed; }
+
+/* ============================================================
+   CARD — the base surface (Ch.30/31: border + minimal shadow)
+   ============================================================ */
+.ns-card {
+  background: var(--ns-color-surface);
+  border: var(--ns-border-hairline) solid var(--ns-color-border-default);
+  border-radius: var(--ns-radius-large);
+  box-shadow: var(--ns-elevation-1);
+}
+.ns-card__body { padding: var(--ns-space-md); }
+.ns-card__header { padding: var(--ns-space-md); border-bottom: var(--ns-border-hairline) solid var(--ns-color-border-subtle); }
+.ns-card__footer { padding: var(--ns-space-md); border-top: var(--ns-border-hairline) solid var(--ns-color-border-subtle);
+  display: flex; gap: var(--ns-space-2xs); justify-content: flex-end; }
+.ns-overline { font-size: var(--ns-size-label); font-weight: var(--ns-weight-semibold);
+  letter-spacing: var(--ns-tracking-label); text-transform: uppercase; color: var(--ns-color-text-tertiary); }
+.ns-mono { font-family: var(--ns-font-mono); font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   APPROVAL CARD — governance primitive: a decision awaiting a human
+   ============================================================ */
+.ns-approval {
+  background: var(--ns-color-surface);
+  border: var(--ns-border-hairline) solid var(--ns-color-border-default);
+  border-left: 3px solid var(--ns-color-warning-fill); /* attention accent; flips per status */
+  border-radius: var(--ns-radius-large);
+  box-shadow: var(--ns-elevation-1);
+  overflow: hidden;
+}
+.ns-approval--pending  { border-left-color: var(--ns-color-warning-fill); }
+.ns-approval--approved { border-left-color: var(--ns-color-success-fill); }
+.ns-approval--rejected { border-left-color: var(--ns-color-danger-fill); }
+.ns-approval__top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ns-space-sm);
+  padding: var(--ns-space-md) var(--ns-space-md) var(--ns-space-2xs); }
+.ns-approval__title { font-size: var(--ns-size-subheading); font-weight: var(--ns-weight-semibold); margin: 0; }
+.ns-approval__meta { display: flex; flex-wrap: wrap; gap: var(--ns-space-sm); padding: 0 var(--ns-space-md) var(--ns-space-sm);
+  color: var(--ns-color-text-secondary); font-size: var(--ns-size-body-sm); }
+.ns-approval__meta b { color: var(--ns-color-text-primary); font-weight: var(--ns-weight-medium); }
+.ns-approval__tally { display: flex; gap: var(--ns-space-md); padding: 0 var(--ns-space-md) var(--ns-space-md); }
+.ns-approval__tally .n { font-size: var(--ns-size-heading); font-weight: var(--ns-weight-bold); }
+.ns-approval__actions { display: flex; gap: var(--ns-space-2xs); padding: var(--ns-space-sm) var(--ns-space-md);
+  background: var(--ns-color-surface-subtle); border-top: var(--ns-border-hairline) solid var(--ns-color-border-subtle); }
+
+/* ============================================================
+   AI INSIGHT PANEL — provenance, not louder (Ch.24). Always identifiable.
+   ============================================================ */
+.ns-ai {
+  background: var(--ns-color-ai-subtle);
+  border: var(--ns-border-hairline) solid var(--ns-color-ai-border);
+  border-radius: var(--ns-radius-large);
+  padding: var(--ns-space-md);
+  position: relative;
+}
+.ns-ai__tag { display: inline-flex; align-items: center; gap: var(--ns-space-3xs);
+  color: var(--ns-color-ai-text); font-size: var(--ns-size-label); font-weight: var(--ns-weight-semibold);
+  letter-spacing: var(--ns-tracking-label); text-transform: uppercase; }
+.ns-ai__glyph { width: 14px; height: 14px; border-radius: var(--ns-radius-small);
+  background: var(--ns-color-ai-fill); display: inline-block; }
+.ns-ai__body { margin: var(--ns-space-2xs) 0 var(--ns-space-2xs); font-size: var(--ns-size-body); color: var(--ns-color-text-primary); }
+.ns-ai__prov { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ns-space-2xs);
+  font-size: var(--ns-size-caption); color: var(--ns-color-text-secondary); }
+.ns-ai__prov a { color: var(--ns-color-ai-text); text-underline-offset: 2px; }
+.ns-ai__conf { display: inline-flex; align-items: center; gap: 4px; }
+.ns-ai__conf .bar { width: 28px; height: 4px; border-radius: var(--ns-radius-full); background: var(--ns-color-ai-border); overflow: hidden; }
+.ns-ai__conf .bar > i { display: block; height: 100%; background: var(--ns-color-ai-fill); }
+.ns-ai__actions { display: flex; gap: var(--ns-space-2xs); margin-top: var(--ns-space-sm); }
+.ns-ai__dismiss { position: absolute; top: var(--ns-space-2xs); right: var(--ns-space-2xs);
+  background: transparent; border: none; color: var(--ns-color-text-tertiary); cursor: pointer;
+  width: 28px; height: 28px; border-radius: var(--ns-radius-small); font-size: 16px; line-height: 1; }
+.ns-ai__dismiss:hover { background: var(--ns-color-surface-hover); color: var(--ns-color-text-primary); }
+
+/* ============================================================
+   TIMELINE — audit log / decision history (tertiary layer)
+   ============================================================ */
+.ns-timeline { list-style: none; margin: 0; padding: 0; }
+.ns-timeline__item { position: relative; padding: 0 0 var(--ns-space-md) var(--ns-space-lg); }
+.ns-timeline__item::before { content: ""; position: absolute; left: 7px; top: 4px; bottom: -4px;
+  width: 2px; background: var(--ns-color-border-default); }
+.ns-timeline__item:last-child::before { display: none; }
+.ns-timeline__dot { position: absolute; left: 0; top: 3px; width: 16px; height: 16px; border-radius: var(--ns-radius-full);
+  background: var(--ns-color-surface); border: 2px solid var(--ns-color-border-strong); }
+.ns-timeline__dot--success { border-color: var(--ns-color-success-fill); }
+.ns-timeline__dot--info { border-color: var(--ns-color-info-fill); }
+.ns-timeline__dot--danger { border-color: var(--ns-color-danger-fill); }
+.ns-timeline__row { display: flex; justify-content: space-between; gap: var(--ns-space-sm); }
+.ns-timeline__who { font-size: var(--ns-size-body-sm); }
+.ns-timeline__who b { font-weight: var(--ns-weight-semibold); }
+.ns-timeline__when { font-size: var(--ns-size-caption); color: var(--ns-color-text-tertiary); white-space: nowrap; }
+
+/* ============================================================
+   WORKSPACE SHELL — sidebar / workspace / context panel (Ch.29 desktop)
+   ============================================================ */
+.ns-shell { display: grid; grid-template-columns: 240px 1fr 300px; min-height: 480px;
+  background: var(--ns-color-canvas); border: var(--ns-border-hairline) solid var(--ns-color-border-default);
+  border-radius: var(--ns-radius-large); overflow: hidden; }
+.ns-shell__nav { background: var(--ns-color-surface); border-right: var(--ns-border-hairline) solid var(--ns-color-border-default);
+  padding: var(--ns-space-md) var(--ns-space-sm); display: flex; flex-direction: column; gap: 2px; }
+.ns-shell__brand { display: flex; align-items: center; gap: var(--ns-space-2xs); font-weight: var(--ns-weight-bold);
+  font-size: var(--ns-size-subheading); padding: 0 var(--ns-space-2xs) var(--ns-space-md); }
+.ns-shell__brand .mark { width: 28px; height: 28px; border-radius: var(--ns-radius-medium);
+  background: var(--ns-color-primary); color: var(--ns-color-on-primary); display: grid; place-items: center; font-size: 13px; }
+.ns-navitem { display: flex; align-items: center; gap: var(--ns-space-2xs); padding: var(--ns-space-2xs) var(--ns-space-2xs);
+  border-radius: var(--ns-radius-medium); color: var(--ns-color-text-secondary); font-size: var(--ns-size-body-sm);
+  font-weight: var(--ns-weight-medium); cursor: pointer; text-decoration: none; }
+.ns-navitem:hover { background: var(--ns-color-surface-hover); color: var(--ns-color-text-primary); }
+.ns-navitem--active { background: var(--ns-color-primary-subtle); color: var(--ns-color-primary); }
+.ns-shell__work { padding: var(--ns-space-lg); overflow: auto; }
+.ns-shell__ctx { background: var(--ns-color-surface); border-left: var(--ns-border-hairline) solid var(--ns-color-border-default);
+  padding: var(--ns-space-md); overflow: auto; }
+@media (max-width: 900px) {
+  .ns-shell { grid-template-columns: 1fr; }
+  .ns-shell__nav, .ns-shell__ctx { display: none; }
+}

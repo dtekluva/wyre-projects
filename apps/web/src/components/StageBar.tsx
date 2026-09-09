@@ -1,0 +1,12 @@
+import { STAGES, type Stage } from "@wyre/api";
+export function StageBar({ stage }: { stage: Stage }) {
+  return (
+    <div className="stagebar" role="list" aria-label="Lifecycle stages">
+      {STAGES.map((s) => {
+        const cls = s.stage < stage ? "stagebar__step--done" : s.stage === stage ? "stagebar__step--current" : "";
+        return <div key={s.stage} role="listitem" className={`stagebar__step ${cls}`} title={s.name}>
+          <div className="stagebar__track" /><div className="stagebar__label"><b>{s.stage}</b>{s.short}</div></div>;
+      })}
+    </div>
+  );
+}

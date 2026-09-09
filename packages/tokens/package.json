@@ -1,0 +1,9 @@
+{
+  "name": "@wyre/tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/tokens.ts",
+  "exports": { ".": "./dist/tokens.ts", "./css": "./dist/tokens.css" },
+  "scripts": { "build": "node build.mjs" }
+}
