@@ -15,6 +15,7 @@ import { ProjectMoney } from "./screens/ProjectMoney";
 import { ProjectAssets } from "./screens/ProjectAssets";
 import { Inventory } from "./screens/Inventory";
 import { Reconciliation } from "./screens/Reconciliation";
+import { ProjectField } from "./screens/ProjectField";
 
 export function App() {
   return (
@@ -29,6 +30,7 @@ export function App() {
             <Route path="people" element={<ProjectPeople />} />
             <Route path="money" element={<ProjectMoney />} />
             <Route path="assets" element={<ProjectAssets />} />
+            <Route path="field" element={<ProjectField />} />
           </Route>
           <Route path="work/reviews" element={<ReviewQueue />} />
           <Route path="work/approvals" element={<Approvals />} />

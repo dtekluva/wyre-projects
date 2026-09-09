@@ -292,3 +292,12 @@ select.ns-input { min-height: 36px; }
 .ledger td, .ledger th { padding: 8px 10px; font-size: var(--ns-size-caption); }
 .warn-cell { color: var(--ns-color-danger-text); font-weight: var(--ns-weight-semibold); }
 .select-multi { min-height: 120px; padding: 6px; font-family: var(--ns-font-mono); font-size: var(--ns-size-caption); }
+
+/* ---------- Phase 3: field ---------- */
+.board { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--ns-space-xs); }
+.board__col { background: var(--ns-color-bg-secondary); border-radius: var(--ns-radius-large); padding: 8px; display: flex; flex-direction: column; gap: 8px; min-height: 120px; }
+.board__head { font-size: var(--ns-size-label); font-weight: var(--ns-weight-bold); text-transform: uppercase; letter-spacing: var(--ns-tracking-label); color: var(--ns-color-text-secondary); padding: 2px 4px; }
+.issue { background: var(--ns-color-surface); border: var(--ns-border-hairline) solid var(--ns-color-border-default); border-radius: var(--ns-radius-medium); padding: 10px; display: flex; flex-direction: column; gap: 4px; font-size: var(--ns-size-body-sm); }
+.chip--on { background: var(--ns-color-primary-subtle); border-color: var(--ns-color-primary); color: var(--ns-color-primary); font-weight: var(--ns-weight-semibold); }
+@media (max-width: 1150px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 860px) { .board { grid-template-columns: 1fr; } }

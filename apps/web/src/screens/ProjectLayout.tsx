@@ -37,7 +37,7 @@ export function ProjectLayout() {
         <Tab to={`/projects/${p.id}/people`} label="People" />
         <Tab to={`/projects/${p.id}/money`} label="Money" />
         <Tab to={`/projects/${p.id}/assets`} label="Assets & stock" />
-        <Tab to="#" label="Field" soon="Phase 3" />
+        <Tab to={`/projects/${p.id}/field`} label="Field" />
       </nav>
       <div className="workspace">
         <div><Outlet context={p} /></div>

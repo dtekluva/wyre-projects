@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MOVEMENT_LABEL, naira, relative, type MovementType } from "@wyre/api";
+import { MOVEMENT_LABEL, fmtDate, naira, relative, type MovementType, type StockCount } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
@@ -16,6 +16,14 @@ export function Inventory() {
   const [wItem, setWItem] = useState(api.items[0]?.id ?? ""); const [wQty, setWQty] = useState("1"); const [wSel, setWSel] = useState<string[]>([]); const [wWhy, setWWhy] = useState(""); const [wFile, setWFile] = useState("");
   const wi = wItem ? api.item(wItem) : undefined; const wVal = wi ? (wi.isSerialised ? wSel.length : Number(wQty) || 0) * api.wacOf(wi.id) : 0;
   const dirThr = api.thresholdNum("writeoff.director_threshold", 500_000);
+  // phase 3 — locations, transfers, counts
+  const locs = api.listLocations(); const counts = api.listCounts(); const canCount = api.can(user.id, "stockcount.create");
+  const [tFrom, setTFrom] = useState("loc_wh"); const [tTo, setTTo] = useState(locs.find((l) => l.id !== "loc_wh")?.id ?? ""); const [tItem, setTItem] = useState(api.items[0]?.id ?? ""); const [tQty, setTQty] = useState("1"); const [tSel, setTSel] = useState<string[]>([]);
+  const [lName, setLName] = useState(""); const [lType, setLType] = useState<"vehicle" | "site" | "warehouse">("vehicle"); const [lCust, setLCust] = useState("");
+  const [countLoc, setCountLoc] = useState("loc_wh"); const [entry, setEntry] = useState<Record<string, { qty: string; note: string }>>({});
+  const ti = tItem ? api.item(tItem) : undefined;
+  const openCount = counts.find((c) => c.status === "open");
+  const lineVal = (c: StockCount, itemId: string) => entry[itemId] ?? { qty: String(c.lines.find((l) => l.itemId === itemId)?.countedQty ?? ""), note: c.lines.find((l) => l.itemId === itemId)?.note ?? "" };
   return (
     <>
       <div className="page-head"><div><h1 className="page-title">Inventory</h1><div className="page-sub">{api.locationName("loc_wh")} · weighted-average cost · ledger-backed</div></div></div>
@@ -33,6 +41,38 @@ export function Inventory() {
             <td className="ns-mono sm">{it.sku}</td><td>{it.name}{it.isSerialised && <span className="sm muted"> · serialised</span>}</td><td className="sm">{it.category}</td>
             <td className="num ns-mono">{b.qtyOnHand} {it.unit}{av !== b.qtyOnHand && <div className="sm muted">{av} free</div>}</td><td className="num ns-mono">{naira(b.wacUnitCost)}</td><td className="num ns-mono">{naira(b.value)}</td><td className="num ns-mono muted">{it.reorderLevel}</td>
             <td>{b.belowReorder ? <Badge variant="danger">reorder {it.reorderQty}</Badge> : b.qtyOnHand <= it.reorderLevel * 1.5 ? <Badge variant="warning">low</Badge> : null}</td></tr>; })}</tbody></table></div>
+
+      <div className="workspace" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 20 }}>
+        <div className="card"><div className="card__head"><div className="card__title">Locations</div><span className="sm muted">{locs.length}</span></div>
+          <div className="card__body stack" style={{ gap: 6 }}>{locs.map((l) => { const v = api.balances().filter((b) => b.locationId === l.id).reduce((s, b) => s + b.value, 0); return <div key={l.id} className="row" style={{ justifyContent: "space-between" }}><span><b>{l.name}</b> <span className="sm muted">· {l.type}{l.custodianId ? ` · ${api.userName(l.custodianId)}` : ""}</span></span><span className="ns-mono sm">{naira(v, true)}</span></div>; })}
+            {canWrite && <form className="form" onSubmit={(e) => { e.preventDefault(); if (safe(() => { api.addLocation(user.id, { name: lName, type: lType, custodianId: lCust || undefined }); }, "Location added")) setLName(""); }}>
+              <input className="ns-input" placeholder="New location name" value={lName} onChange={(e) => setLName(e.target.value)} /><select className="ns-input" value={lType} onChange={(e) => setLType(e.target.value as typeof lType)}><option value="vehicle">vehicle</option><option value="site">site</option><option value="warehouse">warehouse</option></select>
+              <select className="ns-input" value={lCust} onChange={(e) => setLCust(e.target.value)}><option value="">custodian…</option>{api.getUsers().map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select><button className="ns-btn ns-btn--secondary" type="submit">Add</button></form>}</div></div>
+        <div className="card"><div className="card__head"><div className="card__title">Transfer stock</div><span className="sm muted">Finance checks · value unchanged</span></div>
+          <div className="card__body">{canWrite ? <form className="stack" onSubmit={(e) => { e.preventDefault(); if (safe(() => { api.transferStock(user.id, { itemId: tItem, qty: ti?.isSerialised ? tSel.length : Number(tQty), fromId: tFrom, toId: tTo, serials: tSel }); }, "Transfer submitted — pending check")) setTSel([]); }}>
+            <div className="row"><select className="ns-input" value={tFrom} onChange={(e) => { setTFrom(e.target.value); setTSel([]); }}>{locs.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select><span>→</span><select className="ns-input" value={tTo} onChange={(e) => setTTo(e.target.value)}>{locs.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
+            <select className="ns-input" value={tItem} onChange={(e) => { setTItem(e.target.value); setTSel([]); }}>{api.items.map((i) => <option key={i.id} value={i.id}>{i.name} · {api.available(i.id, tFrom)} free at source</option>)}</select>
+            {ti?.isSerialised ? <select className="ns-input select-multi" multiple value={tSel} onChange={(e) => setTSel(Array.from(e.target.selectedOptions).map((o) => o.value))}>{api.inStockSerials(ti.id, tFrom).map((s) => <option key={s} value={s}>{s}</option>)}</select>
+              : <input className="ns-input" type="number" min={1} value={tQty} onChange={(e) => setTQty(e.target.value)} />}
+            <div><button className="ns-btn ns-btn--primary" type="submit">Transfer</button></div></form> : <Note tone="warn">Only the Store Keeper can transfer stock.</Note>}</div></div>
+      </div>
+
+      <div className="card" style={{ marginTop: 20 }}><div className="card__head"><div className="card__title">Stock counts</div><span className="sm muted">tolerance ±{api.thresholdNum("stockcount.tolerance_pct", 2)}% · variances post as adjustments on Finance approval</span></div>
+        <div className="card__body stack">
+          {counts.map((c) => <div key={c.id} className="stack" style={{ gap: 6 }}>
+            <div className="row row--wrap"><b>{api.locationName(c.locationId)} · {fmtDate(c.countDate)}</b><Badge variant={c.status === "approved" ? "success" : c.status === "rejected" ? "danger" : c.status === "submitted" ? "warning" : "info"}>{c.status}</Badge><span className="sm muted">by {api.userName(c.countedBy)} · {c.lines.filter((l) => l.countedQty !== null).length}/{c.lines.length} counted{c.varianceValue ? ` · variance ${naira(c.varianceValue, true)}` : ""}</span></div>
+            {c.status === "open" && canCount && <>
+              <div className="table--wrap"><table className="table ledger"><thead><tr><th>Item</th><th className="num">Expected</th><th className="num">Counted</th><th className="num">Variance</th><th>Note (required outside tolerance)</th></tr></thead>
+                <tbody>{c.lines.map((l) => { const v = lineVal(c, l.itemId); const counted = v.qty === "" ? null : Number(v.qty); const varn = counted === null ? null : counted - l.expectedQty; return <tr key={l.itemId}><td>{api.itemName(l.itemId)}</td><td className="num ns-mono">{l.expectedQty}</td>
+                  <td className="num"><input className="ns-input" style={{ minHeight: 30, width: 90 }} type="number" value={v.qty} onChange={(e) => setEntry({ ...entry, [l.itemId]: { ...v, qty: e.target.value } })} /></td>
+                  <td className={`num ns-mono ${varn ? "warn-cell" : ""}`}>{varn === null ? "—" : varn > 0 ? `+${varn}` : varn}</td><td><input className="ns-input" style={{ minHeight: 30 }} value={v.note} onChange={(e) => setEntry({ ...entry, [l.itemId]: { ...v, note: e.target.value } })} /></td></tr>; })}</tbody></table></div>
+              <div className="row"><button className="ns-btn ns-btn--secondary ns-btn--sm" onClick={() => safe(() => api.enterCount(user.id, c.id, c.lines.map((l) => { const v = lineVal(c, l.itemId); return { itemId: l.itemId, countedQty: v.qty === "" ? null : Number(v.qty), note: v.note }; })), "Count saved")}>Save</button>
+                <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => safe(() => { api.enterCount(user.id, c.id, c.lines.map((l) => { const v = lineVal(c, l.itemId); return { itemId: l.itemId, countedQty: v.qty === "" ? null : Number(v.qty), note: v.note }; })); api.submitCount(user.id, c.id); }, "Count submitted for Finance approval")}>Submit for approval</button></div></>}
+            {c.status !== "open" && <div className="row row--wrap sm muted">{c.lines.filter((l) => l.variance).map((l) => <Badge key={l.itemId} variant={l.variance > 0 ? "info" : "warning"}>{api.itemName(l.itemId)} {l.variance > 0 ? "+" : ""}{l.variance}</Badge>)}{!c.lines.some((l) => l.variance) && <span>no variances</span>}</div>}
+          </div>)}
+          {!counts.length && <Empty title="No counts yet" />}
+          {canCount && !openCount && <form className="form" onSubmit={(e) => { e.preventDefault(); safe(() => { api.startCount(user.id, countLoc); }, "Count started — expected quantities snapshotted"); }}><select className="ns-input" value={countLoc} onChange={(e) => setCountLoc(e.target.value)}>{locs.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select><button className="ns-btn ns-btn--secondary" type="submit">Start a count</button></form>}
+        </div></div>
 
       <div className="workspace" style={{ gridTemplateColumns: "2fr 1fr", marginTop: 20 }}>
         <div className="card table--wrap"><div className="card__head"><div className="card__title">Stock ledger {focus && <span className="muted">· {api.itemName(focus)}</span>}</div>
