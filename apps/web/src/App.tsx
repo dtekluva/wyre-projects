@@ -16,11 +16,24 @@ import { ProjectAssets } from "./screens/ProjectAssets";
 import { Inventory } from "./screens/Inventory";
 import { Reconciliation } from "./screens/Reconciliation";
 import { ProjectField } from "./screens/ProjectField";
+import { FieldShell } from "./components/field/FieldShell";
+import { FieldSignin, FieldHome, FieldIssues, FieldIssueNew, FieldIssueDetail, FieldVisits, FieldVisitNew, FieldVan, FieldQueue } from "./screens/field/FieldScreens";
 
 export function App() {
   return (
     <AuthProvider><ToastProvider>
       <Routes>
+        <Route path="field" element={<FieldShell />}>
+          <Route index element={<FieldHome />} />
+          <Route path="signin" element={<FieldSignin />} />
+          <Route path="issues" element={<FieldIssues />} />
+          <Route path="issues/new" element={<FieldIssueNew />} />
+          <Route path="issues/:id" element={<FieldIssueDetail />} />
+          <Route path="visits" element={<FieldVisits />} />
+          <Route path="visits/new" element={<FieldVisitNew />} />
+          <Route path="van" element={<FieldVan />} />
+          <Route path="queue" element={<FieldQueue />} />
+        </Route>
         <Route element={<Shell />}>
           <Route index element={<Portfolio />} />
           <Route path="projects/:id" element={<ProjectLayout />}>

@@ -34,6 +34,8 @@ export function Shell() {
         <div className="nav__section">My work</div>
         <Item to="/work/reviews" label="Review queue" badge={checks} />
         <Item to="/work/approvals" label="Approvals" badge={approvals} />
+        <div className="nav__section">Field</div>
+        <Item to="/field" label="Field mode (PWA)" />
         <div className="nav__section">Stores</div>
         <Item to="/inventory" label="Inventory" badge={writeOffs} />
         {seesRecon && <><div className="nav__section">Finance</div><Item to="/finance/reconciliation" label="QB reconciliation" badge={unmatched} /></>}
