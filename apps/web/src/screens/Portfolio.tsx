@@ -3,10 +3,11 @@ import { Link } from "react-router-dom";
 import { STAGES, daysBetween, naira, pct, type Rag, type Stage } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
+import { useIsMobile } from "../lib/useMediaQuery";
 import { Badge, Bar, Empty, Kpi, RagDot, StageChip } from "../components/ui";
 
 export function Portfolio() {
-  const api = useApi(); const { user } = useAuth();
+  const api = useApi(); const { user } = useAuth(); const mobile = useIsMobile();
   const [q, setQ] = useState(""); const [stage, setStage] = useState<"all" | Stage>("all"); const [rag, setRag] = useState<"all" | Rag>("all");
   const all = api.listProjects(user.id);
   const rows = all.filter((p) =>
@@ -34,6 +35,20 @@ export function Portfolio() {
           <option value="all">All stages</option>{STAGES.map((s) => <option key={s.stage} value={s.stage}>{s.stage} · {s.name}</option>)}</select>
         {(["all", "red", "amber", "green"] as const).map((r) => <button key={r} className={`chip ${rag === r ? "chip--on" : ""}`} onClick={() => setRag(r)}>{r === "all" ? "All RAG" : <><RagDot rag={r} /> {r}</>}</button>)}
       </div>
+      {mobile ? (rows.length === 0 ? <Empty title="No projects match" hint="Try clearing the filters." /> : <div className="stack">{rows.map((p) => {
+        const planned = p.stagePlanned[p.stage]; const slip = planned && planned < today ? daysBetween(planned, today) : 0;
+        const burn = pct(p.actual, p.approvedBudget); const g = api.gateStatus(p.id); const ok = g.items.filter((i) => i.state === "ok").length; const pending = api.pendingChecks(p.id);
+        return <Link key={p.id} to={`/projects/${p.id}`} className="card pcard">
+          <div className="pcard__top"><RagDot rag={p.rag} title={p.ragReason} /><span className="pcard__name">{p.name}</span><StageChip stage={p.stage} /></div>
+          <div className="sm muted"><span className="ns-mono">{p.code}</span> · {p.clientName} · {p.location}</div>
+          <div className="pcard__row"><span className="ns-mono">{naira(p.contractValue, true)}</span><span className="row"><Bar pct={burn} /><span className="sm ns-mono">{p.approvedBudget ? `${burn}%` : "—"}</span></span></div>
+          <div className="pcard__row row--wrap">
+            {slip > 0 ? <Badge variant={slip > 7 ? "danger" : "warning"}>+{slip} d</Badge> : p.stage !== 8 && <Badge variant="success">on track</Badge>}
+            {p.openIssues.critical > 0 && <Badge variant="danger">{p.openIssues.critical} crit</Badge>}{p.openIssues.high > 0 && <Badge variant="warning">{p.openIssues.high} high</Badge>}
+            {pending > 0 && <Badge variant="warning">{pending} to check</Badge>}
+            <span className="sm muted right">{g.terminal ? "closed" : g.pendingApproval ? "awaiting approval" : g.ready ? "gate ready" : `${ok}/${g.items.length} evidence`}</span>
+          </div>
+        </Link>; })}</div>) :
       <div className="card table--wrap">
         {rows.length === 0 ? <div className="card__body"><Empty title="No projects match" hint="Try clearing the filters." /></div> :
         <table className="table">
@@ -56,7 +71,7 @@ export function Portfolio() {
             </tr>; })}
           </tbody>
         </table>}
-      </div>
+      </div>}
     </>
   );
 }

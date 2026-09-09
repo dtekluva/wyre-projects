@@ -24,9 +24,9 @@ export function ProjectLayout() {
           <h1 className="page-title">{p.name}</h1>
           <div className="page-sub row row--wrap">{p.clientName} · {p.branchName} · {p.location} · {PROJECT_TYPE_LABEL[p.projectType]}{p.systemCapacityKwp ? ` · ${p.systemCapacityKwp} kWp` : ""}</div>
         </div>
-        <div className="stack" style={{ alignItems: "flex-end" }}>
+        <div className="stack page-head__side">
           <div className="row"><StageChip stage={p.stage} /><Badge variant={p.rag === "green" ? "success" : p.rag === "amber" ? "warning" : "danger"}><RagDot rag={p.rag} /> {p.rag.toUpperCase()}</Badge></div>
-          <div className="row sm muted">PM <Avatar user={api.getUser(p.pmId)} sm /> {api.userName(p.pmId)} · Lead Eng <Avatar user={api.getUser(p.leadEngineerId)} sm /> {api.userName(p.leadEngineerId)}</div>
+          <div className="row row--wrap sm muted">PM <Avatar user={api.getUser(p.pmId)} sm /> {api.userName(p.pmId)} · Lead Eng <Avatar user={api.getUser(p.leadEngineerId)} sm /> {api.userName(p.leadEngineerId)}</div>
         </div>
       </div>
       {p.ragReason && <div style={{ marginBottom: 16 }}><Note tone={p.rag === "red" ? "danger" : "warn"}><b>Why {p.rag}:</b> {p.ragReason}</Note></div>}

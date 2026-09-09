@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { ROLE_LABEL } from "@wyre/api";
 import { useAuth } from "../lib/auth";
 import { useApi } from "../lib/useApi";
@@ -10,16 +11,21 @@ const Item = ({ to, label, badge, end }: { to: string; label: string; badge?: nu
   </NavLink>;
 
 export function Shell() {
-  const api = useApi(); const { user, switchUser } = useAuth();
+  const api = useApi(); const { user, switchUser } = useAuth(); const loc = useLocation();
+  const [open, setOpen] = useState(false);
+  useEffect(() => { setOpen(false); }, [loc.pathname]);
+  useEffect(() => { document.body.classList.toggle("nav-open", open); return () => document.body.classList.remove("nav-open"); }, [open]);
   const checks = api.reviewQueue(user.id).length;
   const approvals = api.approvalsFor(user.id).length;
   const isAdmin = api.can(user.id, "users.manage");
   const seesThresholds = api.can(user.id, "thresholds.read");
   return (
     <div className="app ns">
-      <nav className="app__nav" aria-label="Primary">
+      <div className={`scrim ${open ? "scrim--on" : ""}`} onClick={() => setOpen(false)} aria-hidden />
+      <nav className={`app__nav ${open ? "app__nav--open" : ""}`} aria-label="Primary">
         <div className="brand"><span className="brand__logo"><img src="/wyre-logo.png" alt="Wyre" /></span>
-          <div><div className="brand__name">Wyre Tracker</div><div className="brand__sub">Project portfolio</div></div></div>
+          <div><div className="brand__name">Wyre Tracker</div><div className="brand__sub">Project portfolio</div></div>
+          <button className="nav__close" onClick={() => setOpen(false)} aria-label="Close menu">✕</button></div>
         <div className="nav__section">Portfolio</div>
         <Item to="/" label="All projects" end />
         <div className="nav__section">My work</div>
@@ -37,10 +43,14 @@ export function Shell() {
       </nav>
       <div className="app__main">
         <header className="topbar">
-          <div className="row"><div className="topbar__crumbs">Signed in as</div><RoleChips roles={user.roles} /></div>
+          <div className="row">
+            <button className="hamburger" onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open}><span /><span /><span /></button>
+            <span className="topbar__brand"><img src="/wyre-logo.png" alt="" />Tracker</span>
+            <div className="topbar__roles"><span className="topbar__crumbs">Signed in as</span><RoleChips roles={user.roles} /></div>
+          </div>
           <div className="userswitch">
-            <label className="sm muted" htmlFor="user">Act as</label>
-            <select id="user" value={user.id} onChange={(e) => switchUser(e.target.value)}>
+            <label className="sm muted topbar__actas" htmlFor="user">Act as</label>
+            <select id="user" value={user.id} onChange={(e) => switchUser(e.target.value)} aria-label="Act as user">
               {api.getUsers().map((u) => <option key={u.id} value={u.id}>{u.name} — {u.roles.map((r) => ROLE_LABEL[r]).join(", ")}</option>)}
             </select>
             <Avatar user={user} />
