@@ -37,7 +37,30 @@ backend/
 Commands accept a client-generated `id` (`prefix_8hex`) on created records so the web app can apply changes
 optimistically and the field PWA's offline queue replays with stable ids.
 
-## Run locally
+## Run with Docker (recommended)
+
+```bash
+cd backend
+cp .env.docker.example .env.docker     # set POSTGRES_PASSWORD and SECRET_KEY
+docker compose --env-file .env.docker up -d --build
+```
+
+Two containers: `db` (Postgres 16, data in the `pgdata` volume) and `api` (gunicorn on
+http://localhost:8000, uploads in the `media` volume). The entrypoint waits for Postgres, runs
+`migrate` and `seed_rbac` on every start, and runs `seed_demo` when `SEED_DEMO=1`.
+
+```bash
+docker compose --env-file .env.docker logs -f api        # logs
+docker compose --env-file .env.docker exec api python manage.py createsuperuser
+docker compose --env-file .env.docker exec api python manage.py test tracker
+docker compose --env-file .env.docker down               # stop (keeps data)
+docker compose --env-file .env.docker down -v            # stop and delete the database + uploads
+```
+
+Web app against it: `VITE_API_URL=http://localhost:8000/api/v1 npm run dev`.
+Postgres is also published on `localhost:5433` for `psql` inspection.
+
+## Run locally without Docker
 
 ```bash
 cd backend
@@ -55,6 +78,7 @@ Tests: `.venv/bin/python manage.py test tracker`.
 ## Deploy notes
 
 - `DEBUG=0`, real `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` = the web app origin(s).
+- The same compose file runs on a server; put nginx in front for TLS and to serve `/media/`.
 - Serve `MEDIA_ROOT` (attachments, documents) from nginx or move `DEFAULT_FILE_STORAGE` to object storage (django-storages).
 - `manage.py migrate && manage.py seed_rbac` on every release; create staff users in `/admin/` (assign tracker roles there).
 - Nightly job to pull QuickBooks bills from the Wyre backend into `QbBill` (spec §4.10) — not yet wired.
