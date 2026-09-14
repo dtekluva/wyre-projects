@@ -98,8 +98,8 @@ export class MockApi {
     return JSON.stringify(st);
   }
   /** Replace state from serialize() output. Notifies listeners. */
-  hydrate(json: string) {
-    const st = JSON.parse(json);
+  hydrate(json: string | Record<string, unknown>) {
+    const st = typeof json === "string" ? JSON.parse(json) : json;
     for (const k of MockApi.PERSISTED) if (st[k] !== undefined) (this as unknown as Record<string, unknown>)[k] = st[k];
     this.listeners.forEach((fn) => fn());
   }
@@ -121,7 +121,8 @@ export class MockApi {
 
   subscribe(fn: Listener) { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
   private emit() { this.persist(); this.listeners.forEach((fn) => fn()); }
-  private id = (p: string) => `${p}${++this.seq}`;
+  /** `${prefix}_${8 hex}` — same format the backend accepts as a client-supplied id (optimistic apply / offline replay). */
+  protected id = (p: string) => { this.seq++; const r = (typeof crypto !== "undefined" && "getRandomValues" in crypto) ? Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, "0")).join("") : Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0"); return `${p}_${r}`; };
   private now = () => new Date().toISOString();
   thresholdNum(key: string, fallback: number) { const t = this.thresholds.find((x) => x.key === key); return t ? Number(t.value) : fallback; }
 
@@ -237,12 +238,12 @@ export class MockApi {
     this.emit(); return doc;
   }
 
-  addAttachment(actorId: string, projectId: string, input: { fileName: string; caption?: string; kind?: "image" | "document"; linkedTo?: Attachment["linkedTo"]; gps?: Attachment["gps"] }): Attachment {
+  addAttachment(actorId: string, projectId: string, input: { fileName: string; caption?: string; kind?: "image" | "document"; linkedTo?: Attachment["linkedTo"]; gps?: Attachment["gps"]; blob?: Blob; sizeBytes?: number }): Attachment {
     this.require(actorId, "attachment.create", projectId);
     const at = this.now();
     const att: Attachment = {
       id: this.id("att"), projectId, fileName: input.fileName, mime: input.kind === "document" ? "application/pdf" : "image/jpeg",
-      sizeBytes: 1_400_000, kind: input.kind ?? "image", capturedAt: at,
+      sizeBytes: input.sizeBytes ?? input.blob?.size ?? 1_400_000, kind: input.kind ?? "image", capturedAt: at,
       sha256: Array.from({ length: 64 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join(""),
       uploadedBy: actorId, uploadedAt: at, linkedTo: input.linkedTo, caption: input.caption, gps: input.gps,
       reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1,

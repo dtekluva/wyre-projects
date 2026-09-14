@@ -11,7 +11,7 @@ const Item = ({ to, label, badge, end }: { to: string; label: string; badge?: nu
   </NavLink>;
 
 export function Shell() {
-  const api = useApi(); const { user, switchUser } = useAuth(); const loc = useLocation();
+  const api = useApi(); const { user, switchUser, remote, logout } = useAuth(); const loc = useLocation();
   const [open, setOpen] = useState(false);
   useEffect(() => { setOpen(false); }, [loc.pathname]);
   useEffect(() => { document.body.classList.toggle("nav-open", open); return () => document.body.classList.remove("nav-open"); }, [open]);
@@ -45,7 +45,7 @@ export function Shell() {
           {isAdmin && <Item to="/admin/users" label="Users & roles" />}
           {seesThresholds && <Item to="/admin/thresholds" label="Thresholds" />}
         </>}
-        <div className="nav__foot">Phase 2 · frontend-first · mock API
+        <div className="nav__foot">{remote ? "Live backend" : "Demo · in-browser mock API"}
           {api.isDirty() && <div style={{ marginTop: 6 }}><button className="ns-btn ns-btn--ghost ns-btn--sm" style={{ color: "inherit", opacity: .9 }}
             onClick={() => { if (confirm("Discard all demo changes and restore the seed data?")) api.reset(); }}>Reset demo data</button></div>}
         </div>
@@ -58,10 +58,11 @@ export function Shell() {
             <div className="topbar__roles"><span className="topbar__crumbs">Signed in as</span><RoleChips roles={user.roles} /></div>
           </div>
           <div className="userswitch">
+            {remote ? <><span className="sm topbar__actas">{user.name}</span><button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={logout}>Sign out</button></> : <>
             <label className="sm muted topbar__actas" htmlFor="user">Act as</label>
             <select id="user" value={user.id} onChange={(e) => switchUser(e.target.value)} aria-label="Act as user">
               {api.getUsers().map((u) => <option key={u.id} value={u.id}>{u.name} — {u.roles.map((r) => ROLE_LABEL[r]).join(", ")}</option>)}
-            </select>
+            </select></>}
             <Avatar user={user} />
           </div>
         </header>

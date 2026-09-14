@@ -13,3 +13,10 @@ npm run dev        # builds tokens, starts web on http://localhost:5173
 ```
 
 Spec: `wyre-files/project_tracker_spec.md` (Liberty workspace).
+
+## Backend (live data)
+
+`backend/` is a standalone Django project implementing the mock API's surface — see `backend/README.md`.
+Set `VITE_API_URL` (see `apps/web/.env.example`) to run the web app and the field PWA against it; leave it unset for the
+in-browser demo. The web app applies each change locally first, then replays it on the server in order; a server
+rejection is shown as a toast and the local state re-syncs from the server.

@@ -2,12 +2,18 @@
 // Entries are self-contained commands (actor + payload) so a replay can create attachments first, then the record.
 import type { MockApi } from "@wyre/api";
 
-export type Photo = { fileName: string; caption?: string; gps?: { lat: number; lng: number } };
+export type Photo = { fileName: string; caption?: string; gps?: { lat: number; lng: number }; blob?: Blob };
+/** Canvas data-URL (signature pad) → Blob so it can be stored in IndexedDB and uploaded. */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const [head, b64] = dataUrl.split(","); const mime = /data:(.*?);/.exec(head)?.[1] ?? "image/png";
+  const bin = atob(b64); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
 export type Command =
   | { kind: "raise_issue"; actorId: string; projectId: string; photos: Photo[]; input: { category: string; severity: string; title: string; description: string; assetId?: string; isSnag?: boolean } }
   | { kind: "set_issue_status"; actorId: string; issueId: string; status: "in_progress" | "awaiting_parts" }
   | { kind: "resolve_issue"; actorId: string; issueId: string; projectId: string; photos: Photo[]; input: { rootCause: string; resolution: string; costToResolve: number } }
-  | { kind: "log_visit"; actorId: string; projectId: string; photos: Photo[]; signature?: { name: string; rating?: number; fileName: string };
+  | { kind: "log_visit"; actorId: string; projectId: string; photos: Photo[]; signature?: { name: string; rating?: number; fileName: string; blob?: Blob };
       input: { visitType: string; startedAt: string; endedAt: string; findings: string; actionsTaken: string; costTravel: number; costLabour: number; locationId: string; parts: { itemId: string; qty: number }[]; gps?: { lat: number; lng: number }; offlineCapturedAt?: string } };
 
 export interface OutboxEntry { id: string; createdAt: string; label: string; command: Command; status: "queued" | "failed"; error?: string; attempts: number }
@@ -45,14 +51,14 @@ const notify = () => listeners.forEach((f) => f());
 /** Applies a command to the API — used both online (immediately) and on replay. */
 export function applyCommand(api: MockApi, c: Command) {
   const photos = (projectId: string, actorId: string, ps: Photo[], link?: { model: string; id: string; label: string }) =>
-    ps.map((p) => api.addAttachment(actorId, projectId, { fileName: p.fileName, caption: p.caption, linkedTo: link }).id);
+    ps.map((p) => api.addAttachment(actorId, projectId, { fileName: p.fileName, caption: p.caption, gps: p.gps, linkedTo: link, blob: p.blob }).id);
   switch (c.kind) {
     case "raise_issue": { const ids = photos(c.projectId, c.actorId, c.photos); return api.raiseIssue(c.actorId, c.projectId, { ...c.input, category: c.input.category as never, severity: c.input.severity as never, beforeAttachmentIds: ids }); }
     case "set_issue_status": return api.setIssueStatus(c.actorId, c.issueId, c.status, c.actorId);
     case "resolve_issue": { const ids = photos(c.projectId, c.actorId, c.photos); return api.resolveIssue(c.actorId, c.issueId, { ...c.input, afterAttachmentIds: ids }); }
     case "log_visit": {
       const ids = photos(c.projectId, c.actorId, c.photos);
-      const sig = c.signature ? api.addAttachment(c.actorId, c.projectId, { fileName: c.signature.fileName, caption: `Client sign-off — ${c.signature.name}` }).id : undefined;
+      const sig = c.signature ? api.addAttachment(c.actorId, c.projectId, { fileName: c.signature.fileName, caption: `Client sign-off — ${c.signature.name}`, blob: c.signature.blob }).id : undefined;
       return api.logVisit(c.actorId, c.projectId, { ...c.input, visitType: c.input.visitType as never, attachmentIds: ids, clientSignoff: c.signature ? { name: c.signature.name, rating: c.signature.rating, signatureAttachmentId: sig } : undefined });
     }
   }

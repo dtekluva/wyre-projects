@@ -7,6 +7,7 @@ import { useGeo } from "../../lib/useGeo";
 import { outbox } from "../../lib/outbox";
 import { useField } from "../../components/field/FieldShell";
 import { CameraInput, type Shot } from "../../components/field/CameraInput";
+import { dataUrlToBlob } from "../../lib/outbox";
 import { SignaturePad } from "../../components/field/SignaturePad";
 import { Badge, Empty, RagDot, ReviewBadge, StageChip } from "../../components/ui";
 
@@ -19,7 +20,9 @@ const useMine = () => { const api = useApi(); const { user } = useAuth(); return
 const useVan = () => { const api = useApi(); const { user } = useAuth(); return api.listLocations().find((l) => l.custodianId === user.id) ?? api.listLocations().find((l) => l.type === "vehicle") ?? api.listLocations()[0]; };
 
 export function FieldSignin() {
-  const api = useApi(); const { user, switchUser } = useAuth(); const nav = useNavigate();
+  const api = useApi(); const { user, switchUser, remote, logout } = useAuth(); const nav = useNavigate();
+  if (remote) return <div className="stack"><h1 className="field__title">Signed in</h1><div className="frow"><b>{user.name}</b><span className="sm muted">{user.roles.map((r) => ROLE_LABEL[r]).join(", ")}</span></div>
+    <button className="ns-btn ns-btn--secondary ns-btn--block" onClick={logout}>Sign out</button></div>;
   return <div className="stack"><h1 className="field__title">Who's in the field?</h1><p className="muted sm">Demo sign-in — pick a user. Their roles and projects apply.</p>
     {api.getUsers().map((u) => <button key={u.id} className={`frow ${u.id === user.id ? "frow--on" : ""}`} onClick={() => { switchUser(u.id); nav("/field"); }}><b>{u.name}</b><span className="sm muted">{u.roles.map((r) => ROLE_LABEL[r]).join(", ")}</span></button>)}</div>;
 }
@@ -61,7 +64,7 @@ export function FieldIssueNew() {
   const [pid, setPid] = useState(mine[0]?.id ?? ""); const [sev, setSev] = useState<IssueSeverity>("medium"); const [cat, setCat] = useState<IssueCategory>("electrical");
   const [title, setTitle] = useState(""); const [desc, setDesc] = useState(""); const [asset, setAsset] = useState(""); const [shots, setShots] = useState<Shot[]>([]);
   const assets = pid ? api.listAssets({ projectId: pid, status: "installed" }) : [];
-  const go = () => { if (!shots.length) return; const r = submit(`Issue raised — ${title}`, { kind: "raise_issue", actorId: user.id, projectId: pid, photos: shots.map((s) => ({ fileName: s.fileName, caption: `Before — ${title}`, gps: geo.status === "ok" ? { lat: geo.lat!, lng: geo.lng! } : undefined })), input: { category: cat, severity: sev, title, description: desc, assetId: asset || undefined } }); if (r !== "error") nav("/field/issues"); };
+  const go = () => { if (!shots.length) return; const r = submit(`Issue raised — ${title}`, { kind: "raise_issue", actorId: user.id, projectId: pid, photos: shots.map((s) => ({ fileName: s.fileName, caption: `Before — ${title}`, gps: geo.status === "ok" ? { lat: geo.lat!, lng: geo.lng! } : undefined, blob: s.file })), input: { category: cat, severity: sev, title, description: desc, assetId: asset || undefined } }); if (r !== "error") nav("/field/issues"); };
   return <div className="stack">
     <h1 className="field__title">New issue</h1>
     <label className="flabel">Project</label><Chips value={pid} options={mine.map((p) => p.id)} onChange={setPid} label={(id) => api.projectCode(id)} />
@@ -99,7 +102,7 @@ export function FieldIssueDetail() {
       <input className="ns-input fld" placeholder="Root cause" value={root} onChange={(e) => setRoot(e.target.value)} /><textarea className="ns-textarea fld" placeholder="What you did to fix it" value={res} onChange={(e) => setRes(e.target.value)} />
       <input className="ns-input fld" type="number" placeholder="Extra cost ₦ (optional)" value={cost} onChange={(e) => setCost(e.target.value)} />
       <label className="flabel">After photo</label><CameraInput shots={shots} onChange={setShots} required label="Take after photo" />
-      <button className="ns-btn ns-btn--primary ns-btn--block ns-btn--lg" disabled={!res.trim() || !shots.length} onClick={() => { const r = submit(`Resolution submitted — ${i.title}`, { kind: "resolve_issue", actorId: user.id, issueId: i.id, projectId: i.projectId, photos: shots.map((s) => ({ fileName: s.fileName, caption: `After — ${i.title}` })), input: { rootCause: root, resolution: res, costToResolve: Number(cost) || 0 } }); if (r !== "error") nav("/field/issues"); }}>Submit for check</button>
+      <button className="ns-btn ns-btn--primary ns-btn--block ns-btn--lg" disabled={!res.trim() || !shots.length} onClick={() => { const r = submit(`Resolution submitted — ${i.title}`, { kind: "resolve_issue", actorId: user.id, issueId: i.id, projectId: i.projectId, photos: shots.map((s) => ({ fileName: s.fileName, caption: `After — ${i.title}`, blob: s.file })), input: { rootCause: root, resolution: res, costToResolve: Number(cost) || 0 } }); if (r !== "error") nav("/field/issues"); }}>Submit for check</button>
       <button className="ns-btn ns-btn--ghost ns-btn--block" onClick={() => setOpen(false)}>Cancel</button></div>}
   </div>;
 }
@@ -122,8 +125,8 @@ export function FieldVisitNew() {
   const partsCost = Object.entries(parts).reduce((s, [id, q]) => s + q * api.wacOf(id), 0);
   const go = () => {
     const r = submit(`Visit logged — ${VISIT_TYPE_LABEL[type]}`, { kind: "log_visit", actorId: user.id, projectId: pid,
-      photos: shots.map((s) => ({ fileName: s.fileName, caption: `${VISIT_TYPE_LABEL[type]} — site photo`, gps: geo.status === "ok" ? { lat: geo.lat!, lng: geo.lng! } : undefined })),
-      signature: sig && signName.trim() ? { name: signName.trim(), rating: rating || undefined, fileName: `signature-${Date.now()}.png` } : undefined,
+      photos: shots.map((s) => ({ fileName: s.fileName, caption: `${VISIT_TYPE_LABEL[type]} — site photo`, gps: geo.status === "ok" ? { lat: geo.lat!, lng: geo.lng! } : undefined, blob: s.file })),
+      signature: sig && signName.trim() ? { name: signName.trim(), rating: rating || undefined, fileName: `signature-${Date.now()}.png`, blob: dataUrlToBlob(sig) } : undefined,
       input: { visitType: type, startedAt: started, endedAt: new Date().toISOString(), findings: find, actionsTaken: act, costTravel: Number(travel) || 0, costLabour: Number(labour) || 0, locationId: van.id,
         parts: Object.entries(parts).filter(([, q]) => q > 0).map(([itemId, qty]) => ({ itemId, qty })), gps: geo.status === "ok" ? { lat: geo.lat!, lng: geo.lng! } : undefined, offlineCapturedAt: online ? undefined : new Date().toISOString() } });
     if (r !== "error") nav("/field/visits");

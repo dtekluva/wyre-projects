@@ -340,3 +340,11 @@ textarea.fld { min-height: 84px; }
 .cam__add span { font-size: 10px; color: var(--ns-color-text-secondary); text-align: center; line-height: 1.1; } .cam__add--req { border-color: var(--ns-color-danger-fill); }
 .sig { display: flex; flex-direction: column; gap: 6px; }
 .sig__canvas { width: 100%; height: 160px; background: #fff; border: var(--ns-border-hairline) solid var(--ns-color-border-strong); border-radius: var(--ns-radius-medium); }
+
+/* Live backend — sign-in and sync indicator */
+.signin { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; background: var(--ns-color-canvas); }
+.signin__card { width: min(100%, 380px); background: var(--ns-color-surface); border: var(--ns-border-hairline) solid var(--ns-color-border-default); border-radius: var(--ns-radius-large); box-shadow: var(--ns-elevation-2); padding: 28px 24px; display: flex; flex-direction: column; gap: 12px; align-items: stretch; text-align: center; }
+.signin__logo { height: 36px; object-fit: contain; align-self: center; }
+.signin__title { font-size: var(--ns-size-heading); line-height: var(--ns-lh-heading); font-weight: var(--ns-weight-bold); }
+.signin .ns-field { text-align: left; }
+.syncpill { position: fixed; top: 10px; right: 12px; z-index: var(--ns-z-toast); background: var(--ns-neutral-900); color: #fff; font-size: var(--ns-size-caption); padding: 4px 10px; border-radius: 999px; opacity: .85; }

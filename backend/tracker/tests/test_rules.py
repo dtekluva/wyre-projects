@@ -1,0 +1,276 @@
+"""Port of packages/api/test/flow.test.mjs — the governance rules, exercised against the real database."""
+from __future__ import annotations
+
+from decimal import Decimal
+
+from django.core.management import call_command
+from django.test import TestCase
+from rest_framework.test import APIClient
+
+from tracker.errors import ApiError
+from tracker.models import Approval, Asset, CostItem, Document, Issue, Project, PurchaseOrder, StockCount, StockMovement, User
+from tracker.services import approvals, documents, field, gates, money, projects, recon, review, stock
+from tracker.services.base import dec
+
+
+class RulesTest(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_demo", verbosity=0)
+        cls.u = {u.id: u for u in User.objects.all()}
+
+    def err(self, code, fn, *a, **k):
+        with self.assertRaises(ApiError) as cm:
+            fn(*a, **k)
+        self.assertEqual(cm.exception.code, code, cm.exception.message)
+        return cm.exception
+
+    # ---------------------------------------------------------------- PO → GRN → stock (WAC) → issue
+    def test_po_grn_wac_issue_flow(self):
+        u = self.u; m0 = money.money("p1")
+        self.assertEqual(stock.balance_of("it_mccb")["qtyOnHand"], 0)
+        po = money.create_po(u["u_pm1"], "p1", {"vendorId": "v_dixsen", "items": [{"inventoryItemId": "it_mccb", "description": "Schneider NSX 250A MCCB", "qty": 2, "unitCost": 180000}]})
+        self.assertEqual(po.status, "pending_approval"); self.assertEqual(dec(po.total), 360000)
+        ap = po.approval
+        self.assertEqual(ap.required_roles, ["finance"])
+        self.err("forbidden", approvals.decide, u["u_pm1"], ap.id, "approved")
+        self.err("forbidden", approvals.decide, u["u_ft1"], ap.id, "approved")
+        approvals.decide(u["u_fin"], ap.id, "approved")
+        po.refresh_from_db(); self.assertEqual(po.status, "approved")
+        self.assertEqual(money.money("p1")["committed"], m0["committed"] + 360000)
+        pi = po.items.first()
+        self.err("invalid", money.receive_goods, u["u_sk"], po.id, {"attachmentIds": [], "lines": [{"purchaseItemId": pi.id, "qty": 2}]})
+        self.err("invalid", money.receive_goods, u["u_sk"], po.id, {"attachmentIds": ["x"], "lines": [{"purchaseItemId": pi.id, "qty": 3}]})
+        grn = money.receive_goods(u["u_sk"], po.id, {"attachmentIds": ["att-x"], "lines": [{"purchaseItemId": pi.id, "qty": 2}]})
+        self.assertEqual(grn.review_status, "pending"); self.assertEqual(stock.balance_of("it_mccb")["qtyOnHand"], 0)
+        self.err("forbidden", review.check, u["u_sk"], "goods_receipt", grn.id, "checked")
+        self.err("forbidden", review.check, u["u_ft1"], "goods_receipt", grn.id, "checked")
+        review.check(u["u_pm1"], "goods_receipt", grn.id, "checked")
+        bal = stock.balance_of("it_mccb"); self.assertEqual(bal["qtyOnHand"], 2); self.assertEqual(bal["wacUnitCost"], 180000)
+        po.refresh_from_db(); self.assertEqual(po.status, "delivered")
+        self.assertEqual(money.money("p1")["actual"], m0["actual"], "stock receipt does NOT post an actual")
+        po2 = money.create_po(u["u_pm1"], "p1", {"vendorId": "v_dixsen", "items": [{"inventoryItemId": "it_mccb", "description": "MCCB", "qty": 2, "unitCost": 200000}]})
+        approvals.decide(u["u_fin"], po2.approval_id, "approved")
+        grn2 = money.receive_goods(u["u_sk"], po2.id, {"attachmentIds": ["att-y"], "lines": [{"purchaseItemId": po2.items.first().id, "qty": 2}]})
+        review.check(u["u_pm1"], "goods_receipt", grn2.id, "checked")
+        bal = stock.balance_of("it_mccb"); self.assertEqual(bal["qtyOnHand"], 4); self.assertEqual(bal["wacUnitCost"], 190000, "WAC = (2×180k + 2×200k)/4")
+        # issue at WAC → actual on check; no negative stock
+        self.err("invalid", stock.issue_stock, u["u_sk"], {"itemId": "it_mccb", "qty": 5, "projectId": "p1"})
+        iss = stock.issue_stock(u["u_sk"], {"itemId": "it_mccb", "qty": 3, "projectId": "p1"})
+        self.assertEqual(dec(iss.unit_cost), 190000); self.assertEqual(stock.available("it_mccb"), 1)
+        self.err("forbidden", review.check, u["u_sk"], "stock_movement", iss.id, "checked")
+        a0 = money.money("p1")["actual"]
+        review.check(u["u_pm1"], "stock_movement", iss.id, "checked")
+        self.assertEqual(money.money("p1")["actual"], a0 + 570000)
+        self.assertEqual(stock.balance_of("it_mccb")["qtyOnHand"], 1)
+
+    def test_serialised_issue_and_director_threshold(self):
+        u = self.u
+        self.err("invalid", stock.issue_stock, u["u_sk"], {"itemId": "it_panel", "qty": 2, "projectId": "p2", "serials": ["JKM26-0001"]})  # 0001 already installed on p1
+        free = stock.in_stock_serials("it_panel")
+        self.assertTrue(len(free) >= 2)
+        mv = stock.issue_stock(u["u_sk"], {"itemId": "it_panel", "qty": 2, "projectId": "p2", "serials": free[:2]})
+        self.assertEqual(mv.serials, free[:2])
+        self.assertNotIn(free[0], stock.in_stock_serials("it_panel"), "reserved serial is no longer offered")
+        review.check(u["u_pm1"], "stock_movement", mv.id, "checked")
+        a = Asset.objects.get(serial=free[0]); self.assertEqual(a.status, "installed"); self.assertEqual(a.project_id, "p2"); self.assertIsNotNone(a.warranty_end)
+        big = money.create_po(u["u_pm1"], "p2", {"vendorId": "v_fouani", "items": [{"inventoryItemId": "it_inv80", "description": "Deye SUN-80K", "qty": 1, "unitCost": 12_200_000}]})
+        self.assertEqual(big.approval.required_roles, ["finance", "director"])
+        approvals.decide(u["u_fin"], big.approval_id, "approved")
+        big.refresh_from_db(); self.assertEqual(big.status, "pending_approval", "still waiting for Director")
+        self.err("forbidden", approvals.decide, u["u_fin"], big.approval_id, "approved")
+        approvals.decide(u["u_dir"], big.approval_id, "approved")
+        big.refresh_from_db(); self.assertEqual(big.status, "approved")
+
+    def test_change_order_retention_writeoff(self):
+        u = self.u
+        p = Project.objects.get(pk="p1"); b0 = dec(p.approved_budget)
+        co = money.raise_change_order(u["u_pm1"], "p1", {"title": "Extra CT", "reason": "Client asked", "scopeDelta": "+1 CT", "costDelta": 250000, "timeDeltaDays": 1})
+        self.assertEqual(co.approval.required_roles, ["finance"])
+        approvals.decide(u["u_fin"], co.approval_id, "approved")
+        p.refresh_from_db(); self.assertEqual(dec(p.approved_budget), b0 + 250000)
+        big = money.raise_change_order(u["u_pm1"], "p1", {"title": "Big", "reason": "Scope", "scopeDelta": "", "costDelta": 6_000_000, "timeDeltaDays": 5})
+        self.assertEqual(big.approval.required_roles, ["finance", "director"])
+        self.err("invalid", approvals.decide, u["u_fin"], big.approval_id, "rejected")  # comment required
+        approvals.decide(u["u_fin"], big.approval_id, "rejected", "Not in budget")
+        big.refresh_from_db(); self.assertEqual(big.status, "rejected")
+        # retention
+        self.err("conflict", money.request_retention_release, u["u_fin"], "p1")  # stage 4: nothing held
+        ap = money.request_retention_release(u["u_fin"], "p4")
+        self.assertEqual(ap.required_roles, ["director"], "Finance requester → Director only")
+        approvals.decide(u["u_dir"], ap.id, "approved")
+        self.assertIsNotNone(money.retention(Project.objects.get(pk="p4"))["releasedAt"])
+        # write-off
+        self.err("invalid", stock.write_off, u["u_sk"], {"itemId": "it_mc4", "qty": 5, "reason": "", "attachmentIds": ["a"]})
+        self.err("invalid", stock.write_off, u["u_sk"], {"itemId": "it_mc4", "qty": 5, "reason": "Lost", "attachmentIds": []})
+        wo = stock.write_off(u["u_sk"], {"itemId": "it_mc4", "qty": 5, "reason": "Lost in transit", "attachmentIds": ["att3"]})
+        self.assertEqual(wo.approval.required_roles, ["finance"])
+        q0 = stock.balance_of("it_mc4")["qtyOnHand"]
+        self.err("forbidden", approvals.decide, u["u_sk"], wo.approval_id, "approved")
+        approvals.decide(u["u_fin"], wo.approval_id, "approved")
+        self.assertEqual(stock.balance_of("it_mc4")["qtyOnHand"], q0 - 5)
+        self.err("forbidden", stock.write_off, u["u_pm1"], {"itemId": "it_mc4", "qty": 1, "reason": "x", "attachmentIds": ["a"]})
+
+    # ---------------------------------------------------------------- maker-checker, gates, approvals
+    def test_maker_checker_and_gates(self):
+        u = self.u
+        doc = documents.add_document(u["u_pm1"], "p7", {"docType": "roi_model", "title": "Edic ROI"})
+        self.assertEqual(doc.review_status, "pending")
+        self.err("forbidden", review.check, u["u_pm1"], "document", doc.id, "checked")
+        self.err("forbidden", review.check, u["u_ft1"], "document", doc.id, "checked")
+        self.err("invalid", review.check, u["u_le2"], "document", doc.id, "rejected")
+        g = gates.gate_status("p7"); self.assertFalse(g["ready"])
+        self.err("invalid", gates.request_gate, u["u_pm1"], "p7")
+        review.check(u["u_le2"], "document", doc.id, "checked")
+        sizing = Document.objects.get(project_id="p7", doc_type="sizing")
+        review.check(u["u_dir"], "document", sizing.id, "checked")  # Director checks globally; u_le1 is not on p7
+        g = gates.gate_status("p7"); self.assertTrue(g["ready"])
+        self.err("forbidden", gates.request_gate, u["u_le2"], "p7")
+        ap = gates.request_gate(u["u_pm1"], "p7")
+        self.assertEqual(ap.required_roles, ["director"])
+        self.err("conflict", gates.request_gate, u["u_pm1"], "p7")
+        self.err("forbidden", approvals.decide, u["u_fin"], ap.id, "approved")
+        approvals.decide(u["u_dir"], ap.id, "approved")
+        p = Project.objects.get(pk="p7"); self.assertEqual(p.stage, 1); self.assertIn("1", p.stage_actual)
+        self.assertTrue(any(i["kind"] == "document" for i in review.review_queue(u["u_le1"])))
+        self.assertEqual(review.review_queue(u["u_ft1"]), [], "field tech has no check permissions")
+
+    def test_create_project(self):
+        u = self.u
+        base = {"name": "Test Client HQ — 50 kWp Solar", "clientName": "Test Client", "branchName": "HQ", "location": "Yaba, Lagos", "projectType": "solar_battery", "systemCapacityKwp": 50,
+                "contractValue": 48_000_000, "approvedBudget": 41_000_000, "pmId": "u_pm2", "leadEngineerId": "u_le1", "proposalDueDate": "2026-10-01"}
+        self.err("forbidden", projects.create_project, u["u_ft1"], base)
+        self.err("forbidden", projects.create_project, u["u_fin"], base)
+        self.err("invalid", projects.create_project, u["u_pm1"], {**base, "name": " "})
+        self.err("invalid", projects.create_project, u["u_pm1"], {**base, "pmId": "u_le1"})
+        self.err("invalid", projects.create_project, u["u_pm1"], {**base, "approvedBudget": 60_000_000})
+        n = Project.objects.count()
+        p = projects.create_project(u["u_pm1"], base)
+        self.assertEqual(Project.objects.count(), n + 1); self.assertEqual(p.stage, 0); self.assertEqual(p.code, "WYR-2026-006")
+        self.assertEqual(dec(p.retention_percent), 5); self.assertEqual(p.stage_planned, {"0": "2026-10-01"})
+        roles = sorted(f"{m.user_id}:{m.role}" for m in p.memberships.all()); self.assertEqual(roles, ["u_le1:lead_engineer", "u_pm2:pm"])
+        self.assertIn(p.id, projects.visible_project_ids(u["u_pm2"])); self.assertNotIn(p.id, projects.visible_project_ids(u["u_ft1"]))
+        self.assertTrue(p.events.filter(event_type="project_created", actor=u["u_pm1"]).exists())
+        self.err("conflict", projects.create_project, u["u_admin"], base)
+
+    # ---------------------------------------------------------------- field
+    def test_visits_issues_commissioning(self):
+        u = self.u
+        self.err("invalid", field.log_visit, u["u_ft1"], "p4", {"visitType": "routine", "startedAt": "2026-09-10T09:00:00Z", "endedAt": "2026-09-10T11:00:00Z", "findings": "ok", "actionsTaken": "", "costTravel": 0, "costLabour": 0, "attachmentIds": []})
+        avail = stock.available("it_mc4", "loc_van1")
+        self.err("invalid", field.log_visit, u["u_ft1"], "p4", {"visitType": "routine", "startedAt": "2026-09-10T09:00:00Z", "endedAt": "2026-09-10T11:00:00Z", "findings": "ok", "actionsTaken": "", "costTravel": 0, "costLabour": 0,
+                                                            "attachmentIds": ["a"], "locationId": "loc_van1", "parts": [{"itemId": "it_mc4", "qty": float(avail) + 1}]})
+        v = field.log_visit(u["u_ft1"], "p4", {"visitType": "routine", "startedAt": "2026-09-10T09:00:00Z", "endedAt": "2026-09-10T11:30:00Z", "findings": "Panels cleaned", "actionsTaken": "Cleaned", "costTravel": 10000, "costLabour": 15000,
+                                              "attachmentIds": ["a"], "locationId": "loc_van1", "parts": [{"itemId": "it_mc4", "qty": 2}]})
+        self.assertEqual(dec(v.duration_hrs), Decimal("2.5")); self.assertEqual(len(v.parts), 1); self.assertEqual(dec(v.cost_total), 25000 + 2 * 1500)
+        a0 = money.money("p4")["actual"]
+        self.err("forbidden", review.check, u["u_ft1"], "site_visit", v.id, "checked")
+        review.check(u["u_pm2"], "site_visit", v.id, "checked")
+        self.assertEqual(money.money("p4")["actual"], a0 + 25000 + 3000, "travel+labour and parts post on check")
+        self.assertEqual(StockMovement.objects.get(pk=v.parts[0]["movementId"]).review_status, "checked")
+        # issues with SLA
+        self.err("invalid", field.raise_issue, u["u_ft1"], "p4", {"category": "electrical", "severity": "high", "title": "x", "description": "", "beforeAttachmentIds": []})
+        i = field.raise_issue(u["u_ft1"], "p4", {"category": "electrical", "severity": "critical", "title": "Inverter down", "description": "F12", "beforeAttachmentIds": ["b"]})
+        self.assertEqual((i.sla_due_at - i.raised_at).total_seconds(), 24 * 3600)
+        field.set_issue_status(u["u_ft1"], i.id, "in_progress", "u_ft1")
+        self.err("invalid", field.resolve_issue, u["u_ft1"], i.id, {"rootCause": "x", "resolution": "fixed", "afterAttachmentIds": []})
+        field.resolve_issue(u["u_ft1"], i.id, {"rootCause": "Loose lug", "resolution": "Re-terminated", "afterAttachmentIds": ["c"], "costToResolve": 5000})
+        i.refresh_from_db(); self.assertEqual(i.status, "resolved"); self.assertEqual(i.review_version, 2)
+        self.err("conflict", field.set_issue_status, u["u_ft1"], i.id, "in_progress")
+        review.check(u["u_pm2"], "issue", i.id, "checked")
+        i.refresh_from_db(); self.assertEqual(i.status, "closed")
+        # commissioning → gate-5 evidence
+        items = [{"key": t["key"], "pass": True} for t in __import__("tracker.constants", fromlist=["COMMISSIONING_TEMPLATE"]).COMMISSIONING_TEMPLATE]
+        self.err("invalid", field.create_commissioning, u["u_le1"], "p1", {"date": "2026-09-10", "result": "pass", "notes": "", "items": items[:-1], "meter": {}, "attachmentIds": ["a"]})
+        c = field.create_commissioning(u["u_le1"], "p1", {"date": "2026-09-10", "result": "pass", "notes": "ok", "items": items, "meter": {"serialAscii": True, "ctRatioVerified": True, "firstLiveReading": True, "historicalOk": True},
+                                                          "clientWitness": {"name": "Client", "signatureAttachmentId": "sig"}, "attachmentIds": ["a"]})
+        self.err("forbidden", review.check, u["u_pm1"], "commissioning", c.id, "checked")
+        review.check(u["u_dir"], "commissioning", c.id, "checked")
+        for t in ("commissioning_record", "meter_integrity", "client_witness", "commissioning_photos"):
+            self.assertTrue(Document.objects.filter(project_id="p1", doc_type=t, review_status="checked").exists(), t)
+        # warranty
+        self.err("invalid", field.raise_warranty_claim, u["u_le2"], "p4", {"assetId": "nope", "notes": ""})
+        w = field.raise_warranty_claim(u["u_le2"], "p4", {"assetId": Asset.objects.get(serial="DBAT-0032").id, "notes": "Cell imbalance"})
+        field.update_warranty_claim(u["u_le2"], w.id, {"status": "refunded", "outcome": "Refund", "costRecovered": 120000})
+        p4a = money.money("p4")["actual"]
+        review.check(u["u_pm2"], "warranty", w.id, "checked")
+        self.assertEqual(money.money("p4")["actual"], p4a - 120000, "checked refund credits the project")
+
+    def test_stock_count_and_transfer(self):
+        u = self.u
+        self.err("invalid", stock.submit_count, u["u_sk"], "sc1")
+        sc = StockCount.objects.get(pk="sc1")
+        stock.enter_count(u["u_sk"], "sc1", [{"itemId": l["itemId"], "countedQty": l["expectedQty"]} for l in sc.lines if l["countedQty"] is None])
+        self.err("invalid", stock.submit_count, u["u_sk"], "sc1")  # +2 fuses without a note
+        stock.enter_count(u["u_sk"], "sc1", [{"itemId": "it_fuse", "countedQty": 52, "note": "found 2 in returns bin"}])
+        ap = stock.submit_count(u["u_sk"], "sc1"); self.assertEqual(ap.required_roles, ["finance"])
+        mc4 = stock.balance_of("it_mc4", "loc_wh")["qtyOnHand"]; fuse = stock.balance_of("it_fuse", "loc_wh")["qtyOnHand"]
+        self.err("forbidden", approvals.decide, u["u_sk"], ap.id, "approved")
+        approvals.decide(u["u_fin"], ap.id, "approved")
+        self.assertEqual(StockCount.objects.get(pk="sc1").status, "approved")
+        self.assertEqual(stock.balance_of("it_mc4", "loc_wh")["qtyOnHand"], mc4 - 8); self.assertEqual(stock.balance_of("it_fuse", "loc_wh")["qtyOnHand"], fuse + 2)
+        self.err("forbidden", stock.transfer_stock, u["u_pm1"], {"itemId": "it_mc4", "qty": 1, "fromId": "loc_wh", "toId": "loc_van1"})
+        t = stock.transfer_stock(u["u_sk"], {"itemId": "it_mc4", "qty": 10, "fromId": "loc_wh", "toId": "loc_van1"})
+        van = stock.balance_of("it_mc4", "loc_van1")["qtyOnHand"]
+        review.check(u["u_fin"], "stock_movement", t.id, "checked")
+        self.assertEqual(stock.balance_of("it_mc4", "loc_van1")["qtyOnHand"], van + 10)
+
+    def test_reconciliation(self):
+        u = self.u
+        bills = {b["id"]: b for b in recon.list_qb_bills()}
+        self.assertEqual(bills["qb3"]["confidence"], "matched"); self.assertEqual(bills["qb5"]["confidence"], "unmatched")
+        self.err("forbidden", recon.match_bill, u["u_pm1"], "qb1", "po5")
+        recon.match_bill(u["u_fin"], "qb1", "po5")
+        self.assertEqual({b["id"]: b for b in recon.list_qb_bills()}["qb1"]["confidence"], "matched")
+
+    # ---------------------------------------------------------------- HTTP surface
+    def test_http_snapshot_and_commands(self):
+        c = APIClient()
+        r = c.post("/api/v1/auth/token/", {"username": "kunle.adebayo", "password": "wyre-demo-2026"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content); tok = r.json()["access"]; self.assertEqual(r.json()["user"]["roles"], ["pm"])
+        self.assertEqual(c.get("/api/v1/snapshot/").status_code, 401)
+        c.credentials(HTTP_AUTHORIZATION=f"Bearer {tok}")
+        snap = c.get("/api/v1/snapshot/").json()
+        self.assertEqual(sorted(p["id"] for p in snap["projects"]), ["p1", "p2", "p5", "p7"], "PM sees only member projects")
+        self.assertEqual(snap["qbBills"], [], "no recon.read → no bills")
+        self.assertTrue(all(m["projectId"] in ("p1", "p2", "p5", "p7", None) for m in snap["movements"]))
+        r = c.post("/api/v1/commands/addDocument/", {"projectId": "p1", "input": {"docType": "progress_photos", "title": "Week 4 photos"}}, format="json")
+        self.assertEqual(r.status_code, 200, r.content); body = r.json()
+        self.assertEqual(body["result"]["reviewStatus"], "pending"); self.assertEqual(body["result"]["createdBy"], "u_pm1")
+        self.assertTrue(any(d["id"] == body["result"]["id"] for d in body["snapshot"]["documents"]))
+        r = c.post("/api/v1/commands/check/", {"kind": "document", "id": body["result"]["id"], "decision": "checked"}, format="json")
+        self.assertEqual(r.status_code, 403); self.assertEqual(r.json()["code"], "forbidden")
+        r = c.post("/api/v1/commands/createPO/", {"projectId": "p3", "input": {"vendorId": "v_dixsen", "items": []}}, format="json")
+        self.assertEqual(r.status_code, 403, "not a member of p3")
+        r = c.post("/api/v1/commands/nope/", {}, format="json"); self.assertEqual(r.status_code, 404)
+        # multipart upload creates a real attachment with sha256
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        f = SimpleUploadedFile("site.jpg", b"\xff\xd8\xff\xe0 fake jpeg bytes", content_type="image/jpeg")
+        r = c.post("/api/v1/commands/addAttachment/?snapshot=0", {"payload": '{"projectId": "p1", "input": {"caption": "String 4"}}', "file": f}, format="multipart")
+        self.assertEqual(r.status_code, 200, r.content); att = r.json()["result"]
+        self.assertEqual(att["sizeBytes"], 20); self.assertEqual(len(att["sha256"]), 64); self.assertIn("/media/attachments/", att["url"]); self.assertTrue(att["url"].endswith(".jpg")); self.assertEqual(att["reviewStatus"], "pending")
+        # store keeper (global) sees everything
+        r = c.post("/api/v1/auth/token/", {"username": "musa.ibrahim", "password": "wyre-demo-2026"}, format="json")
+        c.credentials(HTTP_AUTHORIZATION=f"Bearer {r.json()['access']}")
+        self.assertEqual(len(c.get("/api/v1/snapshot/").json()["projects"]), Project.objects.count())
+
+
+class ClientIdTest(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_demo", verbosity=0)
+
+    def test_client_supplied_ids(self):
+        pm = User.objects.get(pk="u_pm1")
+        att = documents.add_attachment(pm, "p1", {"id": "att_0a1b2c3d", "fileName": "x.jpg"})
+        self.assertEqual(att.id, "att_0a1b2c3d")
+        with self.assertRaises(ApiError) as cm:
+            documents.add_attachment(pm, "p1", {"id": "att_0a1b2c3d", "fileName": "y.jpg"})
+        self.assertEqual(cm.exception.code, "conflict")
+        with self.assertRaises(ApiError) as cm:
+            documents.add_attachment(pm, "p1", {"id": "doc_0a1b2c3d", "fileName": "y.jpg"})
+        self.assertEqual(cm.exception.code, "invalid", "prefix must match the model")
+        with self.assertRaises(ApiError):
+            documents.add_attachment(pm, "p1", {"id": "att1", "fileName": "y.jpg"})
+        i = field.raise_issue(User.objects.get(pk="u_ft1"), "p1", {"id": "iss_deadbeef", "category": "other", "severity": "low", "title": "T", "description": "", "beforeAttachmentIds": [att.id]})
+        self.assertEqual(i.id, "iss_deadbeef")

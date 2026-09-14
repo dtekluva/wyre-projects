@@ -9,3 +9,10 @@ packages/api/dist/
 apps/mobile/.expo/
 apps/mobile/ios/
 apps/mobile/android/
+# backend (Django)
+backend/.venv/
+backend/media/
+backend/db.sqlite3
+__pycache__/
+*.pyc
+.pytest_cache/

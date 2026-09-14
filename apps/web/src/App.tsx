@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./lib/auth";
 import { ToastProvider } from "./lib/toast";
 import { Shell } from "./components/Shell";
+import { RemoteBridge } from "./components/RemoteBridge";
 import { Portfolio } from "./screens/Portfolio";
 import { ProjectLayout } from "./screens/ProjectLayout";
 import { ProjectNew } from "./screens/ProjectNew";
@@ -23,6 +24,7 @@ import { FieldSignin, FieldHome, FieldIssues, FieldIssueNew, FieldIssueDetail, F
 export function App() {
   return (
     <AuthProvider><ToastProvider>
+      <RemoteBridge />
       <Routes>
         <Route path="field" element={<FieldShell />}>
           <Route index element={<FieldHome />} />

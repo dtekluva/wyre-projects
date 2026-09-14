@@ -1,0 +1,109 @@
+"""Spec §2.2 permission matrix + §2.3 scoping. The matrix is seeded into RolePermission (editable by Admin) and
+cached in-process; `can()` mirrors packages/api/src/rbac.ts + MockApi.can exactly."""
+from __future__ import annotations
+
+from typing import Iterable, Optional
+
+from .constants import GLOBAL_ROLES
+
+MATRIX: dict[str, list[str]] = {
+    "admin": ["project.create", "project.read", "project.update", "chronology.read", "document.create", "document.read", "document.update",
+              "attachment.create", "attachment.read", "po.read", "approval.read", "membership.manage", "users.manage",
+              "thresholds.read", "thresholds.manage", "money.read", "inventory.read", "asset.read", "recon.read", "dashboard.read"],
+    "director": ["commissioning.check", "stockcount.approve", "project.read", "gate.approve", "chronology.read", "document.read", "document.check",
+                 "attachment.read", "po.read", "po.approve", "writeoff.approve", "approval.read", "thresholds.read", "money.read",
+                 "inventory.read", "asset.read", "recon.read", "dashboard.read"],
+    "finance": ["stockcount.approve", "warranty.check", "project.read", "gate.approve", "chronology.read", "document.read", "attachment.read",
+                "po.read", "po.approve", "writeoff.approve", "approval.read", "thresholds.read", "money.read", "money.write", "cost.create",
+                "cost.check", "goods_receipt.check", "inventory.read", "inventory.check", "retention.request", "asset.read", "recon.read",
+                "recon.write", "dashboard.read"],
+    "pm": ["visit.create", "visit.check", "issue.create", "issue.update", "issue.check", "hse.create", "hse.check", "warranty.create",
+           "warranty.check", "project.create", "project.read", "project.update", "gate.request", "chronology.read", "document.create",
+           "document.read", "document.update", "attachment.create", "attachment.read", "attachment.check", "po.create", "po.read",
+           "approval.read", "membership.manage", "thresholds.read", "money.read", "cost.create", "change_order.create",
+           "goods_receipt.create", "goods_receipt.check", "inventory.read", "inventory.request", "inventory.check", "asset.read",
+           "asset.write", "dashboard.read"],
+    "lead_engineer": ["visit.create", "visit.check", "issue.create", "issue.update", "issue.check", "commissioning.create", "commissioning.check",
+                      "hse.create", "hse.check", "warranty.create", "project.read", "gate.approve", "chronology.read", "document.create",
+                      "document.read", "document.update", "document.check", "attachment.create", "attachment.read", "attachment.check",
+                      "po.read", "approval.read", "thresholds.read", "goods_receipt.create", "inventory.read", "asset.read", "asset.write",
+                      "dashboard.read"],
+    "field_tech": ["visit.create", "issue.create", "issue.update", "hse.create", "project.read", "chronology.read", "document.create",
+                   "document.read", "attachment.create", "attachment.read", "goods_receipt.create", "inventory.read", "inventory.request",
+                   "asset.read", "asset.write"],
+    "store_keeper": ["stockcount.create", "project.read", "chronology.read", "attachment.create", "attachment.read", "po.read",
+                     "goods_receipt.create", "inventory.read", "inventory.write", "asset.read", "asset.write", "thresholds.read", "dashboard.read"],
+    "auditor": ["project.read", "chronology.read", "document.read", "attachment.read", "po.read", "approval.read", "thresholds.read",
+                "money.read", "inventory.read", "asset.read", "recon.read", "dashboard.read"],
+}
+
+CHECK_PERM = {
+    "document": "document.check", "attachment": "attachment.check", "goods_receipt": "goods_receipt.check", "stock_movement": "inventory.check",
+    "cost_item": "cost.check", "site_visit": "visit.check", "issue": "issue.check", "commissioning": "commissioning.check",
+    "hse": "hse.check", "warranty": "warranty.check",
+}
+
+_cache: Optional[dict[str, set[str]]] = None
+
+
+def matrix() -> dict[str, set[str]]:
+    """Role → permissions, from the DB (seeded from MATRIX); falls back to the code matrix before seeding."""
+    global _cache
+    if _cache is None:
+        from .models import RolePermission
+        rows = RolePermission.objects.values_list("role_id", "permission")
+        m: dict[str, set[str]] = {}
+        for role, perm in rows:
+            m.setdefault(role, set()).add(perm)
+        _cache = m if m else {r: set(p) for r, p in MATRIX.items()}
+    return _cache
+
+
+def invalidate() -> None:
+    global _cache
+    _cache = None
+
+
+def base_roles(user) -> list[str]:
+    return list(user.role_codes())
+
+
+def roles_on(user, project_id: Optional[str], memberships: Optional[Iterable] = None) -> list[str]:
+    """Roles a user effectively holds on a project: global base roles + active memberships. None → base roles."""
+    base = base_roles(user)
+    if project_id is None:
+        return base
+    globals_ = [r for r in base if r in GLOBAL_ROLES]
+    if memberships is None:
+        from .models import ProjectMembership
+        memberships = ProjectMembership.objects.filter(project_id=project_id, user=user, revoked_at__isnull=True)
+    local = [m.role for m in memberships if m.project_id == project_id and m.user_id == user.id and m.revoked_at is None]
+    out: list[str] = []
+    for r in globals_ + local:
+        if r not in out:
+            out.append(r)
+    return out
+
+
+def _has(roles: Iterable[str], perm: str) -> bool:
+    m = matrix()
+    return any(perm in m.get(r, set()) for r in roles)
+
+
+def can(user, perm: str, project_id: Optional[str] = None) -> bool:
+    """projectId None → only global roles count, unless the user holds no project-scoped role at all (mirror of MockApi.can)."""
+    base = base_roles(user)
+    if project_id:
+        return _has(roles_on(user, project_id), perm)
+    if _has([r for r in base if r in GLOBAL_ROLES], perm):
+        return True
+    return all(r in GLOBAL_ROLES for r in base) and _has(base, perm)
+
+
+def can_by_base_role(user, perm: str) -> bool:
+    """Permission granted by any base role regardless of membership (used for project.create — no project exists yet)."""
+    return _has(base_roles(user), perm)
+
+
+def has_global(user) -> bool:
+    return any(r in GLOBAL_ROLES for r in base_roles(user))
