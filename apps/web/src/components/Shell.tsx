@@ -31,6 +31,7 @@ export function Shell() {
           <button className="nav__close" onClick={() => setOpen(false)} aria-label="Close menu">✕</button></div>
         <div className="nav__section">Portfolio</div>
         <Item to="/" label="All projects" end />
+        {api.canCreateProject(user.id) && <Item to="/projects/new" label="New project" />}
         <div className="nav__section">My work</div>
         <Item to="/work/reviews" label="Review queue" badge={checks} />
         <Item to="/work/approvals" label="Approvals" badge={approvals} />

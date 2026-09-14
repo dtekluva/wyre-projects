@@ -4,6 +4,7 @@ import { ToastProvider } from "./lib/toast";
 import { Shell } from "./components/Shell";
 import { Portfolio } from "./screens/Portfolio";
 import { ProjectLayout } from "./screens/ProjectLayout";
+import { ProjectNew } from "./screens/ProjectNew";
 import { ProjectOverview } from "./screens/ProjectOverview";
 import { ProjectTimeline } from "./screens/ProjectTimeline";
 import { ProjectDocuments } from "./screens/ProjectDocuments";
@@ -36,6 +37,7 @@ export function App() {
         </Route>
         <Route element={<Shell />}>
           <Route index element={<Portfolio />} />
+          <Route path="projects/new" element={<ProjectNew />} />
           <Route path="projects/:id" element={<ProjectLayout />}>
             <Route index element={<ProjectOverview />} />
             <Route path="timeline" element={<ProjectTimeline />} />

@@ -7,7 +7,7 @@ import * as seed from "./mock/data";
 import * as seed2 from "./mock/data2";
 import * as seed3 from "./mock/data3";
 import {
-  DOC_TYPE_LABEL, COST_CATEGORY_LABEL, MOVEMENT_LABEL,
+  DOC_TYPE_LABEL, COST_CATEGORY_LABEL, MOVEMENT_LABEL, PROJECT_TYPE_LABEL, type ProjectType,
   type User, type Project, type ProjectMembership, type Document, type Attachment, type ChronologyEvent, type Approval, type Threshold,
   type Stage, type GateStatus, type DocType, type RoleCode, type EventType, type ReviewStatus,
   type Vendor, type InventoryItem, type StockLocation, type CostItem, type PurchaseOrder, type PurchaseItem, type GoodsReceipt, type Asset,
@@ -25,6 +25,16 @@ export interface ReviewItem {
   kind: ReviewKind; id: string; projectId?: string; title: string; subtitle: string; amount?: number;
   submittedBy: string; submittedAt: string; ageDays: number; overdue: boolean;
   item: Document | Attachment | GoodsReceipt | StockMovement | CostItem | SiteVisit | Issue | CommissioningRecord | HseIncident | WarrantyClaim;
+}
+
+/** Spec §4.1 — fields captured when a project is opened (stage 0, RAG green, nothing committed yet) */
+export interface NewProjectInput {
+  name: string; clientName: string; branchName: string; location: string;
+  projectType: ProjectType; systemCapacityKwp?: number;
+  contractValue: number; approvedBudget?: number; retentionPercent?: number;
+  pmId: string; leadEngineerId: string;
+  /** planned completion date of stage 0 (proposal sign-off), YYYY-MM-DD */
+  proposalDueDate?: string;
 }
 
 type Listener = () => void;
@@ -153,6 +163,48 @@ export class MockApi {
     return p;
   }
   listMemberships(projectId: string) { return this.memberships.filter((m) => m.projectId === projectId && !m.revokedAt); }
+
+  /** project.create is granted by base role (Admin, PM) — there is no project to be a member of yet */
+  canCreateProject(userId: string) { return canFn(this.getUser(userId), "project.create", undefined, this.memberships); }
+  nextProjectCode() {
+    const year = new Date().getFullYear();
+    const used = this.projects.map((p) => p.code.match(/^WYR-(\d{4})-(\d+)$/)).filter((m): m is RegExpMatchArray => !!m && Number(m[1]) === year).map((m) => Number(m[2]));
+    return `WYR-${year}-${String((used.length ? Math.max(...used) : 0) + 1).padStart(3, "0")}`;
+  }
+  createProject(actorId: string, input: NewProjectInput): Project {
+    if (!this.canCreateProject(actorId)) throw new ApiError('Your role does not allow "project.create"', "forbidden");
+    const req = (v: string | undefined, label: string) => { const t = (v ?? "").trim(); if (!t) throw new ApiError(`${label} is required`, "invalid"); return t; };
+    const name = req(input.name, "Project name"), clientName = req(input.clientName, "Client"), branchName = req(input.branchName, "Branch / site"), location = req(input.location, "Location");
+    if (!(input.projectType in PROJECT_TYPE_LABEL)) throw new ApiError("Unknown project type", "invalid");
+    const money = (v: number | undefined, label: string, fallback = 0) => { const n = v === undefined || v === null || Number.isNaN(v) ? fallback : Number(v); if (!Number.isFinite(n) || n < 0) throw new ApiError(`${label} must be zero or more`, "invalid"); return round(n); };
+    const contractValue = money(input.contractValue, "Contract value"); const approvedBudget = money(input.approvedBudget, "Approved budget");
+    if (approvedBudget > contractValue && contractValue > 0) throw new ApiError("Approved budget cannot exceed contract value", "invalid");
+    const retentionPercent = input.retentionPercent === undefined ? this.thresholdNum("retention.percent", 5) : Number(input.retentionPercent);
+    if (!Number.isFinite(retentionPercent) || retentionPercent < 0 || retentionPercent > 20) throw new ApiError("Retention must be between 0 and 20 %", "invalid");
+    if (input.systemCapacityKwp !== undefined && !(Number(input.systemCapacityKwp) > 0)) throw new ApiError("System capacity must be a positive number of kWp", "invalid");
+    if (input.proposalDueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.proposalDueDate)) throw new ApiError("Proposal due date must be YYYY-MM-DD", "invalid");
+    const pm = this.getUser(input.pmId); if (!pm.roles.includes("pm")) throw new ApiError(`${pm.name} is not a Project Manager`, "invalid");
+    const le = this.getUser(input.leadEngineerId); if (!le.roles.includes("lead_engineer")) throw new ApiError(`${le.name} is not a Lead Engineer`, "invalid");
+    if (this.projects.some((p) => p.name.trim().toLowerCase() === name.toLowerCase())) throw new ApiError("A project with that name already exists", "conflict");
+    const at = this.now();
+    const p: Project = {
+      id: this.id("p"), code: this.nextProjectCode(), name, clientName, branchName, location,
+      projectType: input.projectType, systemCapacityKwp: input.systemCapacityKwp ? Number(input.systemCapacityKwp) : undefined,
+      stage: 0, rag: "green", pmId: pm.id, leadEngineerId: le.id,
+      contractValue, approvedBudget, committed: 0, actual: 0,
+      stagePlanned: input.proposalDueDate ? { 0: input.proposalDueDate } : {}, stageActual: {},
+      retentionPercent, openIssues: { critical: 0, high: 0, medium: 0, low: 0 },
+      createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId,
+    };
+    this.projects.push(p);
+    this.log(p.id, actorId, "project_created", `Project created — ${p.code} · ${PROJECT_TYPE_LABEL[p.projectType]} · ${this.fmt(contractValue)}`, undefined, { model: "Project", id: p.id });
+    for (const [uid, role] of [[pm.id, "pm"], [le.id, "lead_engineer"]] as const) {
+      this.memberships.push({ id: this.id("m"), projectId: p.id, userId: uid, role, grantedBy: actorId, grantedAt: at });
+      this.log(p.id, actorId, "role_granted", `${this.userName(uid)} granted ${role}`);
+    }
+    this.emit();
+    return p;
+  }
 
   // ---------- chronology ----------
   listEvents(projectId?: string): ChronologyEvent[] {

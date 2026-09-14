@@ -163,4 +163,27 @@ ok(api.balanceOf("it_mc4", "loc_wh").qtyOnHand === whMc4 - 8 && api.balanceOf("i
 const kinds = api.reviewQueue("u_pm1").map((i) => i.kind);
 ok(kinds.includes("site_visit") && kinds.includes("issue") && kinds.includes("hse"), "PM queue carries the seeded visit, issue and HSE report");
 ok(!api.reviewQueue("u_ft1").length, "field tech has no check permissions → empty queue");
+
+// create project (spec §2.2 project.create; §4.1 opens at stage 0 with PM + Lead Engineer memberships)
+const npBase = { name: "Test Client HQ — 50 kWp Solar", clientName: "Test Client", branchName: "HQ", location: "Yaba, Lagos", projectType: "solar_battery", systemCapacityKwp: 50, contractValue: 48_000_000, approvedBudget: 41_000_000, pmId: "u_pm2", leadEngineerId: "u_le1", proposalDueDate: "2026-10-01" };
+expectErr(() => api.createProject("u_ft1", npBase), "forbidden", "field tech cannot create a project");
+expectErr(() => api.createProject("u_fin", npBase), "forbidden", "finance cannot create a project");
+expectErr(() => api.createProject("u_pm1", { ...npBase, name: " " }), "invalid", "name is required");
+expectErr(() => api.createProject("u_pm1", { ...npBase, pmId: "u_le1" }), "invalid", "PM must hold the pm role");
+expectErr(() => api.createProject("u_pm1", { ...npBase, leadEngineerId: "u_pm1" }), "invalid", "lead engineer must hold the lead_engineer role");
+expectErr(() => api.createProject("u_pm1", { ...npBase, approvedBudget: 60_000_000 }), "invalid", "budget above contract value is rejected");
+expectErr(() => api.createProject("u_pm1", { ...npBase, contractValue: -1 }), "invalid", "negative contract value is rejected");
+const nProjects = api.projects.length;
+const np = api.createProject("u_pm1", npBase);
+ok(api.projects.length === nProjects + 1 && np.stage === 0 && np.rag === "green" && np.committed === 0 && np.actual === 0, "PM creates project → stage 0, green, nothing committed");
+ok(/^WYR-\d{4}-\d{3}$/.test(np.code) && !api.projects.some((p) => p !== np && p.code === np.code), `code ${np.code} is unique and well-formed`);
+ok(np.createdBy === "u_pm1" && np.retentionPercent === 5 && np.stagePlanned[0] === "2026-10-01", "actor captured, retention defaulted from threshold, proposal date planned");
+const npRoles = api.listMemberships(np.id).map((m) => `${m.userId}:${m.role}`).sort().join(",");
+ok(npRoles === "u_le1:lead_engineer,u_pm2:pm", "PM + Lead Engineer memberships granted");
+ok(api.listProjects("u_pm2").some((p) => p.id === np.id) && !api.listProjects("u_ft1").some((p) => p.id === np.id), "visible to its PM, not to an unrelated field tech");
+ok(api.listEvents(np.id).some((e) => e.eventType === "project_created" && e.actorId === "u_pm1"), "project_created logged with actor");
+ok(api.gateStatus(np.id).stage === 0 && api.gateStatus(np.id).items.length === 3 && !api.gateStatus(np.id).ready, "gate 0 shows 3 missing evidence items");
+expectErr(() => api.createProject("u_admin", npBase), "conflict", "duplicate project name is rejected");
+const np2 = api.createProject("u_admin", { ...npBase, name: "Second Test Project" });
+ok(Number(np2.code.slice(-3)) === Number(np.code.slice(-3)) + 1, "codes increment per year");
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED"); process.exit(fails ? 1 : 0);

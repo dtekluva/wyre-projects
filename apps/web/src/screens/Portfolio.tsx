@@ -20,7 +20,8 @@ export function Portfolio() {
   const budget = all.reduce((s, p) => s + api.money(p.id).planned, 0); const actual = all.reduce((s, p) => s + api.money(p.id).actual, 0);
   return (
     <>
-      <div className="page-head"><div><h1 className="page-title">Portfolio</h1><div className="page-sub">{all.length} projects you can see · {atRisk} need attention</div></div></div>
+      <div className="page-head"><div><h1 className="page-title">Portfolio</h1><div className="page-sub">{all.length} projects you can see · {atRisk} need attention</div></div>
+        {api.canCreateProject(user.id) && <Link to="/projects/new" className="ns-btn ns-btn--primary">+ New project</Link>}</div>
       <div className="kpis">
         <Kpi label="Projects" value={all.length} sub={`${all.filter((p) => p.stage === 8).length} closed`} />
         <Kpi label="At risk" value={atRisk} sub={`${all.filter((p) => p.rag === "red").length} red · ${all.filter((p) => p.rag === "amber").length} amber`} tone={atRisk ? "warn" : undefined} />
