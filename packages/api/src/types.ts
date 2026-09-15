@@ -114,6 +114,15 @@ export interface Approval {
   amount?: number; targetStage?: Stage;
 }
 
+export type NotificationKind =
+  | "document_expiring" | "document_expired" | "check_overdue" | "approval_pending" | "gate_ready"
+  | "issue_sla_breach" | "budget_warn" | "budget_over" | "stock_below_reorder" | "qb_unmatched";
+export interface AppNotification {
+  id: string; kind: NotificationKind | string; severity: "critical" | "warning" | "info";
+  title: string; body: string; link: string; projectId?: string | null;
+  ref?: { model: string; id: string } | null; createdAt: string; updatedAt: string; readAt?: string | null;
+}
+
 export interface Threshold { key: string; label: string; value: number | string; unit?: string; effectiveFrom: string; updatedBy: string }
 
 export type EvidenceState = "ok" | "pending" | "rejected" | "missing";

@@ -97,6 +97,35 @@ Keys are content-addressed as `attachments/<project>/<sha256><ext>` and `documen
 - a different file can never take an existing key, which is how "originals are never overwritten" is enforced;
 - the sha256 stored on the row is the hash of the bytes actually received, computed server-side.
 
+## Alerts (spec §8)
+
+`run_alerts` derives every alert that should currently exist and reconciles it against the stored
+notifications, so it is idempotent and self-healing — an alert whose cause has gone is withdrawn, not left to
+rot. Run it as often as you like; hourly is plenty.
+
+```bash
+docker compose --env-file .env.docker exec api python manage.py run_alerts --dry-run   # what would be raised
+docker compose --env-file .env.docker exec api python manage.py run_alerts             # reconcile
+docker compose --env-file .env.docker exec api python manage.py send_alert_emails      # report, sends nothing
+docker compose --env-file .env.docker exec api python manage.py send_alert_emails --send --to you@example.com
+```
+
+Covered: documents expiring at 90 / 30 / 7 days and expired, checks past the escalation threshold, approvals
+awaiting a decision, gates ready to request, issues past SLA, budget at 90 % and over 100 %, stock below reorder,
+and unreconciled QuickBooks bills. Recipients are narrowed to the people answerable for a project, widening only
+when nobody assigned is permitted to act — roles are company-wide, so "everyone who could" is most of the company.
+
+Email is one digest per person covering what they have not been told about yet, never one message per alert.
+It is inert until `MAILGUN_API_KEY` is set, and `send_alert_emails` reports without sending unless `--send`
+is given. Use `--to` to route a real test to a single address.
+
+A cron entry on the host:
+
+```
+0 * * * *  docker compose -f /srv/wyre-tracker/backend/docker-compose.yml --env-file /srv/wyre-tracker/backend/.env.docker exec -T api python manage.py run_alerts
+30 7 * * * docker compose -f /srv/wyre-tracker/backend/docker-compose.yml --env-file /srv/wyre-tracker/backend/.env.docker exec -T api python manage.py send_alert_emails --send
+```
+
 ## Deploy notes
 
 - `DEBUG=0`, real `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` = the web app origin(s).

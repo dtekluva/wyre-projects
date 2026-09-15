@@ -61,6 +61,7 @@ export class RemoteApi extends MockApi {
     const r = await this.fetchAuth("/snapshot/");
     if (!r.ok) throw new ApiError(`Could not load data (${r.status})`, "invalid");
     this.applySnapshot(await r.json());
+    void this.refreshNotifications();
   }
   private applySnapshot(snap: Json) { this.users = (snap.users as User[]) ?? this.users; this.hydrate(snap); }
   private notify() { this.hydrate({}); }
@@ -128,6 +129,21 @@ export class RemoteApi extends MockApi {
     wrap("addVisitPhotos", (a) => ({ name: "addVisitPhotos", body: { visitId: a[1], input: a[2] } }));
     wrap("updateWarrantyClaim", (a) => ({ name: "updateWarrantyClaim", body: { claimId: a[1], input: a[2] } }));
   }
+  /** Alerts live server-side (the engine runs on a schedule), so the bell polls rather than deriving. */
+  async refreshNotifications(): Promise<void> {
+    if (!this.signedIn) return;
+    const r = await this.fetchAuth("/notifications/");
+    if (!r.ok) return;
+    const j = await r.json();
+    this.notifications = j.notifications ?? [];
+    this.hydrate({});
+  }
+  async markRead(ids?: string[]): Promise<void> {
+    const body = ids?.length ? { ids } : { all: true };
+    const r = await this.fetchAuth("/notifications/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (r.ok) await this.refreshNotifications();
+  }
+
   /** Signed links expire, so resolve them when the user clicks rather than when the snapshot was fetched. */
   async fileUrl(kind: "document" | "attachment", id: string): Promise<string | null> {
     const r = await this.fetchAuth(`/files/${kind}/${id}/`);

@@ -79,6 +79,10 @@ def id_qb():
 def id_sc():
     return _nid("sc")
 
+
+def id_ntf():
+    return _nid("ntf")
+
 def id_u():
     return _nid("u")
 
@@ -537,6 +541,32 @@ class WarrantyClaim(Audit, Reviewable):
     outcome = models.TextField(blank=True, null=True)
     cost_recovered = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     notes = models.TextField(blank=True)
+
+
+class Notification(models.Model):
+    """§8 in-app alert. The engine is idempotent: `dedupe_key` is unique per recipient, so re-running it
+    refreshes an existing alert rather than stacking duplicates, and clears ones whose condition has passed."""
+    SEVERITY = [("critical", "Critical"), ("warning", "Warning"), ("info", "Info")]
+
+    id = models.CharField(primary_key=True, max_length=40, default=id_ntf)
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
+    kind = models.CharField(max_length=32)
+    severity = models.CharField(max_length=10, choices=SEVERITY, default="info")
+    title = models.CharField(max_length=200)
+    body = models.CharField(max_length=400, blank=True)
+    link = models.CharField(max_length=200, blank=True)
+    project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.CASCADE, related_name="notifications")
+    ref = models.JSONField(null=True, blank=True)
+    dedupe_key = models.CharField(max_length=160)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    read_at = models.DateTimeField(null=True, blank=True)
+    emailed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = [("recipient", "dedupe_key")]
+        indexes = [models.Index(fields=["recipient", "read_at"])]
+        ordering = ["-created_at"]
 
 
 class StockCount(Audit):

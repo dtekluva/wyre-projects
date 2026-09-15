@@ -4,6 +4,7 @@ import { ROLE_LABEL } from "@wyre/api";
 import { useAuth } from "../lib/auth";
 import { useApi } from "../lib/useApi";
 import { Avatar, RoleChips } from "./ui";
+import { NotificationBell } from "./NotificationBell";
 
 const Item = ({ to, label, badge, end }: { to: string; label: string; badge?: number; end?: boolean }) =>
   <NavLink to={to} end={end} className={({ isActive }) => `nav__item ${isActive ? "nav__item--active" : ""}`}>
@@ -58,6 +59,7 @@ export function Shell() {
             <div className="topbar__roles"><span className="topbar__crumbs">Signed in as</span><RoleChips roles={user.roles} /></div>
           </div>
           <div className="userswitch">
+            <NotificationBell />
             {remote ? <><span className="sm topbar__actas">{user.name}</span><button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={logout}>Sign out</button></> : <>
             <label className="sm muted topbar__actas" htmlFor="user">Act as</label>
             <select id="user" value={user.id} onChange={(e) => switchUser(e.target.value)} aria-label="Act as user">

@@ -12,7 +12,7 @@ import {
   type Stage, type GateStatus, type DocType, type RoleCode, type EventType, type ReviewStatus,
   type Vendor, type InventoryItem, type StockLocation, type CostItem, type PurchaseOrder, type PurchaseItem, type GoodsReceipt, type Asset,
   type StockMovement, type StockBalance, type Actual, type ChangeOrder, type Retention, type QbBill, type CostCategory, type ProjectMoney, type AssetType,
-  type SiteVisit, type Issue, type CommissioningRecord, type HseIncident, type WarrantyClaim, type StockCount, type VisitType, type IssueCategory, type IssueSeverity,
+  type AppNotification, type SiteVisit, type Issue, type CommissioningRecord, type HseIncident, type WarrantyClaim, type StockCount, type VisitType, type IssueCategory, type IssueSeverity,
   type IssueStatus, type HseType, type WarrantyStatus, type MeterIntegrity, VISIT_TYPE_LABEL, HSE_TYPE_LABEL, COMMISSIONING_TEMPLATE,
 } from "./types";
 
@@ -483,6 +483,18 @@ export class MockApi {
     this.log(m.projectId, actorId, "role_revoked", `${this.userName(m.userId)} revoked ${m.role}`);
     this.emit();
   }
+  // ---------- notifications (§8) ----------
+  /** Live mode replaces this from the server; the mock derives nothing, so the bell is simply empty. */
+  notifications: AppNotification[] = [];
+  listNotifications(): AppNotification[] { return this.notifications; }
+  unreadCount(): number { return this.notifications.filter((n) => !n.readAt).length; }
+  async markRead(_ids?: string[]): Promise<void> {
+    const at = this.now();
+    this.notifications = this.notifications.map((n) => (!_ids || _ids.includes(n.id) ? { ...n, readAt: n.readAt ?? at } : n));
+    this.emit();
+  }
+  async refreshNotifications(): Promise<void> { /* mock has no server */ }
+
   listThresholds() { return this.thresholds; }
 
   /** Resolve a download link for a stored file. The mock has no server, so it returns what the record carries. */

@@ -142,6 +142,14 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
 }
 
+# --- Email channel for §8 alerts (Mailgun). Unset MAILGUN_API_KEY and the digest command simply reports
+# what it would have sent, so nothing leaves the building by accident.
+MAILGUN_API_KEY = os.environ.get("MAILGUN_API_KEY", "").strip()
+MAILGUN_DOMAIN = os.environ.get("MAILGUN_DOMAIN", "mg.wyreng.com").strip()
+MAILGUN_BASE = os.environ.get("MAILGUN_BASE", "https://api.mailgun.net/v3").strip()
+MAILGUN_FROM = os.environ.get("MAILGUN_FROM", "Wyre Tracker <postmaster@mg.wyreng.com>").strip()
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5174").rstrip("/")
+
 CORS_ALLOWED_ORIGINS = [o for o in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",") if o]
 CORS_ALLOW_CREDENTIALS = False
 if DEBUG:

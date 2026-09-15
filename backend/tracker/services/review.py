@@ -19,15 +19,26 @@ MODEL_NAME = {"document": "Document", "attachment": "Attachment", "goods_receipt
               "site_visit": "SiteVisit", "issue": "Issue", "commissioning": "CommissioningRecord", "hse": "HseIncident", "warranty": "WarrantyClaim"}
 
 
+def pending_items() -> list[dict]:
+    """Every item awaiting a check, with no per-user filtering — used by the alert engine, which needs to
+    decide who to tell rather than what one person can see."""
+    return _collect(None)
+
+
 def review_queue(user: User) -> list[dict]:
+    """What this user may check: pending, not their own, and within their permissions."""
+    return _collect(user)
+
+
+def _collect(user: Optional[User]) -> list[dict]:
     from . import money as money_svc
     items: list[dict] = []
     escalation = int(b.threshold_num("check.escalation_days", 3)); now = timezone.now()
 
     def push(kind, it, project_id, title, subtitle, amount=None):
-        if it.review_status != "pending" or it.submitted_by_id == user.id:
+        if it.review_status != "pending":
             return
-        if not rbac.can(user, CHECK_PERM[kind], project_id):
+        if user is not None and (it.submitted_by_id == user.id or not rbac.can(user, CHECK_PERM[kind], project_id)):
             return
         age = (now - it.submitted_at).days
         items.append({"kind": kind, "id": it.id, "projectId": project_id, "title": title, "subtitle": subtitle, "amount": None if amount is None else float(amount),

@@ -42,6 +42,10 @@ services:
       SPACES_KEY: ${SPACES_KEY:-}
       SPACES_SECRET: ${SPACES_SECRET:-}
       SPACES_URL_EXPIRY: ${SPACES_URL_EXPIRY:-900}
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-mg.wyreng.com}
+      MAILGUN_FROM: ${MAILGUN_FROM:-Wyre Tracker <postmaster@mg.wyreng.com>}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5174}
     volumes:
       - media:/app/media
     ports:

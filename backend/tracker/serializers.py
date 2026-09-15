@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from . import rbac
-from .models import (Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident,
+from .models import (Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
                      InventoryItem, Issue, Project, ProjectMembership, PurchaseOrder, QbBill, Retention, SiteVisit, StockCount, StockLocation, StockMovement,
                      Threshold, User, Vendor, WarrantyClaim)
 from .services.base import iso
@@ -181,7 +181,13 @@ def stock_count(s: StockCount) -> dict:
             "notes": s.notes, "varianceValue": num(s.variance_value), **audit(s)}
 
 
-SERIALIZER = {Project: project, ProjectMembership: membership, ChronologyEvent: event, Document: document, Attachment: attachment, Approval: approval, Threshold: threshold,
+def notification(n: Notification) -> dict:
+    return {"id": n.id, "kind": n.kind, "severity": n.severity, "title": n.title, "body": n.body, "link": n.link,
+            "projectId": n.project_id, "ref": n.ref, "createdAt": iso(n.created_at), "updatedAt": iso(n.updated_at),
+            "readAt": iso(n.read_at)}
+
+
+SERIALIZER = {Notification: notification, Project: project, ProjectMembership: membership, ChronologyEvent: event, Document: document, Attachment: attachment, Approval: approval, Threshold: threshold,
               Vendor: vendor, InventoryItem: item, StockLocation: location, CostItem: cost_item, PurchaseOrder: purchase_order, GoodsReceipt: goods_receipt, Asset: asset,
               StockMovement: movement, Actual: actual, ChangeOrder: change_order, Retention: retention, QbBill: qb_bill, SiteVisit: visit, Issue: issue,
               CommissioningRecord: commissioning, HseIncident: hse, WarrantyClaim: warranty, StockCount: stock_count, User: user}

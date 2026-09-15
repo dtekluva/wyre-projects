@@ -90,6 +90,28 @@ class FileUrlView(APIView):
         return Response({"url": obj.file.url, "fileName": name})
 
 
+class NotificationsView(APIView):
+    """GET: my alerts, unread first. POST: mark read — {ids: [...]} or {all: true}."""
+
+    def get(self, request):
+        from .models import Notification
+        rows = Notification.objects.filter(recipient=request.user).order_by("read_at", "-created_at")[:200]
+        return Response({"notifications": [S.notification(n) for n in rows],
+                         "unread": Notification.objects.filter(recipient=request.user, read_at__isnull=True).count()})
+
+    def post(self, request):
+        from django.utils import timezone
+        from .models import Notification
+        qs = Notification.objects.filter(recipient=request.user, read_at__isnull=True)
+        if not request.data.get("all"):
+            ids = request.data.get("ids") or []
+            if not isinstance(ids, list) or not ids:
+                raise ApiError("Pass ids: [...] or all: true", "invalid")
+            qs = qs.filter(pk__in=[str(i) for i in ids])
+        n = qs.update(read_at=timezone.now())
+        return Response({"marked": n})
+
+
 class ReviewQueueView(APIView):
     def get(self, request):
         return Response([{**{k: v for k, v in it.items() if k != "item"}, "item": S.serialize(it["item"])} for it in review_svc.review_queue(request.user)])

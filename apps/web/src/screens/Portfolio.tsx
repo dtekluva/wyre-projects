@@ -4,7 +4,8 @@ import { STAGES, daysBetween, naira, pct, type Rag, type Stage } from "@wyre/api
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useIsMobile } from "../lib/useMediaQuery";
-import { Badge, Bar, Empty, Kpi, RagDot, StageChip } from "../components/ui";
+import { Badge, Bar, Empty, RagDot, StageChip } from "../components/ui";
+import { Dashboard } from "../components/Dashboard";
 
 export function Portfolio() {
   const api = useApi(); const { user } = useAuth(); const mobile = useIsMobile();
@@ -18,7 +19,6 @@ export function Portfolio() {
     (!q || `${p.code} ${p.name} ${p.clientName} ${p.location}`.toLowerCase().includes(q.toLowerCase())));
   const today = new Date().toISOString();
   const atRisk = all.filter((p) => p.rag !== "green").length;
-  const checks = api.reviewQueue(user.id).length; const approvals = api.approvalsFor(user.id).length;
   const contract = all.reduce((s, p) => s + p.contractValue, 0);
   const budget = seesMoney ? all.reduce((s, p) => s + api.money(p.id).planned, 0) : 0;
   const actual = seesMoney ? all.reduce((s, p) => s + api.money(p.id).actual, 0) : 0;
@@ -26,14 +26,21 @@ export function Portfolio() {
     <>
       <div className="page-head"><div><h1 className="page-title">Portfolio</h1><div className="page-sub">{all.length} projects you can see · {atRisk} need attention</div></div>
         {api.canCreateProject(user.id) && <Link to="/projects/new" className="ns-btn ns-btn--primary">+ New project</Link>}</div>
-      <div className="kpis">
-        <Kpi label="Projects" value={all.length} sub={`${all.filter((p) => p.stage === 8).length} closed`} />
-        <Kpi label="At risk" value={atRisk} sub={`${all.filter((p) => p.rag === "red").length} red · ${all.filter((p) => p.rag === "amber").length} amber`} tone={atRisk ? "warn" : undefined} />
-        <Kpi label="My checks" value={checks} sub="inputs awaiting me" tone={checks ? "accent" : undefined} />
-        <Kpi label="My approvals" value={approvals} sub="gates / POs / COs" tone={approvals ? "accent" : undefined} />
-        <Kpi label="Contract value" value={naira(contract, true)} sub="across visible projects" />
-        {seesMoney && <Kpi label="Budget burn" value={`${pct(actual, budget)}%`} sub={`${naira(actual, true)} of ${naira(budget, true)}`} />}
+      <div className="hero">
+        <div className="hero__figure">
+          <div className="hero__value">{naira(contract, true)}</div>
+          <div className="hero__label">contract value across {all.length} project{all.length === 1 ? "" : "s"}</div>
+        </div>
+        <div className="hero__side">
+          <div className="hero__stat"><b>{all.filter((p) => p.stage < 8).length}</b><span>live</span></div>
+          <div className={`hero__stat ${atRisk ? "hero__stat--warn" : ""}`}><b>{atRisk}</b><span>at risk</span></div>
+          {seesMoney && <div className="hero__stat"><b>{pct(actual, budget)}%</b><span>budget burn</span></div>}
+        </div>
       </div>
+
+      <Dashboard projects={all} />
+
+      <h2 className="dash__h2">All projects</h2>
       <div className="filters">
         <input className="ns-input" placeholder="Search code, name, client, location…" value={q} onChange={(e) => setQ(e.target.value)} />
         <select className="ns-input" value={stage} onChange={(e) => setStage(e.target.value === "all" ? "all" : Number(e.target.value) as Stage)}>
