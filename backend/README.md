@@ -119,12 +119,25 @@ Email is one digest per person covering what they have not been told about yet, 
 It is inert until `MAILGUN_API_KEY` is set, and `send_alert_emails` reports without sending unless `--send`
 is given. Use `--to` to route a real test to a single address.
 
-A cron entry on the host:
+### The schedule
+
+A third container, `scheduler`, runs the jobs — not a host cron entry, so the schedule travels with the
+deployment instead of living on whoever's machine set it up. It uses the same image, needs no cron daemon, and
+restarts with everything else.
 
 ```
-0 * * * *  docker compose -f /srv/wyre-tracker/backend/docker-compose.yml --env-file /srv/wyre-tracker/backend/.env.docker exec -T api python manage.py run_alerts
-30 7 * * * docker compose -f /srv/wyre-tracker/backend/docker-compose.yml --env-file /srv/wyre-tracker/backend/.env.docker exec -T api python manage.py send_alert_emails --send
+ALERTS_INTERVAL_MINUTES=60   # reconcile this often
+DIGEST_AT=07:30              # local time (TIME_ZONE, currently Africa/Lagos)
+DIGEST_ENABLED=0             # 1 to actually send; 0 reports and sends nothing
+DIGEST_TO=                   # optional: force every digest to one address while testing
 ```
+
+`docker compose logs -f scheduler` shows each run. A job that throws is logged and the scheduler carries on;
+it reconciles once at boot so the app is never stale after a restart.
+
+**Leave `DIGEST_ENABLED=0` until the user accounts are real people.** The demo accounts use placeholder
+addresses at the live wyreng.com domain, so sending to them would bounce mail off a real domain and cost you
+sending reputation.
 
 ## Deploy notes
 

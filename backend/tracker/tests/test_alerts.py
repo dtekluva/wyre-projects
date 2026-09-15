@@ -164,3 +164,40 @@ class EmailDigestTest(TestCase):
         for n in rows[1:5]:
             self.assertIn(n.title, html, "every alert appears in the digest, not just the first few")
             self.assertIn(n.title, text)
+
+
+class SchedulerTest(TestCase):
+    """The schedule runs as a container in the stack, so its time maths has to be right without a cron daemon."""
+
+    def cmd(self):
+        from tracker.management.commands.scheduler import Command
+        return Command()
+
+    def test_next_digest_rolls_to_tomorrow_once_today_has_passed(self):
+        from django.utils import timezone as tz
+        c = self.cmd()
+        base = tz.localtime().replace(year=2026, month=9, day=15, second=0, microsecond=0)
+        before = c._next_digest(base.replace(hour=6, minute=0), 7, 30)
+        self.assertEqual((before.day, before.hour, before.minute), (15, 7, 30), "still ahead of us today")
+        after = c._next_digest(base.replace(hour=9, minute=0), 7, 30)
+        self.assertEqual((after.day, after.hour, after.minute), (16, 7, 30), "already gone, so tomorrow")
+        on_the_dot = c._next_digest(base.replace(hour=7, minute=30), 7, 30)
+        self.assertEqual(on_the_dot.day, 16, "never schedules the same minute twice")
+
+    def test_bad_digest_time_falls_back_instead_of_crashing(self):
+        from tracker.management.commands.scheduler import _hhmm
+        self.assertEqual(_hhmm("06:15", (7, 30)), (6, 15))
+        for junk in ("", "nonsense", "25:00", "07:61", "7", "07:30:00", None):
+            self.assertEqual(_hhmm(junk if junk is not None else "", (7, 30)), (7, 30),
+                             f"{junk!r} must not take the scheduler down")
+
+    def test_a_failing_job_does_not_stop_the_scheduler(self):
+        from io import StringIO
+        from django.core.management.base import OutputWrapper
+        c = self.cmd()
+        buf = StringIO()
+        c.stdout = OutputWrapper(buf)                 # the real wrapper, not a bare StringIO
+        c.safely("definitely_not_a_command")          # must swallow and log, not raise
+        out = buf.getvalue()
+        self.assertIn("FAILED", out)
+        self.assertIn("definitely_not_a_command", out, "the log has to name the job that broke")

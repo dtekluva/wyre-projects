@@ -51,6 +51,37 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
 
+  # The schedule lives in the stack, not on somebody's laptop: same image, no cron daemon, restarts with
+  # everything else. Reconciling alerts is harmless; the email digest stays off until DIGEST_ENABLED=1.
+  scheduler:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-wyre_tracker}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-wyre_tracker}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env.docker}
+      DEBUG: ${DEBUG:-0}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      SPACES_BUCKET: ${SPACES_BUCKET:-}
+      SPACES_REGION: ${SPACES_REGION:-fra1}
+      SPACES_ENDPOINT: ${SPACES_ENDPOINT:-}
+      SPACES_KEY: ${SPACES_KEY:-}
+      SPACES_SECRET: ${SPACES_SECRET:-}
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-mg.wyreng.com}
+      MAILGUN_FROM: ${MAILGUN_FROM:-Wyre Tracker <postmaster@mg.wyreng.com>}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5174}
+      ALERTS_INTERVAL_MINUTES: ${ALERTS_INTERVAL_MINUTES:-60}
+      DIGEST_AT: ${DIGEST_AT:-07:30}
+      DIGEST_ENABLED: ${DIGEST_ENABLED:-0}
+      DIGEST_TO: ${DIGEST_TO:-}
+    volumes:
+      - media:/app/media
+    # migrations are the api container's job; this one only needs to wait for them
+    entrypoint: ["python", "manage.py", "scheduler"]
+
 volumes:
   pgdata:
   media:
