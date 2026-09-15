@@ -125,6 +125,7 @@ export class RemoteApi extends MockApi {
     wrap("submitCount", (a) => ({ name: "submitCount", body: { countId: a[1] } }));
     wrap("setIssueStatus", (a) => ({ name: "setIssueStatus", body: { issueId: a[1], status: a[2], assigneeId: a[3] } }));
     wrap("resolveIssue", (a) => ({ name: "resolveIssue", body: { issueId: a[1], input: a[2] } }));
+    wrap("addVisitPhotos", (a) => ({ name: "addVisitPhotos", body: { visitId: a[1], input: a[2] } }));
     wrap("updateWarrantyClaim", (a) => ({ name: "updateWarrantyClaim", body: { claimId: a[1], input: a[2] } }));
   }
   /** Signed links expire, so resolve them when the user clicks rather than when the snapshot was fetched. */

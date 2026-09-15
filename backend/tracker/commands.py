@@ -50,6 +50,7 @@ COMMANDS: dict[str, Handler] = {
     "unmatchBill": lambda a, d, f: S.qb_bill(recon.unmatch_bill(a, d.get("billId"))),
     # field
     "logVisit": lambda a, d, f: S.visit(field.log_visit(a, d.get("projectId"), _in(d))),
+    "addVisitPhotos": lambda a, d, f: S.visit(field.add_visit_photos(a, d.get("visitId"), _in(d))),
     "raiseIssue": lambda a, d, f: S.issue(field.raise_issue(a, d.get("projectId"), _in(d))),
     "setIssueStatus": lambda a, d, f: S.issue(field.set_issue_status(a, d.get("issueId"), d.get("status"), d.get("assigneeId"))),
     "resolveIssue": lambda a, d, f: S.issue(field.resolve_issue(a, d.get("issueId"), _in(d))),

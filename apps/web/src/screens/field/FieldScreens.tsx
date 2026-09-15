@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ISSUE_STATUS_LABEL, ROLE_LABEL, VISIT_TYPE_LABEL, fmtDate, naira, relative, type IssueCategory, type IssueSeverity, type VisitType } from "@wyre/api";
 import { Thumbs } from "../../components/Thumbs";
+import { VisitDetail } from "../../components/VisitDetail";
 import { useApi } from "../../lib/useApi";
 import { useAuth } from "../../lib/auth";
 import { useGeo } from "../../lib/useGeo";
@@ -15,9 +16,17 @@ import { Badge, Empty, RagDot, ReviewBadge, StageChip } from "../../components/u
 const SEV: IssueSeverity[] = ["critical", "high", "medium", "low"];
 const SEVV: Record<IssueSeverity, "danger" | "warning" | "info" | "neutral"> = { critical: "danger", high: "warning", medium: "info", low: "neutral" };
 const CATS: IssueCategory[] = ["electrical", "mechanical", "performance", "data", "safety", "client", "other"];
-const Chips = <T extends string,>({ value, options, onChange, label }: { value: T; options: readonly T[] | T[]; onChange: (v: T) => void; label: (v: T) => string }) =>
+const Chips = <T extends string,>({ value, options, onChange, label }: { value: T; options: readonly T[] | T[]; onChange: (v: T) => void; label: (v: T) => React.ReactNode }) =>
   <div className="chips">{options.map((o) => <button key={o} type="button" className={`chip chip--lg ${value === o ? "chip--on" : ""}`} onClick={() => onChange(o)}>{label(o)}</button>)}</div>;
 const useMine = () => { const api = useApi(); const { user } = useAuth(); return api.listProjects(user.id).filter((p) => p.stage < 8); };
+/** Techs know sites by name, not by code, so lead with the name and keep the code as the secondary line. */
+const useProjectLabel = () => {
+  const api = useApi();
+  return (id: string) => {
+    const p = api.projects.find((x) => x.id === id);
+    return p ? { name: p.branchName ? `${p.clientName} — ${p.branchName}` : p.name, code: p.code } : { name: id, code: "" };
+  };
+};
 const useVan = () => { const api = useApi(); const { user } = useAuth(); return api.listLocations().find((l) => l.custodianId === user.id) ?? api.listLocations().find((l) => l.type === "vehicle") ?? api.listLocations()[0]; };
 
 export function FieldSignin() {
@@ -48,27 +57,27 @@ export function FieldHome() {
 }
 
 export function FieldIssues() {
-  const api = useApi(); const mine = useMine(); const [onlyOpen, setOnlyOpen] = useState(true);
+  const api = useApi(); const mine = useMine(); const plabel = useProjectLabel(); const [onlyOpen, setOnlyOpen] = useState(true);
   const list = mine.flatMap((p) => api.listIssues({ projectId: p.id, openOnly: onlyOpen })).sort((a, b) => SEV.indexOf(a.severity) - SEV.indexOf(b.severity));
   return <div className="stack">
     <div className="row" style={{ justifyContent: "space-between" }}><h1 className="field__title">Issues</h1><button className="chip" onClick={() => setOnlyOpen((v) => !v)}>{onlyOpen ? "Open only" : "All"}</button></div>
     {list.length ? list.map((i) => { const sla = api.issueSla(i); return <Link key={i.id} to={`/field/issues/${i.id}`} className="frow frow--col">
       <span className="row" style={{ justifyContent: "space-between" }}><b className="ellipsis">{i.title}</b><Badge variant={SEVV[i.severity]}>{i.severity}</Badge></span>
-      <span className="row row--wrap sm muted">{api.projectCode(i.projectId)} · {ISSUE_STATUS_LABEL[i.status]} · <ReviewBadge status={i.reviewStatus} />{sla.open && (sla.breached ? <Badge variant="danger">SLA −{Math.abs(sla.hoursLeft)} h</Badge> : <span>SLA {sla.hoursLeft} h</span>)}</span></Link>; })
+      <span className="row row--wrap sm muted">{plabel(i.projectId).name} · {ISSUE_STATUS_LABEL[i.status]} · <ReviewBadge status={i.reviewStatus} />{sla.open && (sla.breached ? <Badge variant="danger">SLA −{Math.abs(sla.hoursLeft)} h</Badge> : <span>SLA {sla.hoursLeft} h</span>)}</span></Link>; })
       : <Empty title="No issues" />}
     <Link to="/field/issues/new" className="fab" aria-label="New issue">＋</Link>
   </div>;
 }
 
 export function FieldIssueNew() {
-  const { user } = useAuth(); const api = useApi(); const mine = useMine(); const { submit } = useField(); const nav = useNavigate(); const geo = useGeo();
+  const { user } = useAuth(); const api = useApi(); const mine = useMine(); const plabel = useProjectLabel(); const { submit } = useField(); const nav = useNavigate(); const geo = useGeo();
   const [pid, setPid] = useState(mine[0]?.id ?? ""); const [sev, setSev] = useState<IssueSeverity>("medium"); const [cat, setCat] = useState<IssueCategory>("electrical");
   const [title, setTitle] = useState(""); const [desc, setDesc] = useState(""); const [asset, setAsset] = useState(""); const [shots, setShots] = useState<Shot[]>([]);
   const assets = pid ? api.listAssets({ projectId: pid, status: "installed" }) : [];
   const go = () => { if (!shots.length) return; const r = submit(`Issue raised — ${title}`, { kind: "raise_issue", actorId: user.id, projectId: pid, photos: shots.map((s) => ({ fileName: s.fileName, caption: `Before — ${title}`, gps: geo.status === "ok" ? { lat: geo.lat!, lng: geo.lng! } : undefined, blob: s.file })), input: { category: cat, severity: sev, title, description: desc, assetId: asset || undefined } }); if (r !== "error") nav("/field/issues"); };
   return <div className="stack">
     <h1 className="field__title">New issue</h1>
-    <label className="flabel">Project</label><Chips value={pid} options={mine.map((p) => p.id)} onChange={setPid} label={(id) => api.projectCode(id)} />
+    <label className="flabel">Project</label><Chips value={pid} options={mine.map((p) => p.id)} onChange={setPid} label={(id) => <span className="chip__stack"><b>{plabel(id).name}</b><span className="chip__code ns-mono">{plabel(id).code}</span></span>} />
     <label className="flabel">Severity · SLA</label><Chips value={sev} options={SEV} onChange={setSev} label={(s) => `${s} · ${api.slaHours(s)} h`} />
     <label className="flabel">Category</label><Chips value={cat} options={CATS} onChange={setCat} label={(c) => c} />
     <input className="ns-input fld" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -80,7 +89,7 @@ export function FieldIssueNew() {
 }
 
 export function FieldIssueDetail() {
-  const { id } = useParams(); const api = useApi(); const { user } = useAuth(); const { submit } = useField(); const nav = useNavigate();
+  const { id } = useParams(); const api = useApi(); const { user } = useAuth(); const plabel = useProjectLabel(); const { submit } = useField(); const nav = useNavigate();
   const i = api.issues.find((x) => x.id === id); const [open, setOpen] = useState(false); const [root, setRoot] = useState(""); const [res, setRes] = useState(""); const [cost, setCost] = useState(""); const [shots, setShots] = useState<Shot[]>([]);
   if (!i) return <Empty title="Issue not found" />;
   const sla = api.issueSla(i); const canUpdate = api.can(user.id, "issue.update", i.projectId) && !["closed", "wont_fix", "resolved"].includes(i.status);
@@ -88,7 +97,7 @@ export function FieldIssueDetail() {
   return <div className="stack">
     <div className="row" style={{ justifyContent: "space-between" }}><Badge variant={SEVV[i.severity]}>{i.severity}</Badge><ReviewBadge status={i.reviewStatus} /></div>
     <h1 className="field__title">{i.title}</h1>
-    <div className="sm muted">{api.projectCode(i.projectId)} · {i.category} · {ISSUE_STATUS_LABEL[i.status]} · raised by {api.userName(i.raisedBy)} {relative(i.raisedAt)}</div>
+    <div className="sm muted">{plabel(i.projectId).name} · <span className="ns-mono">{plabel(i.projectId).code}</span> · {i.category} · {ISSUE_STATUS_LABEL[i.status]} · raised by {api.userName(i.raisedBy)} {relative(i.raisedAt)}</div>
     {sla.open && <div className={`fnote ${sla.breached ? "fnote--bad" : ""}`}>{sla.breached ? `SLA breached by ${Math.abs(sla.hoursLeft)} h` : `${sla.hoursLeft} h left on SLA`} · due {fmtDate(i.slaDueAt)}</div>}
     <p>{i.description}</p>
     {asset && <div className="sm">Asset: <b className="ns-mono">{asset.serial}</b> · {asset.model} · warranty to {fmtDate(asset.warrantyEnd)}</div>}
@@ -111,15 +120,20 @@ export function FieldIssueDetail() {
 }
 
 export function FieldVisits() {
-  const api = useApi(); const mine = useMine(); const list = mine.flatMap((p) => api.listVisits(p.id)).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  const api = useApi(); const mine = useMine(); const plabel = useProjectLabel();
+  const [open, setOpen] = useState<string | null>(null);
+  const list = mine.flatMap((p) => api.listVisits(p.id)).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
   return <div className="stack"><h1 className="field__title">Visits</h1>
-    {list.length ? list.map((v) => <div key={v.id} className="frow frow--col"><span className="row" style={{ justifyContent: "space-between" }}><b>{VISIT_TYPE_LABEL[v.visitType]}</b><ReviewBadge status={v.reviewStatus} /></span>
-      <span className="sm muted">{api.projectCode(v.projectId)} · {fmtDate(v.startedAt)} · {v.durationHrs} h · {naira(v.costTotal, true)}{v.clientSignoff ? " · signed" : ""}</span><span className="sm">{v.findings}</span><Thumbs ids={v.attachmentIds} empty="no photos" /></div>) : <Empty title="No visits yet" />}
+    {list.length ? list.map((v) => <button key={v.id} className="frow frow--col" onClick={() => setOpen(v.id)}>
+      <span className="row" style={{ justifyContent: "space-between", width: "100%" }}><b>{VISIT_TYPE_LABEL[v.visitType]}</b><ReviewBadge status={v.reviewStatus} /></span>
+      <span className="sm muted">{plabel(v.projectId).name} · {fmtDate(v.startedAt)} · {v.durationHrs} h · {naira(v.costTotal, true)}{v.clientSignoff ? " · signed" : ""}</span>
+      <span className="sm">{v.findings}</span><Thumbs ids={v.attachmentIds} empty="no photos" /></button>) : <Empty title="No visits yet" />}
+    {open && (() => { const v = list.find((x) => x.id === open); return v ? <VisitDetail visit={v} onClose={() => setOpen(null)} /> : null; })()}
     <Link to="/field/visits/new" className="fab" aria-label="Log a visit">＋</Link></div>;
 }
 
 export function FieldVisitNew() {
-  const api = useApi(); const { user } = useAuth(); const mine = useMine(); const van = useVan(); const { submit, online } = useField(); const nav = useNavigate(); const geo = useGeo();
+  const api = useApi(); const { user } = useAuth(); const mine = useMine(); const plabel = useProjectLabel(); const van = useVan(); const { submit, online } = useField(); const nav = useNavigate(); const geo = useGeo();
   const [started] = useState(() => new Date().toISOString());
   const [pid, setPid] = useState(mine[0]?.id ?? ""); const [type, setType] = useState<VisitType>("routine"); const [find, setFind] = useState(""); const [act, setAct] = useState("");
   const [parts, setParts] = useState<Record<string, number>>({}); const [travel, setTravel] = useState(""); const [labour, setLabour] = useState(""); const [shots, setShots] = useState<Shot[]>([]);
@@ -137,7 +151,7 @@ export function FieldVisitNew() {
   return <div className="stack">
     <div className="row" style={{ justifyContent: "space-between" }}><span className="sm muted">Started {new Date(started).toLocaleTimeString()}</span><span className="sm muted">📍 {geo.status === "ok" ? `${geo.lat!.toFixed(4)}, ${geo.lng!.toFixed(4)}` : geo.status === "locating" ? "locating…" : "no GPS"}</span></div>
     <h1 className="field__title">Log a visit</h1>
-    <label className="flabel">Project</label><Chips value={pid} options={mine.map((p) => p.id)} onChange={setPid} label={(id) => api.projectCode(id)} />
+    <label className="flabel">Project</label><Chips value={pid} options={mine.map((p) => p.id)} onChange={setPid} label={(id) => <span className="chip__stack"><b>{plabel(id).name}</b><span className="chip__code ns-mono">{plabel(id).code}</span></span>} />
     <label className="flabel">Visit type</label><Chips value={type} options={Object.keys(VISIT_TYPE_LABEL) as VisitType[]} onChange={setType} label={(t) => VISIT_TYPE_LABEL[t]} />
     <textarea className="ns-textarea fld" placeholder="What you found" value={find} onChange={(e) => setFind(e.target.value)} /><textarea className="ns-textarea fld" placeholder="What you did" value={act} onChange={(e) => setAct(e.target.value)} />
     <label className="flabel">Parts used from {van.name}</label>

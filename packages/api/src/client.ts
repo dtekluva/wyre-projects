@@ -855,6 +855,23 @@ export class MockApi {
     this.emit(); return v;
   }
 
+  /** Attach further photos to a visit. An edit to an already-checked record re-enters review (§4.13). */
+  addVisitPhotos(actorId: string, visitId: string, input: { attachmentIds: string[] }): SiteVisit {
+    const v = this.visits.find((x) => x.id === visitId); if (!v) throw new ApiError("Visit not found", "not_found");
+    this.require(actorId, "visit.create", v.projectId);
+    const ids = input.attachmentIds ?? [];
+    if (!ids.length) throw new ApiError("Choose at least one photo", "invalid");
+    if (ids.some((i) => !this.attachments.some((a) => a.id === i && a.projectId === v.projectId))) throw new ApiError("Photo is not on this project", "invalid");
+    const fresh = ids.filter((i) => !v.attachmentIds.includes(i));
+    if (!fresh.length) throw new ApiError("Those photos are already attached", "conflict");
+    const at = this.now();
+    v.attachmentIds = [...v.attachmentIds, ...fresh]; v.updatedAt = at; v.updatedBy = actorId;
+    const reopened = v.reviewStatus === "checked";
+    if (reopened) Object.assign(v, { reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: v.reviewVersion + 1, checkedBy: undefined, checkedAt: undefined, checkComment: undefined });
+    this.log(v.projectId, actorId, "visit", `${fresh.length} photo${fresh.length === 1 ? "" : "s"} added to the ${VISIT_TYPE_LABEL[v.visitType]} visit${reopened ? " — record re-entered review" : ""}`, undefined, { model: "SiteVisit", id: v.id });
+    this.emit(); return v;
+  }
+
   slaHours(sev: IssueSeverity) { const t = this.thresholds.find((x) => x.key === `sla.${sev}`); if (!t) return { critical: 24, high: 72, medium: 168, low: 720 }[sev]; return t.unit === "d" ? Number(t.value) * 24 : Number(t.value); }
   issueSla(i: Issue) { const due = new Date(i.slaDueAt).getTime(); const open = !["closed", "wont_fix"].includes(i.status); const left = (due - Date.now()) / 3600000; return { dueAt: i.slaDueAt, breached: open && left < 0, hoursLeft: Math.round(left), open }; }
   listIssues(f: { projectId?: string; status?: IssueStatus; openOnly?: boolean } = {}) {

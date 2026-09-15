@@ -428,3 +428,8 @@ body.modal-open { overflow: hidden; }
 .cam__caption { display: flex; align-items: center; gap: 8px; }
 .cam__caption img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; flex: 0 0 auto; }
 .cam__caption .finput { flex: 1; min-height: 40px; }
+
+/* Field app: project chips lead with the site name */
+.chip__stack { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; gap: 1px; }
+.chip__code { font-size: 10px; opacity: .7; }
+button.frow { text-align: left; font: inherit; cursor: pointer; }

@@ -5,12 +5,14 @@ import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { Badge, ReviewBadge } from "./ui";
 import { Thumbs } from "./Thumbs";
+import { FilePick, type Pick } from "./FilePick";
 
 /** Full record behind a visit: who, when, what was found, what it cost, what stock moved, and every photo
  *  with its label. A checker can act on it here rather than hunting through the review queue. */
 export function VisitDetail({ visit, onClose }: { visit: SiteVisit; onClose: () => void }) {
   const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   const [rejecting, setRejecting] = useState(false); const [comment, setComment] = useState("");
+  const [extra, setExtra] = useState<Pick[]>([]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey); document.body.classList.add("modal-open");
@@ -21,6 +23,7 @@ export function VisitDetail({ visit, onClose }: { visit: SiteVisit; onClose: () 
   const canCheck = v.reviewStatus === "pending" && v.submittedBy !== user.id && api.can(user.id, "visit.check", v.projectId);
   const photos = v.attachmentIds.map((id) => api.attachments.find((a) => a.id === id)).filter((a): a is NonNullable<typeof a> => !!a);
   const parts = v.parts.map((pt) => ({ ...pt, mv: api.movements.find((m) => m.id === pt.movementId) }));
+  const canAdd = api.can(user.id, "visit.create", v.projectId);
   const issues = v.issueIds.map((id) => api.listIssues({ projectId: v.projectId }).find((i) => i.id === id)).filter(Boolean);
 
   return (
@@ -76,6 +79,18 @@ export function VisitDetail({ visit, onClose }: { visit: SiteVisit; onClose: () 
               <Thumbs ids={[a.id]} size="lg" />
               <figcaption className="sm">{a.caption || a.fileName}<div className="muted">{api.userName(a.uploadedBy)} · {relative(a.uploadedAt)}{a.gps ? " · GPS" : ""}</div></figcaption>
             </figure>)}</div> : <div className="sm muted">No photos attached.</div>}
+            {canAdd && <div className="stack" style={{ gap: 6, marginTop: 4 }}>
+              <FilePick picks={extra} onChange={setExtra} multiple captions label="Add more photos" captionPlaceholder="Label this photo…" />
+              {extra.length > 0 && <div className="row">
+                <button className="ns-btn ns-btn--secondary ns-btn--sm" onClick={() => {
+                  if (safe(() => {
+                    const ids = extra.map((f) => api.addAttachment(user.id, v.projectId, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: f.caption?.trim() || `${VISIT_TYPE_LABEL[v.visitType]} — site photo` }).id);
+                    api.addVisitPhotos(user.id, v.id, { attachmentIds: ids });
+                  }, v.reviewStatus === "checked" ? "Photos added — the visit re-enters review" : "Photos added")) setExtra([]);
+                }}>Add {extra.length} photo{extra.length > 1 ? "s" : ""}</button>
+                {v.reviewStatus === "checked" && <span className="sm muted">this visit is already checked, so adding photos sends it back for review</span>}
+              </div>}
+            </div>}
           </div>
 
           {v.clientSignoff && <div className="modal__section">

@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from ..constants import COMMISSIONING_TEMPLATE, HSE_TYPE_LABEL, ISSUE_SEVERITIES, VISIT_TYPE_LABEL
 from ..errors import ApiError
-from ..models import Asset, CommissioningRecord, Document, HseIncident, Issue, SiteVisit, StockMovement, Threshold, User, WarrantyClaim
+from ..models import Asset, Attachment, CommissioningRecord, Document, HseIncident, Issue, SiteVisit, StockMovement, Threshold, User, WarrantyClaim
 from . import base as b
 from . import stock as stock_svc
 
@@ -71,6 +71,35 @@ def log_visit(actor: User, project_id: str, input: dict) -> SiteVisit:
     v.parts = parts; v.cost_parts = cost_parts; v.cost_total = b.dec(v.cost_travel) + b.dec(v.cost_labour) + cost_parts
     v.save()
     b.log(project_id, actor, "visit", f"{VISIT_TYPE_LABEL[v.visit_type]} visit logged — {b.dec(v.duration_hrs).normalize():f} h, {b.fmt(v.cost_total)} (pending check)", v.findings, {"model": "SiteVisit", "id": v.id})
+    return v
+
+
+@transaction.atomic
+def add_visit_photos(actor: User, visit_id: str, input: dict) -> SiteVisit:
+    """Attach further photos to a visit after the fact. Per §4.13 an edit to an already-checked record
+    re-enters review, so late evidence cannot slip in behind a completed check."""
+    v = b.get_or_404(SiteVisit, visit_id, "Visit")
+    b.require(actor, "visit.create", v.project_id)
+    ids = [str(i) for i in (input.get("attachmentIds") or [])]
+    if not ids:
+        raise ApiError("Choose at least one photo", "invalid")
+    valid = set(Attachment.objects.filter(pk__in=ids, project_id=v.project_id).values_list("id", flat=True))
+    unknown = [i for i in ids if i not in valid]
+    if unknown:
+        raise ApiError("Photo is not on this project", "invalid")
+    fresh = [i for i in ids if i not in (v.attachment_ids or [])]
+    if not fresh:
+        raise ApiError("Those photos are already attached", "conflict")
+    at = b.now()
+    v.attachment_ids = list(v.attachment_ids or []) + fresh
+    b.stamp(v, actor, at)
+    reopened = v.review_status == "checked"
+    if reopened:
+        b.new_review(v, actor, at, version=v.review_version + 1)
+    v.save()
+    n = len(fresh)
+    b.log(v.project_id, actor, "visit", f"{n} photo{'' if n == 1 else 's'} added to the {VISIT_TYPE_LABEL[v.visit_type]} visit"
+          + (" — record re-entered review" if reopened else ""), None, {"model": "SiteVisit", "id": v.id})
     return v
 
 

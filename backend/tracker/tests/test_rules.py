@@ -274,3 +274,47 @@ class ClientIdTest(TestCase):
             documents.add_attachment(pm, "p1", {"id": "att1", "fileName": "y.jpg"})
         i = field.raise_issue(User.objects.get(pk="u_ft1"), "p1", {"id": "iss_deadbeef", "category": "other", "severity": "low", "title": "T", "description": "", "beforeAttachmentIds": [att.id]})
         self.assertEqual(i.id, "iss_deadbeef")
+
+
+class VisitPhotoTest(TestCase):
+    """Photos can be added to a visit after the fact; doing so to a checked record re-opens the review (§4.13)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_demo", verbosity=0)
+        cls.u = {u.id: u for u in User.objects.all()}
+
+    def err(self, code, fn, *a, **k):
+        with self.assertRaises(ApiError) as cm:
+            fn(*a, **k)
+        self.assertEqual(cm.exception.code, code, cm.exception.message)
+
+    def photo(self, actor, project="p1", caption="extra"):
+        return documents.add_attachment(actor, project, {"caption": caption, "fileName": "extra.jpg"}).id
+
+    def test_add_photos_to_a_pending_visit(self):
+        u = self.u
+        v = field.log_visit(u["u_ft1"], "p1", {"visitType": "routine", "startedAt": "2026-09-10T09:00:00Z", "endedAt": "2026-09-10T11:00:00Z",
+                                               "findings": "ok", "actionsTaken": "", "costTravel": 0, "costLabour": 0, "attachmentIds": [self.photo(u["u_ft1"])]})
+        self.assertEqual(len(v.attachment_ids), 1)
+        p2 = self.photo(u["u_ft1"], caption="second angle")
+        v = field.add_visit_photos(u["u_ft1"], v.id, {"attachmentIds": [p2]})
+        self.assertEqual(len(v.attachment_ids), 2)
+        self.assertEqual(v.review_status, "pending")
+        self.assertEqual(v.review_version, 1, "still the first submission")
+        self.err("conflict", field.add_visit_photos, u["u_ft1"], v.id, {"attachmentIds": [p2]})
+        self.err("invalid", field.add_visit_photos, u["u_ft1"], v.id, {"attachmentIds": []})
+        self.err("invalid", field.add_visit_photos, u["u_ft1"], v.id, {"attachmentIds": [self.photo(u["u_pm2"], "p4")]})
+        self.err("forbidden", field.add_visit_photos, u["u_fin"], v.id, {"attachmentIds": [self.photo(u["u_ft1"])]})
+
+    def test_adding_to_a_checked_visit_reopens_the_review(self):
+        u = self.u
+        v = field.log_visit(u["u_ft1"], "p1", {"visitType": "inspection", "startedAt": "2026-09-10T09:00:00Z", "endedAt": "2026-09-10T10:00:00Z",
+                                               "findings": "ok", "actionsTaken": "", "costTravel": 1000, "costLabour": 2000, "attachmentIds": [self.photo(u["u_ft1"])]})
+        review.check(u["u_pm1"], "site_visit", v.id, "checked")
+        v.refresh_from_db(); self.assertEqual(v.review_status, "checked")
+        v = field.add_visit_photos(u["u_ft1"], v.id, {"attachmentIds": [self.photo(u["u_ft1"], caption="late evidence")]})
+        self.assertEqual(v.review_status, "pending", "a checked record that is edited goes back for review")
+        self.assertEqual(v.review_version, 2)
+        self.assertIsNone(v.checked_by)
+        self.assertTrue(any("re-entered review" in e.summary for e in v.project.events.all()))
