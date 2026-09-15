@@ -433,3 +433,6 @@ body.modal-open { overflow: hidden; }
 .chip__stack { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; gap: 1px; }
 .chip__code { font-size: 10px; opacity: .7; }
 button.frow { text-align: left; font: inherit; cursor: pointer; }
+
+.money__cell--wide { grid-column: span 3; display: flex; align-items: center; }
+@media (max-width: 860px) { .money__cell--wide { grid-column: 1 / -1; } }
