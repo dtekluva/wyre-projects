@@ -74,7 +74,9 @@ export interface Document extends AuditFields, ReviewFields {
   id: string; projectId: string; docType: DocType; title: string;
   status: "draft" | "submitted" | "approved" | "expired";
   issuedAt?: string; expiresAt?: string; issuer?: string; version: number;
-  fileName: string; sizeBytes: number;
+  fileName: string; sizeBytes: number; sha256?: string;
+  /** short-lived signed download link, present in live mode only */
+  url?: string;
 }
 
 export interface Attachment extends ReviewFields {
@@ -82,6 +84,8 @@ export interface Attachment extends ReviewFields {
   kind: "image" | "document"; capturedAt?: string; gps?: { lat: number; lng: number };
   sha256: string; uploadedBy: string; uploadedAt: string;
   linkedTo?: { model: string; id: string; label: string }; caption?: string;
+  /** short-lived signed download link, present in live mode only */
+  url?: string;
 }
 
 export type EventType =

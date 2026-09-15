@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
+import { FileLink } from "../components/FileLink";
 import { useOutletContext } from "react-router-dom";
 import { DOC_TYPE_LABEL, STAGES, bytes, fmtDate, relative, type DocType, type Document, type Project } from "@wyre/api";
 import { useApi } from "../lib/useApi";
@@ -15,9 +16,9 @@ function DocRow({ d }: { d: Document }) {
   const expiring = d.expiresAt && new Date(d.expiresAt).getTime() - Date.now() < 90 * 86400000;
   return (
     <div className="doc">
-      <span className="doc__icon">{ext}</span>
+      <FileLink kind="document" id={d.id} className="doc__icon doc__icon--btn" title={`Open ${d.fileName}`}>{ext}</FileLink>
       <div className="grow" style={{ minWidth: 0 }}>
-        <div className="doc__title ellipsis">{d.title} <span className="muted sm">v{d.version}</span></div>
+        <div className="doc__title ellipsis"><FileLink kind="document" id={d.id} title={`Open ${d.fileName}`}>{d.title}</FileLink> <span className="muted sm">v{d.version}</span></div>
         <div className="doc__meta">{DOC_TYPE_LABEL[d.docType]} · {bytes(d.sizeBytes)} · submitted by <b>{api.userName(d.submittedBy)}</b> {relative(d.submittedAt)}
           {d.checkedBy && <> · checked by <b>{api.userName(d.checkedBy)}</b></>}{d.issuer && <> · issuer {d.issuer}</>}{d.expiresAt && <> · expires {fmtDate(d.expiresAt)}</>}</div>
         {d.reviewStatus === "rejected" && d.checkComment && <div className="note note--danger" style={{ marginTop: 6 }}>Rejected: {d.checkComment}</div>}
@@ -48,7 +49,7 @@ export function ProjectDocuments() {
                 {STAGES.filter((s) => s.evidence.length).map((s) => <optgroup key={s.stage} label={`${s.stage} · ${s.name}`}>{s.evidence.map((t) => <option key={t} value={t}>{DOC_TYPE_LABEL[t]}</option>)}</optgroup>)}
                 <optgroup label="Other"><option value="contract">Contract</option><option value="other">Other</option></optgroup></select></label>
             <label className="ns-field"><span className="ns-field__label">Title</span><input className="ns-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={DOC_TYPE_LABEL[dt]} /></label>
-            <label className="ns-field"><span className="ns-field__label">File</span><FilePick picks={docFile} onChange={setDocFile} required label="Choose document" hint="PDF or image, up to 25 MB" /></label>
+            <label className="ns-field"><span className="ns-field__label">File <span className="muted">· PDF or image, max 25 MB</span></span><FilePick picks={docFile} onChange={setDocFile} required label="Choose document" hint="PDF or image, up to 25 MB" /></label>
             <button className="ns-btn ns-btn--primary" type="submit" disabled={!docFile.length}>Submit document</button>
           </form> : <Note tone="warn">Your role cannot add documents to this project.</Note>}
         </div>
@@ -65,12 +66,14 @@ export function ProjectDocuments() {
         <div className="card__head"><div className="card__title">Photos & files</div><span className="sm muted">{atts.length} uploads · GPS + sha256 captured</span></div>
         <div className="card__body stack">
           {canAtt ? <form className="form--inline" onSubmit={(e) => { e.preventDefault(); if (!picks.length) return; if (safe(() => { for (const f of picks) api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, kind: f.file.type.startsWith("image/") ? "image" : "document", caption: cap.trim() || undefined }); }, `${picks.length} upload${picks.length > 1 ? "s" : ""} submitted — pending check`)) { setPicks([]); setCap(""); } }}>
-            <label className="ns-field grow"><span className="ns-field__label">Files</span><FilePick picks={picks} onChange={setPicks} multiple required label="Choose photos or documents" hint="Images or PDF, up to 25 MB each" /></label>
+            <label className="ns-field grow"><span className="ns-field__label">Files <span className="muted">· images or PDF, max 25 MB each</span></span><FilePick picks={picks} onChange={setPicks} multiple required label="Choose photos or documents" hint="Images or PDF, up to 25 MB each" /></label>
             <label className="ns-field grow"><span className="ns-field__label">Caption</span><input className="ns-input" value={cap} onChange={(e) => setCap(e.target.value)} placeholder="What does this show?" /></label>
             <button className="ns-btn ns-btn--secondary" type="submit" disabled={!picks.length}>Upload</button>
           </form> : <Note tone="warn">Your role cannot upload to this project.</Note>}
           {atts.length ? <div className="photo-grid">{atts.map((a) => <div key={a.id} className="photo">
-            <div className="photo__img">{a.kind === "image" ? "📷" : "📄"} {a.fileName}</div>
+            <FileLink kind="attachment" id={a.id} className="photo__img photo__img--btn" title={`Open ${a.fileName}`}>
+              {a.url && a.kind === "image" ? <img src={a.url} alt={a.caption ?? a.fileName} loading="lazy" /> : <>{a.kind === "image" ? "📷" : "📄"} {a.fileName}</>}
+            </FileLink>
             <div className="photo__cap"><div className="ellipsis" title={a.caption}>{a.caption ?? "—"}</div>
               <div className="sm muted">{api.userName(a.uploadedBy)} · {relative(a.uploadedAt)}{a.gps && " · GPS"}</div><div style={{ marginTop: 4 }}><ReviewBadge status={a.reviewStatus} /></div></div>
           </div>)}</div> : <Empty title="No uploads yet" />}

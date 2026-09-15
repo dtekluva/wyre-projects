@@ -472,6 +472,12 @@ export class MockApi {
   }
   listThresholds() { return this.thresholds; }
 
+  /** Resolve a download link for a stored file. The mock has no server, so it returns what the record carries. */
+  async fileUrl(kind: "document" | "attachment", id: string): Promise<string | null> {
+    const row = kind === "document" ? this.documents.find((d) => d.id === id) : this.attachments.find((a) => a.id === id);
+    return row?.url ?? null;
+  }
+
   // ======================================================================
   // Phase 2 — money
   // ======================================================================

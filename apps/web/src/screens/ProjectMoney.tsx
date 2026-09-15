@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
 import { Link, useOutletContext } from "react-router-dom";
 import { COST_CATEGORY_LABEL, ROLE_LABEL, fmtDate, naira, pct, relative, type CostCategory, type Project, type PurchaseOrder } from "@wyre/api";
+import { Thumbs } from "../components/Thumbs";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
@@ -40,7 +41,7 @@ function PoRow({ po, p }: { po: PurchaseOrder; p: Project }) {
       <div className="sm muted">Raised by {api.userName(po.raisedBy)} {relative(po.raisedAt)}{ap && ap.status === "pending" && <> · awaiting {ap.requiredRoles.filter((r) => !ap.decisions.some((d) => d.role === r)).map((r) => ROLE_LABEL[r]).join(" + ")} · <Link to="/work/approvals" className="link">approvals</Link></>}</div>
       <ul className="po__lines">{po.items.map((i) => <li key={i.id}><span className="grow">{i.qty} × {i.description}{i.inventoryItemId && <span className="muted"> · stock</span>}</span><span className="ns-mono">{naira(i.unitCost)}</span><span className="ns-mono">{naira(i.lineTotal)}</span>
         <span className={`sm ${i.qtyReceived >= i.qty ? "" : "muted"}`}>{i.qtyReceived}/{i.qty} received</span></li>)}</ul>
-      {grns.length > 0 && <div className="sm muted" style={{ marginTop: 6 }}>{grns.map((g) => <span key={g.id} className="row" style={{ display: "inline-flex", marginRight: 12 }}>{g.grnNumber} <ReviewBadge status={g.reviewStatus} /></span>)}</div>}
+      {grns.length > 0 && <div className="stack sm muted" style={{ marginTop: 6, gap: 4 }}>{grns.map((g) => <span key={g.id} className="row row--wrap" style={{ gap: 8 }}>{g.grnNumber} <ReviewBadge status={g.reviewStatus} /> <Thumbs ids={g.attachmentIds} empty="no image" /></span>)}</div>}
       {open && <div className="receive">
         <div className="ns-overline">Goods receipt against {po.poNumber} → {api.locationName("loc_wh")}</div>
         {po.items.map((i) => { const rem = api.poRemaining(i, po.id); const it = i.inventoryItemId ? api.item(i.inventoryItemId) : undefined; return <div key={i.id}>
@@ -128,7 +129,7 @@ export function ProjectMoney() {
       <div className="card table--wrap"><div className="card__head"><div className="card__title">Actuals ledger</div><span className="sm muted">only checked / approved events · {naira(m.actual, true)}</span></div>
         {acts.length ? <table className="table ledger"><thead><tr><th>Date</th><th>Source</th><th>Reference</th><th>Category</th><th className="num">Amount</th><th>Evidence</th></tr></thead>
           <tbody>{acts.map((a) => <tr key={a.id}><td className="sm">{fmtDate(a.date)}</td><td><Badge variant="neutral">{a.source.replace("_", " ")}</Badge></td><td>{a.sourceRef.label}{a.vendorId && <div className="sm muted">{api.vendorName(a.vendorId)}</div>}</td><td className="sm">{COST_CATEGORY_LABEL[a.category]}</td>
-            <td className={`num ns-mono ${a.amount < 0 ? "warn-cell" : ""}`}>{naira(a.amount)}</td><td className="sm muted">{a.attachmentIds.length ? `${a.attachmentIds.length} file${a.attachmentIds.length > 1 ? "s" : ""}` : "—"}</td></tr>)}</tbody></table> : <div className="card__body"><Empty title="No actuals yet" hint="Actuals appear when goods receipts, stock issues or change orders are checked / approved." /></div>}</div>
+            <td className={`num ns-mono ${a.amount < 0 ? "warn-cell" : ""}`}>{naira(a.amount)}</td><td><Thumbs ids={a.attachmentIds} /></td></tr>)}</tbody></table> : <div className="card__body"><Empty title="No actuals yet" hint="Actuals appear when goods receipts, stock issues or change orders are checked / approved." /></div>}</div>
 
       <div className="workspace" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <div className="card"><div className="card__head"><div className="card__title">Retention</div>{ret.releasedAt ? <Badge variant="success">released</Badge> : ret.amountHeld ? <Badge variant="warning">held</Badge> : <Badge variant="neutral">not yet</Badge>}</div>

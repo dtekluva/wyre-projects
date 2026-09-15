@@ -351,7 +351,7 @@ textarea.fld { min-height: 84px; }
 
 /* Real file pickers on the office screens */
 .filepick { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-.filepick__btn { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; cursor: pointer;
+.filepick__btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 36px; padding: 0 12px; cursor: pointer;
   border: var(--ns-border-hairline) dashed var(--ns-color-border-default); border-radius: var(--ns-radius-medium);
   background: var(--ns-color-surface-subtle); color: var(--ns-color-text-primary); font: inherit; }
 .filepick__btn:hover { border-color: var(--ns-color-accent); color: var(--ns-color-accent); }
@@ -367,3 +367,25 @@ textarea.fld { min-height: 84px; }
 .filepick__err { color: var(--ns-color-danger-fill); }
 .filepick__hint { }
 @media (max-width: 860px) { .filepick__name { max-width: 120px; } }
+
+/* Buttons that open a stored file, styled as links */
+button.link { border: 0; background: none; padding: 0; font: inherit; color: var(--ns-color-accent); cursor: pointer; text-align: left; }
+button.link:hover { text-decoration: underline; }
+button.link:disabled { opacity: .6; cursor: progress; }
+.doc__icon--btn { cursor: pointer; border: 0; font: inherit; }
+.photo__img--btn { cursor: pointer; border: 0; background: none; padding: 0; width: 100%; }
+.photo__img img { width: 100%; height: 110px; object-fit: cover; display: block; border-radius: var(--ns-radius-medium) var(--ns-radius-medium) 0 0; }
+.link--file { }
+
+/* Evidence thumbnails — every count in the UI is backed by the real images */
+.thumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.thumb { width: 44px; height: 44px; padding: 0; overflow: hidden; cursor: pointer; flex: 0 0 auto;
+  border: var(--ns-border-hairline) solid var(--ns-color-border-subtle); border-radius: var(--ns-radius-medium);
+  background: var(--ns-color-surface-subtle); display: grid; place-items: center; }
+.thumb:hover { border-color: var(--ns-color-accent); }
+.thumb:disabled { opacity: .6; cursor: progress; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb__ph { font-size: 18px; }
+.thumbs--lg .thumb { width: 72px; height: 72px; }
+.filepick { width: 100%; }
+.filepick__hint { line-height: 1.3; }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ROLE_LABEL, naira, relative, type Approval } from "@wyre/api";
+import { Thumbs } from "./Thumbs";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
@@ -14,6 +15,8 @@ export function ApprovalCard({ a }: { a: Approval }) {
   const project = a.projectId ? api.projects.find((p) => p.id === a.projectId) : undefined;
   const po = a.kind === "po" ? api.purchaseOrders.find((p) => p.approvalId === a.id) : undefined;
   const me = api.canDecide(user.id, a);
+  // approvals stand in for the four-eyes check on these, so the evidence has to be visible here
+  const mv = a.kind === "write_off" ? api.movements.find((m) => m.approvalId === a.id) : undefined;
   const waiting = a.requiredRoles.filter((r) => !a.decisions.some((d) => d.role === r));
   const link = a.kind === "write_off" || a.kind === "stock_count" ? "/inventory" : a.kind === "gate" ? `/projects/${a.projectId}` : `/projects/${a.projectId}/money`;
   return (
@@ -27,7 +30,8 @@ export function ApprovalCard({ a }: { a: Approval }) {
         {a.amount !== undefined && <span>Amount <b className="ns-mono">{naira(a.amount)}</b></span>}
         <span>Requires <b>{a.requiredRoles.map((r) => ROLE_LABEL[r]).join(" + ")}</b></span>
       </div>
-      <div className="review__body"><div className="sm" style={{ color: "var(--ns-color-text-secondary)" }}>{a.description}</div></div>
+      <div className="review__body"><div className="sm grow" style={{ color: "var(--ns-color-text-secondary)" }}>{a.description}</div>
+        {mv && <div className="stack" style={{ gap: 4 }}><span className="ns-overline">Evidence</span><Thumbs ids={mv.attachmentIds ?? []} empty="no photo" /></div>}</div>
       {po && <ul className="lines">{po.items.map((i) => <li key={i.id}><span className="grow">{i.qty} × {i.description}</span><span className="ns-mono">{naira(i.unitCost)}</span><b className="ns-mono">{naira(i.lineTotal)}</b></li>)}</ul>}
       {a.decisions.length > 0 && <ul className="decisions">
         {a.decisions.map((d, i) => <li key={i}>{d.decision === "approved" ? "✓" : "✕"} <b>{api.userName(d.approverId)}</b> ({ROLE_LABEL[d.role]}) {d.decision} {relative(d.at)}{d.comment && <span className="muted"> — “{d.comment}”</span>}</li>)}

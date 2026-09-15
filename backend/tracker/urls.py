@@ -9,6 +9,7 @@ urlpatterns = [
     path("me/", views.MeView.as_view()),
     path("snapshot/", views.SnapshotView.as_view()),
     path("commands/<str:name>/", views.CommandView.as_view()),
+    path("files/<str:kind>/<str:id>/", views.FileUrlView.as_view()),
     path("reviews/", views.ReviewQueueView.as_view()),
     path("approvals/mine/", views.ApprovalsForMeView.as_view()),
     path("projects/<str:project_id>/money/", views.MoneyView.as_view()),

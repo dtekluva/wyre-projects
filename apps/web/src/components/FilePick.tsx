@@ -25,6 +25,9 @@ export function FilePick({ picks, onChange, label = "Choose file", accept = "ima
     if (ref.current) ref.current.value = "";
   };
   const drop = (e: React.DragEvent) => { e.preventDefault(); take(e.dataTransfer.files); };
+  // The button is the LAST child so its bottom edge lines up with the inputs beside it in a `.form` grid,
+  // which aligns items to the end. Chips and errors stack above it so they never push it out of line.
+  // `hint` becomes the tooltip rather than in-flow text, which would make this cell taller than its neighbours.
   return (
     <div className="filepick" onDragOver={(e) => e.preventDefault()} onDrop={drop}>
       {picks.length > 0 && <div className="filepick__list">
@@ -35,11 +38,10 @@ export function FilePick({ picks, onChange, label = "Choose file", accept = "ima
           <button type="button" aria-label={`Remove ${p.fileName}`} onClick={() => onChange(picks.filter((_, j) => j !== i))}>✕</button>
         </span>)}
       </div>}
-      <button type="button" className={`filepick__btn ${required && !picks.length ? "filepick__btn--req" : ""}`} onClick={() => ref.current?.click()}>
+      {err && <span className="sm filepick__err">{err}</span>}
+      <button type="button" title={hint} className={`filepick__btn ${required && !picks.length ? "filepick__btn--req" : ""}`} onClick={() => ref.current?.click()}>
         📎 {picks.length && !multiple ? "Replace file" : label}{required && !picks.length ? " (required)" : ""}
       </button>
-      {hint && !err && <span className="sm muted filepick__hint">{hint}</span>}
-      {err && <span className="sm filepick__err">{err}</span>}
       <input ref={ref} type="file" accept={accept} multiple={multiple} hidden onChange={(e) => take(e.target.files)} />
     </div>
   );

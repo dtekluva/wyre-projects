@@ -127,6 +127,13 @@ export class RemoteApi extends MockApi {
     wrap("resolveIssue", (a) => ({ name: "resolveIssue", body: { issueId: a[1], input: a[2] } }));
     wrap("updateWarrantyClaim", (a) => ({ name: "updateWarrantyClaim", body: { claimId: a[1], input: a[2] } }));
   }
+  /** Signed links expire, so resolve them when the user clicks rather than when the snapshot was fetched. */
+  async fileUrl(kind: "document" | "attachment", id: string): Promise<string | null> {
+    const r = await this.fetchAuth(`/files/${kind}/${id}/`);
+    if (!r.ok) return null;
+    return (await r.json()).url ?? null;
+  }
+
   /** Remote mode has no demo reset; re-sync from the server instead. */
   reset() { void this.refresh(); }
   isDirty() { return false; }

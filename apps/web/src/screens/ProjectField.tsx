@@ -3,6 +3,7 @@ import { FilePick, type Pick } from "../components/FilePick";
 import { useOutletContext } from "react-router-dom";
 import { COMMISSIONING_TEMPLATE, HSE_TYPE_LABEL, VISIT_TYPE_LABEL, fmtDate, naira, relative,
   type HseType, type Issue, type IssueCategory, type IssueSeverity, type IssueStatus, type Project, type VisitType, type WarrantyStatus } from "@wyre/api";
+import { Thumbs } from "../components/Thumbs";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
@@ -22,7 +23,11 @@ function IssueCard({ i, p }: { i: Issue; p: Project }) {
   return <div className="issue">
     <div className="row" style={{ justifyContent: "space-between" }}><b className="ellipsis">{i.title}</b><Badge variant={SEV[i.severity]}>{i.severity}</Badge></div>
     <div className="row row--wrap sm muted">{i.category}{i.isSnag && <Badge variant="info">snag</Badge>}<ReviewBadge status={i.reviewStatus} />{sla.open && (sla.breached ? <Badge variant="danger">SLA −{Math.abs(sla.hoursLeft)} h</Badge> : <span>SLA {sla.hoursLeft} h</span>)}</div>
-    <div className="sm muted">{api.userName(i.raisedBy)} · {relative(i.raisedAt)}{i.assigneeId ? ` · → ${api.userName(i.assigneeId)}` : ""} · 📷 {i.beforeAttachmentIds.length}/{i.afterAttachmentIds.length}</div>
+    <div className="sm muted">{api.userName(i.raisedBy)} · {relative(i.raisedAt)}{i.assigneeId ? ` · → ${api.userName(i.assigneeId)}` : ""}</div>
+    <div className="row row--wrap" style={{ marginTop: 6, gap: 10 }}>
+      <span className="sm muted">Before</span><Thumbs ids={i.beforeAttachmentIds} empty="none" />
+      {i.afterAttachmentIds.length > 0 && <><span className="sm muted">After</span><Thumbs ids={i.afterAttachmentIds} /></>}
+    </div>
     {i.resolution && <div className="sm"><b>Fix:</b> {i.resolution}{i.costToResolve ? ` · ${naira(i.costToResolve)}` : ""}</div>}
     {i.checkComment && <div className="sm muted">Checker: “{i.checkComment}”</div>}
     {canUpdate && !open && <div className="row" style={{ marginTop: 4 }}>
@@ -70,7 +75,9 @@ export function ProjectField() {
     {tab === "visits" && <>
       {visits.length ? visits.map((v) => <div key={v.id} className="card"><div className="card__head"><div className="card__title">{VISIT_TYPE_LABEL[v.visitType]} · {fmtDate(v.startedAt)} · {v.durationHrs} h</div><ReviewBadge status={v.reviewStatus} /></div>
         <div className="card__body stack" style={{ gap: 6 }}>
-          <div className="sm muted">{v.technicianIds.map((t) => api.userName(t)).join(", ")}{v.gps ? ` · 📍 ${v.gps.lat.toFixed(3)}, ${v.gps.lng.toFixed(3)}` : ""} · 📷 {v.attachmentIds.length}{v.clientSignoff ? ` · signed: ${v.clientSignoff.name}${v.clientSignoff.rating ? " " + "★".repeat(v.clientSignoff.rating) : ""}` : ""}</div>
+          <div className="sm muted">{v.technicianIds.map((t) => api.userName(t)).join(", ")}{v.gps ? ` · 📍 ${v.gps.lat.toFixed(3)}, ${v.gps.lng.toFixed(3)}` : ""}{v.clientSignoff ? ` · signed: ${v.clientSignoff.name}${v.clientSignoff.rating ? " " + "★".repeat(v.clientSignoff.rating) : ""}` : ""}</div>
+          <div className="row row--wrap" style={{ marginTop: 6, gap: 10 }}><Thumbs ids={v.attachmentIds} empty="no photos" />
+            {v.clientSignoff?.signatureAttachmentId && <Thumbs ids={[v.clientSignoff.signatureAttachmentId]} />}</div>
           <div><b>Findings:</b> {v.findings}</div>{v.actionsTaken && <div><b>Actions:</b> {v.actionsTaken}</div>}
           <div className="row row--wrap sm"><Badge variant="neutral">travel {naira(v.costTravel, true)}</Badge><Badge variant="neutral">labour {naira(v.costLabour, true)}</Badge><Badge variant="neutral">parts {naira(v.costParts, true)}</Badge><b className="ns-mono">{naira(v.costTotal)}</b></div>
           {v.parts.length > 0 && <div className="sm muted">Parts: {v.parts.map((pt) => `${api.itemName(pt.itemId)} × ${pt.qty}`).join(" · ")} — {pendingVisitParts(v.id).every((m) => m.reviewStatus === "checked") ? "posted" : "posts on check"}</div>}
@@ -93,7 +100,8 @@ export function ProjectField() {
 
     {tab === "commissioning" && <>
       {coms.length ? coms.map((c) => <div key={c.id} className="card"><div className="card__head"><div className="card__title">Commissioning {fmtDate(c.date)} · <span style={{ textTransform: "uppercase" }}>{c.result}</span></div><div className="row"><Badge variant={Object.values(c.meter).every(Boolean) ? "success" : "danger"}>meter integrity {Object.values(c.meter).every(Boolean) ? "pass" : "fail"}</Badge><ReviewBadge status={c.reviewStatus} /></div></div>
-        <div className="card__body stack" style={{ gap: 6 }}><div className="sm muted">Engineer {api.userName(c.engineerId)}{c.clientWitness ? ` · witness ${c.clientWitness.name}` : ""} · 📷 {c.attachmentIds.length}</div>{c.notes && <div>{c.notes}</div>}
+        <div className="card__body stack" style={{ gap: 6 }}><div className="sm muted">Engineer {api.userName(c.engineerId)}{c.clientWitness ? ` · witness ${c.clientWitness.name}` : ""}</div>
+        <div className="row row--wrap" style={{ gap: 10 }}><Thumbs ids={c.attachmentIds} empty="no photos" />{c.clientWitness?.signatureAttachmentId && <Thumbs ids={[c.clientWitness.signatureAttachmentId]} />}</div>{c.notes && <div>{c.notes}</div>}
           <div className="row row--wrap">{c.items.map((it) => <Badge key={it.key} variant={it.pass ? "success" : "danger"}>{it.label}{it.measuredValue ? `: ${it.measuredValue}${it.unit ? " " + it.unit : ""}` : ""}</Badge>)}</div>
           <div className="sm muted">Meter checks — ASCII serial {c.meter.serialAscii ? "✓" : "✗"} · CT ratio {c.meter.ctRatioVerified ? "✓" : "✗"} · first live reading {c.meter.firstLiveReading ? "✓" : "✗"} · historical packets {c.meter.historicalOk ? "✓" : "✗"}</div></div></div>)
         : <Empty title="No commissioning record" hint="A checked record with result pass generates the gate-5 evidence documents." />}
@@ -110,7 +118,7 @@ export function ProjectField() {
 
     {tab === "hse" && <>
       {hse.length ? hse.map((h) => <div key={h.id} className="card"><div className="card__head"><div className="card__title">{HSE_TYPE_LABEL[h.type]} · {fmtDate(h.occurredAt)}</div><div className="row"><Badge variant={SEV[h.severity]}>{h.severity}</Badge><ReviewBadge status={h.reviewStatus} /></div></div>
-        <div className="card__body stack" style={{ gap: 4 }}><div>{h.description}</div><div className="sm"><b>Actions:</b> {h.actions}</div><div className="sm muted">Reported by {api.userName(h.reportedBy)} · 📷 {h.attachmentIds.length}</div></div></div>) : <Empty title="No HSE incidents" />}
+        <div className="card__body stack" style={{ gap: 4 }}><div>{h.description}</div><div className="sm"><b>Actions:</b> {h.actions}</div><div className="sm muted">Reported by {api.userName(h.reportedBy)}</div><Thumbs ids={h.attachmentIds} empty="no photos" /></div></div>) : <Empty title="No HSE incidents" />}
       {api.can(user.id, "hse.create", p.id) && <div className="card"><div className="card__head"><div className="card__title">Report an HSE incident</div></div><div className="card__body form">
         <select className="ns-input" value={hType} onChange={(e) => setHType(e.target.value as HseType)}>{(Object.keys(HSE_TYPE_LABEL) as HseType[]).map((t) => <option key={t} value={t}>{HSE_TYPE_LABEL[t]}</option>)}</select>
         <select className="ns-input" value={hSev} onChange={(e) => setHSev(e.target.value as IssueSeverity)}>{(["critical", "high", "medium", "low"] as IssueSeverity[]).map((s) => <option key={s} value={s}>{s}</option>)}</select>

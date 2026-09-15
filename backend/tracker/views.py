@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from . import serializers as S
+from . import rbac, serializers as S
 from .commands import COMMANDS
 from .errors import ApiError
 from .services import approvals as approvals_svc, money as money_svc, recon as recon_svc, review as review_svc, stock as stock_svc
@@ -69,6 +69,29 @@ class CommandView(APIView):
             result = handler(request.user, body, upload)
         want = request.query_params.get("snapshot", "1") != "0"
         return Response({"result": result, "snapshot": S.snapshot(request.user) if want else None})
+
+
+class FileUrlView(APIView):
+    """A signed URL is short-lived, so links are resolved when the user clicks rather than when the page loaded.
+    Re-checks read permission on the owning project before handing one out."""
+
+    def get(self, request, kind: str, id: str):
+        from .models import Attachment, Document
+        from .services.projects import visible_project_ids
+
+        model = {"document": Document, "attachment": Attachment}.get(kind)
+        if model is None:
+            raise ApiError("Unknown file kind", "not_found")
+        obj = model.objects.filter(pk=id).first()
+        if obj is None or not obj.file:
+            raise ApiError("File not found", "not_found")
+        perm = "document.read" if kind == "document" else "attachment.read"
+        if not rbac.can(request.user, perm, obj.project_id):
+            raise ApiError(f'Your role does not allow "{perm}" here', "forbidden")
+        if obj.project_id and obj.project_id not in visible_project_ids(request.user):
+            raise ApiError("You are not a member of this project", "forbidden")
+        name = getattr(obj, "file_name", None) or obj.file.name.rsplit("/", 1)[-1]
+        return Response({"url": obj.file.url, "fileName": name})
 
 
 class ReviewQueueView(APIView):

@@ -94,3 +94,43 @@ class UploadTest(TestCase):
         self.assertEqual(attachment_path(a, "noext"), f"attachments/unassigned/{'a'*64}.bin")
         d = Document(sha256="b" * 64, project_id="p2")
         self.assertEqual(document_path(d, "Report.PDF"), f"documents/p2/{'b'*64}.pdf")
+
+
+class FileUrlTest(TestCase):
+    """GET /files/<kind>/<id>/ mints a fresh signed link and re-checks permission at click time."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_demo", verbosity=0)
+
+    def auth(self, username):
+        c = APIClient()
+        r = c.post("/api/v1/auth/token/", {"username": username, "password": "wyre-demo-2026"}, format="json")
+        c.credentials(HTTP_AUTHORIZATION=f"Bearer {r.json()['access']}")
+        return c
+
+    def upload(self, c, project="p1"):
+        f = SimpleUploadedFile("evidence.jpg", b"\xff\xd8\xff\xe0 evidence", content_type="image/jpeg")
+        r = c.post("/api/v1/commands/addAttachment/?snapshot=0",
+                   {"payload": '{"projectId": "%s", "input": {"caption": "x"}}' % project, "file": f}, format="multipart")
+        return r.json()["result"]["id"]
+
+    def test_resolves_for_a_member_and_refuses_others(self):
+        pm = self.auth("kunle.adebayo")
+        att_id = self.upload(pm)
+        r = pm.get(f"/api/v1/files/attachment/{att_id}/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["url"])
+        self.assertEqual(r.json()["fileName"], "evidence.jpg")
+        # a PM on other projects is not a member of p1
+        other = self.auth("bola.adeyemi")
+        self.assertEqual(other.get(f"/api/v1/files/attachment/{att_id}/").status_code, 403)
+        # unauthenticated
+        self.assertEqual(APIClient().get(f"/api/v1/files/attachment/{att_id}/").status_code, 401)
+
+    def test_unknown_kind_and_missing_file(self):
+        c = self.auth("kunle.adebayo")
+        self.assertEqual(c.get("/api/v1/files/nope/att1/").status_code, 404)
+        self.assertEqual(c.get("/api/v1/files/attachment/does-not-exist/").status_code, 404)
+        # a seeded row with no uploaded bytes has nothing to hand out
+        self.assertEqual(c.get("/api/v1/files/document/doc1/").status_code, 404)

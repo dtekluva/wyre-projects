@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ISSUE_STATUS_LABEL, ROLE_LABEL, VISIT_TYPE_LABEL, fmtDate, naira, relative, type IssueCategory, type IssueSeverity, type VisitType } from "@wyre/api";
+import { Thumbs } from "../../components/Thumbs";
 import { useApi } from "../../lib/useApi";
 import { useAuth } from "../../lib/auth";
 import { useGeo } from "../../lib/useGeo";
@@ -91,7 +92,9 @@ export function FieldIssueDetail() {
     {sla.open && <div className={`fnote ${sla.breached ? "fnote--bad" : ""}`}>{sla.breached ? `SLA breached by ${Math.abs(sla.hoursLeft)} h` : `${sla.hoursLeft} h left on SLA`} · due {fmtDate(i.slaDueAt)}</div>}
     <p>{i.description}</p>
     {asset && <div className="sm">Asset: <b className="ns-mono">{asset.serial}</b> · {asset.model} · warranty to {fmtDate(asset.warrantyEnd)}</div>}
-    <div className="sm muted">📷 {i.beforeAttachmentIds.length} before · {i.afterAttachmentIds.length} after{i.assigneeId ? ` · assigned to ${api.userName(i.assigneeId)}` : ""}</div>
+    <div className="sm muted">{i.assigneeId ? `Assigned to ${api.userName(i.assigneeId)}` : "Unassigned"}</div>
+    <div className="row row--wrap" style={{ gap: 10 }}><span className="sm muted">Before</span><Thumbs ids={i.beforeAttachmentIds} empty="none" />
+      {i.afterAttachmentIds.length > 0 && <><span className="sm muted">After</span><Thumbs ids={i.afterAttachmentIds} /></>}</div>
     {i.resolution && <div className="fnote"><b>Resolution:</b> {i.resolution}{i.rootCause ? ` · root cause: ${i.rootCause}` : ""}{i.costToResolve ? ` · ${naira(i.costToResolve)}` : ""}</div>}
     {i.checkComment && <div className="fnote fnote--warn">Checker: “{i.checkComment}”</div>}
     {canUpdate && !open && <div className="fgrid">
@@ -111,7 +114,7 @@ export function FieldVisits() {
   const api = useApi(); const mine = useMine(); const list = mine.flatMap((p) => api.listVisits(p.id)).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
   return <div className="stack"><h1 className="field__title">Visits</h1>
     {list.length ? list.map((v) => <div key={v.id} className="frow frow--col"><span className="row" style={{ justifyContent: "space-between" }}><b>{VISIT_TYPE_LABEL[v.visitType]}</b><ReviewBadge status={v.reviewStatus} /></span>
-      <span className="sm muted">{api.projectCode(v.projectId)} · {fmtDate(v.startedAt)} · {v.durationHrs} h · {naira(v.costTotal, true)} · 📷 {v.attachmentIds.length}{v.clientSignoff ? " · signed" : ""}</span><span className="sm">{v.findings}</span></div>) : <Empty title="No visits yet" />}
+      <span className="sm muted">{api.projectCode(v.projectId)} · {fmtDate(v.startedAt)} · {v.durationHrs} h · {naira(v.costTotal, true)}{v.clientSignoff ? " · signed" : ""}</span><span className="sm">{v.findings}</span><Thumbs ids={v.attachmentIds} empty="no photos" /></div>) : <Empty title="No visits yet" />}
     <Link to="/field/visits/new" className="fab" aria-label="Log a visit">＋</Link></div>;
 }
 
