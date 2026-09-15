@@ -75,6 +75,28 @@ cp .env.example .env            # set DATABASE_URL (Postgres) and SECRET_KEY
 Web app against it: `VITE_API_URL=http://localhost:8000/api/v1 npm run dev` (or copy `apps/web/.env.example`).
 Tests: `.venv/bin/python manage.py test tracker`.
 
+## Uploads (spec §9)
+
+Uploads go to DigitalOcean Spaces when `SPACES_BUCKET` is set, and to `MEDIA_ROOT` on disk otherwise, so local
+development and the demo need no credentials.
+
+```bash
+SPACES_BUCKET=wyre-tracker
+SPACES_REGION=fra1
+SPACES_KEY=...
+SPACES_SECRET=...
+SPACES_URL_EXPIRY=900      # seconds a signed download link stays valid
+```
+
+Keep the bucket **private**. Every read is served as a short-lived pre-signed URL generated per request, so no
+object is ever publicly readable.
+
+Keys are content-addressed as `attachments/<project>/<sha256><ext>` and `documents/<project>/<sha256><ext>`:
+
+- identical bytes always land on the same key, so re-uploading the same photo cannot create a second copy;
+- a different file can never take an existing key, which is how "originals are never overwritten" is enforced;
+- the sha256 stored on the row is the hash of the bytes actually received, computed server-side.
+
 ## Deploy notes
 
 - `DEBUG=0`, real `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` = the web app origin(s).

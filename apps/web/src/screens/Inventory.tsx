@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FilePick, type Pick } from "../components/FilePick";
 import { MOVEMENT_LABEL, fmtDate, naira, relative, type MovementType, type StockCount } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
@@ -13,7 +14,7 @@ export function Inventory() {
   const mv = api.listMovements({ itemId: focus || undefined, type: type || undefined }).slice(0, 60);
   const pending = api.listMovements({ status: "pending" }).length; const below = bal.filter((b) => b.belowReorder).length;
   const canWrite = api.can(user.id, "inventory.write");
-  const [wItem, setWItem] = useState(api.items[0]?.id ?? ""); const [wQty, setWQty] = useState("1"); const [wSel, setWSel] = useState<string[]>([]); const [wWhy, setWWhy] = useState(""); const [wFile, setWFile] = useState("");
+  const [wItem, setWItem] = useState(api.items[0]?.id ?? ""); const [wQty, setWQty] = useState("1"); const [wSel, setWSel] = useState<string[]>([]); const [wWhy, setWWhy] = useState(""); const [wFile, setWFile] = useState<Pick[]>([]);
   const wi = wItem ? api.item(wItem) : undefined; const wVal = wi ? (wi.isSerialised ? wSel.length : Number(wQty) || 0) * api.wacOf(wi.id) : 0;
   const dirThr = api.thresholdNum("writeoff.director_threshold", 500_000);
   // phase 3 — locations, transfers, counts
@@ -82,12 +83,12 @@ export function Inventory() {
               <td>{api.itemName(m.itemId)}</td><td className={`num ns-mono ${["issue", "write_off"].includes(m.movementType) ? "warn-cell" : ""}`}>{["issue", "write_off"].includes(m.movementType) ? "−" : "+"}{m.qty}</td><td className="num ns-mono">{naira(m.unitCost)}</td><td className="num ns-mono">{naira(m.totalCost)}</td>
               <td className="sm ns-mono">{api.projectCode(m.projectId)}</td><td className="sm muted">{m.sourceRef?.label}{m.reason ? ` · ${m.reason}` : ""}</td><td><ReviewBadge status={m.reviewStatus} /></td></tr>)}</tbody></table> : <div className="card__body"><Empty title="No movements" /></div>}</div>
         <div className="card"><div className="card__head"><div className="card__title">Write off stock</div><span className="sm muted">Finance approval{wVal >= dirThr ? " + Director" : ""}</span></div>
-          <div className="card__body">{canWrite ? <form className="stack" onSubmit={(e) => { e.preventDefault(); if (safe(() => { const ev = api.addEvidence(user.id, { fileName: wFile.trim() || "damage-photo.jpg", caption: `Write-off evidence — ${wi?.name}` }); api.writeOff(user.id, { itemId: wItem, qty: wi?.isSerialised ? wSel.length : Number(wQty), serials: wSel, reason: wWhy, attachmentIds: [ev.id] }); }, "Write-off submitted for Finance approval")) { setWSel([]); setWWhy(""); setWFile(""); } }}>
+          <div className="card__body">{canWrite ? <form className="stack" onSubmit={(e) => { e.preventDefault(); if (safe(() => { const f = wFile[0]; const ev = api.addEvidence(user.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: `Write-off evidence — ${wi?.name}` }); api.writeOff(user.id, { itemId: wItem, qty: wi?.isSerialised ? wSel.length : Number(wQty), serials: wSel, reason: wWhy, attachmentIds: [ev.id] }); }, "Write-off submitted for Finance approval")) { setWSel([]); setWWhy(""); setWFile([]); } }}>
             <label className="ns-field"><span className="ns-field__label">Item</span><select className="ns-input" value={wItem} onChange={(e) => { setWItem(e.target.value); setWSel([]); }}>{api.items.map((i) => <option key={i.id} value={i.id}>{i.name} — {api.available(i.id)} free</option>)}</select></label>
             {wi?.isSerialised ? <label className="ns-field"><span className="ns-field__label">Serials — select {wSel.length}</span><select className="ns-input select-multi" multiple value={wSel} onChange={(e) => setWSel(Array.from(e.target.selectedOptions).map((o) => o.value))}>{api.inStockSerials(wi.id).map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
               : <label className="ns-field"><span className="ns-field__label">Quantity</span><input className="ns-input" type="number" min={1} value={wQty} onChange={(e) => setWQty(e.target.value)} /></label>}
             <label className="ns-field"><span className="ns-field__label">Reason (required)</span><input className="ns-input" value={wWhy} onChange={(e) => setWWhy(e.target.value)} placeholder="Damaged in transit…" /></label>
-            <label className="ns-field"><span className="ns-field__label">Photo (required)</span><input className="ns-input" value={wFile} onChange={(e) => setWFile(e.target.value)} placeholder="damage.jpg" /></label>
+            <label className="ns-field"><span className="ns-field__label">Photo (required)</span><FilePick picks={wFile} onChange={setWFile} required label="Choose photo" /></label>
             <div className="row"><button className="ns-btn ns-btn--danger" type="submit">Write off {naira(wVal)}</button></div>
           </form> : <Note tone="warn">Only the Store Keeper can raise a write-off.</Note>}</div></div>
       </div>

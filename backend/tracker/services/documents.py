@@ -40,7 +40,7 @@ def add_document(actor: User, project_id: str, input: dict, upload=None) -> Docu
                    file_name=file_name, size_bytes=size, created_at=at, created_by=actor, updated_at=at, updated_by=actor)
     b.new_review(doc, actor, at)
     if upload is not None:
-        _, doc.size_bytes = _sha(upload)
+        doc.sha256, doc.size_bytes = _sha(upload)
         doc.file_name = upload.name or file_name
         doc.file.save(upload.name, upload, save=False)
     doc.save()

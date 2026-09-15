@@ -36,6 +36,12 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:4173}
       SEED_DEMO: ${SEED_DEMO:-0}
+      SPACES_BUCKET: ${SPACES_BUCKET:-}
+      SPACES_REGION: ${SPACES_REGION:-fra1}
+      SPACES_ENDPOINT: ${SPACES_ENDPOINT:-}
+      SPACES_KEY: ${SPACES_KEY:-}
+      SPACES_SECRET: ${SPACES_SECRET:-}
+      SPACES_URL_EXPIRY: ${SPACES_URL_EXPIRY:-900}
     volumes:
       - media:/app/media
     ports:

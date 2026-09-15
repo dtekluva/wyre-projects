@@ -102,8 +102,9 @@ export class RemoteApi extends MockApi {
     const id = (r: unknown) => (r as { id?: string } | undefined)?.id;
     const withId = (input: unknown, r: unknown) => ({ ...(input as Json), id: id(r) });
     // (actorId, projectId, input)
-    for (const n of ["addDocument", "addCostItem", "raiseChangeOrder", "raiseIssue", "createCommissioning", "reportHse", "raiseWarrantyClaim", "logVisit"])
+    for (const n of ["addCostItem", "raiseChangeOrder", "raiseIssue", "createCommissioning", "reportHse", "raiseWarrantyClaim", "logVisit"])
       wrap(n, (a, r) => ({ name: n, body: { projectId: a[1], input: withId(a[2], r) } }));
+    wrap("addDocument", (a, r) => { const inp = a[2] as { blob?: Blob; fileName?: string }; const { blob, ...rest } = inp; return { name: "addDocument", body: { projectId: a[1], input: withId(rest, r) }, blob, fileName: inp.fileName }; });
     wrap("addAttachment", (a, r) => { const inp = a[2] as { blob?: Blob; fileName?: string }; const { blob, ...rest } = inp; return { name: "addAttachment", body: { projectId: a[1], input: withId(rest, r) }, blob, fileName: inp.fileName }; });
     wrap("addEvidence", (a, r) => { const inp = a[1] as { blob?: Blob; fileName?: string }; const { blob, ...rest } = inp; return { name: "addEvidence", body: { input: withId(rest, r) }, blob, fileName: inp.fileName }; });
     wrap("createProject", (a, r) => ({ name: "createProject", body: { input: withId(a[1], r) } }));

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FilePick, type Pick } from "../components/FilePick";
 import { useOutletContext } from "react-router-dom";
 import { COMMISSIONING_TEMPLATE, HSE_TYPE_LABEL, VISIT_TYPE_LABEL, fmtDate, naira, relative,
   type HseType, type Issue, type IssueCategory, type IssueSeverity, type IssueStatus, type Project, type VisitType, type WarrantyStatus } from "@wyre/api";
@@ -16,7 +17,7 @@ const COLS: { key: string; label: string; statuses: IssueStatus[] }[] = [
 
 function IssueCard({ i, p }: { i: Issue; p: Project }) {
   const api = useApi(); const { user } = useAuth(); const safe = useSafe(); const sla = api.issueSla(i);
-  const [open, setOpen] = useState(false); const [root, setRoot] = useState(""); const [res, setRes] = useState(""); const [cost, setCost] = useState(""); const [after, setAfter] = useState("");
+  const [open, setOpen] = useState(false); const [root, setRoot] = useState(""); const [res, setRes] = useState(""); const [cost, setCost] = useState(""); const [after, setAfter] = useState<Pick[]>([]);
   const canUpdate = api.can(user.id, "issue.update", p.id) && !["closed", "wont_fix", "resolved"].includes(i.status);
   return <div className="issue">
     <div className="row" style={{ justifyContent: "space-between" }}><b className="ellipsis">{i.title}</b><Badge variant={SEV[i.severity]}>{i.severity}</Badge></div>
@@ -30,8 +31,8 @@ function IssueCard({ i, p }: { i: Issue; p: Project }) {
       <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setOpen(true)}>Resolve…</button></div>}
     {open && <div className="stack" style={{ marginTop: 6 }}>
       <input className="ns-input" placeholder="Root cause" value={root} onChange={(e) => setRoot(e.target.value)} /><input className="ns-input" placeholder="Resolution" value={res} onChange={(e) => setRes(e.target.value)} />
-      <div className="row"><input className="ns-input" type="number" placeholder="Extra cost ₦" value={cost} onChange={(e) => setCost(e.target.value)} /><input className="ns-input" placeholder="after-photo.jpg (required)" value={after} onChange={(e) => setAfter(e.target.value)} /></div>
-      <div className="row"><button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => { if (safe(() => { const a = api.addAttachment(user.id, p.id, { fileName: after.trim() || "after.jpg", caption: `After — ${i.title}` }); api.resolveIssue(user.id, i.id, { rootCause: root, resolution: res, afterAttachmentIds: [a.id], costToResolve: Number(cost) || 0 }); }, "Resolution submitted — pending check")) setOpen(false); }}>Submit</button><button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setOpen(false)}>Cancel</button></div>
+      <div className="row"><input className="ns-input" type="number" placeholder="Extra cost ₦" value={cost} onChange={(e) => setCost(e.target.value)} /><FilePick picks={after} onChange={setAfter} required label="After photo" /></div>
+      <div className="row"><button className="ns-btn ns-btn--primary ns-btn--sm" disabled={!after.length} onClick={() => { if (safe(() => { const f = after[0]; const a = api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: `After — ${i.title}` }); api.resolveIssue(user.id, i.id, { rootCause: root, resolution: res, afterAttachmentIds: [a.id], costToResolve: Number(cost) || 0 }); }, "Resolution submitted — pending check")) setOpen(false); }}>Submit</button><button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setOpen(false)}>Cancel</button></div>
     </div>}
   </div>;
 }
@@ -41,10 +42,10 @@ export function ProjectField() {
   const issues = api.listIssues({ projectId: p.id }); const visits = api.listVisits(p.id); const coms = api.listCommissioning(p.id); const hse = api.listHse(p.id); const wars = api.listWarranty(p.id);
   const [tab, setTab] = useState<"issues" | "visits" | "commissioning" | "hse" | "warranty">("issues");
   // forms
-  const [iCat, setICat] = useState<IssueCategory>("electrical"); const [iSev, setISev] = useState<IssueSeverity>("medium"); const [iTitle, setITitle] = useState(""); const [iDesc, setIDesc] = useState(""); const [iPhoto, setIPhoto] = useState(""); const [iAsset, setIAsset] = useState("");
-  const [vType, setVType] = useState<VisitType>("routine"); const [vFind, setVFind] = useState(""); const [vAct, setVAct] = useState(""); const [vTravel, setVTravel] = useState(""); const [vLabour, setVLabour] = useState(""); const [vPhoto, setVPhoto] = useState(""); const [vHrs, setVHrs] = useState("2"); const [vItem, setVItem] = useState(""); const [vQty, setVQty] = useState("1"); const [vLoc, setVLoc] = useState("loc_wh");
+  const [iCat, setICat] = useState<IssueCategory>("electrical"); const [iSev, setISev] = useState<IssueSeverity>("medium"); const [iTitle, setITitle] = useState(""); const [iDesc, setIDesc] = useState(""); const [iPhoto, setIPhoto] = useState<Pick[]>([]); const [iAsset, setIAsset] = useState("");
+  const [vType, setVType] = useState<VisitType>("routine"); const [vFind, setVFind] = useState(""); const [vAct, setVAct] = useState(""); const [vTravel, setVTravel] = useState(""); const [vLabour, setVLabour] = useState(""); const [vPhoto, setVPhoto] = useState<Pick[]>([]); const [vHrs, setVHrs] = useState("2"); const [vItem, setVItem] = useState(""); const [vQty, setVQty] = useState("1"); const [vLoc, setVLoc] = useState("loc_wh");
   const [cRes, setCRes] = useState<"pass" | "conditional" | "fail">("pass"); const [cItems, setCItems] = useState<Record<string, { pass: boolean; v: string }>>(() => Object.fromEntries(COMMISSIONING_TEMPLATE.map((t) => [t.key, { pass: true, v: "" }])));
-  const [cMeter, setCMeter] = useState({ serialAscii: true, ctRatioVerified: true, firstLiveReading: true, historicalOk: true }); const [cWitness, setCWitness] = useState(""); const [cNotes, setCNotes] = useState(""); const [cPhoto, setCPhoto] = useState("");
+  const [cMeter, setCMeter] = useState({ serialAscii: true, ctRatioVerified: true, firstLiveReading: true, historicalOk: true }); const [cWitness, setCWitness] = useState(""); const [cNotes, setCNotes] = useState(""); const [cPhoto, setCPhoto] = useState<Pick[]>([]);
   const [hType, setHType] = useState<HseType>("near_miss"); const [hSev, setHSev] = useState<IssueSeverity>("low"); const [hDesc, setHDesc] = useState(""); const [hAct, setHAct] = useState("");
   const [wAsset, setWAsset] = useState(""); const [wNotes, setWNotes] = useState("");
   const installed = api.listAssets({ projectId: p.id, status: "installed" });
@@ -61,8 +62,8 @@ export function ProjectField() {
           <select className="ns-input" value={iCat} onChange={(e) => setICat(e.target.value as IssueCategory)}>{CATS.map((c) => <option key={c} value={c}>{c}</option>)}</select>
           <input className="ns-input" placeholder="Title" value={iTitle} onChange={(e) => setITitle(e.target.value)} /><input className="ns-input" placeholder="Description" value={iDesc} onChange={(e) => setIDesc(e.target.value)} />
           <select className="ns-input" value={iAsset} onChange={(e) => setIAsset(e.target.value)}><option value="">— no asset —</option>{installed.map((a) => <option key={a.id} value={a.id}>{a.serial} · {a.model}</option>)}</select>
-          <input className="ns-input" placeholder="before-photo.jpg (required)" value={iPhoto} onChange={(e) => setIPhoto(e.target.value)} />
-          <button className="ns-btn ns-btn--primary" onClick={() => { if (safe(() => { const a = api.addAttachment(user.id, p.id, { fileName: iPhoto.trim() || "before.jpg", caption: `Before — ${iTitle}` }); api.raiseIssue(user.id, p.id, { category: iCat, severity: iSev, title: iTitle, description: iDesc, assetId: iAsset || undefined, beforeAttachmentIds: [a.id] }); }, "Issue raised — pending check")) { setITitle(""); setIDesc(""); setIPhoto(""); } }}>Raise</button>
+          <FilePick picks={iPhoto} onChange={setIPhoto} required label="Before photo" />
+          <button className="ns-btn ns-btn--primary" disabled={!iPhoto.length || !iTitle.trim()} onClick={() => { if (safe(() => { const f = iPhoto[0]; const a = api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: `Before — ${iTitle}` }); api.raiseIssue(user.id, p.id, { category: iCat, severity: iSev, title: iTitle, description: iDesc, assetId: iAsset || undefined, beforeAttachmentIds: [a.id] }); }, "Issue raised — pending check")) { setITitle(""); setIDesc(""); setIPhoto([]); } }}>Raise</button>
         </div></div>}
     </>}
 
@@ -84,9 +85,9 @@ export function ProjectField() {
           <select className="ns-input" value={vLoc} onChange={(e) => setVLoc(e.target.value)}>{api.listLocations().map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
           <select className="ns-input" value={vItem} onChange={(e) => setVItem(e.target.value)}><option value="">— no parts —</option>{api.items.filter((it) => !it.isSerialised && api.available(it.id, vLoc) > 0).map((it) => <option key={it.id} value={it.id}>{it.name} · {api.available(it.id, vLoc)} free</option>)}</select>
           <input className="ns-input" type="number" min={1} placeholder="Qty" value={vQty} onChange={(e) => setVQty(e.target.value)} />
-          <input className="ns-input" placeholder="site-photo.jpg (required)" value={vPhoto} onChange={(e) => setVPhoto(e.target.value)} />
-          <button className="ns-btn ns-btn--primary" onClick={() => { if (safe(() => { const a = api.addAttachment(user.id, p.id, { fileName: vPhoto.trim() || "site.jpg", caption: `${VISIT_TYPE_LABEL[vType]} — site photo` }); const end = new Date(); const start = new Date(end.getTime() - (Number(vHrs) || 1) * 3600000);
-            api.logVisit(user.id, p.id, { visitType: vType, startedAt: start.toISOString(), endedAt: end.toISOString(), findings: vFind, actionsTaken: vAct, costTravel: Number(vTravel) || 0, costLabour: Number(vLabour) || 0, locationId: vLoc, parts: vItem ? [{ itemId: vItem, qty: Number(vQty) || 1 }] : [], attachmentIds: [a.id] }); }, "Visit logged — pending check")) { setVFind(""); setVAct(""); setVTravel(""); setVLabour(""); setVPhoto(""); setVItem(""); } }}>Log visit</button>
+          <FilePick picks={vPhoto} onChange={setVPhoto} required label="Site photo" />
+          <button className="ns-btn ns-btn--primary" disabled={!vPhoto.length} onClick={() => { if (safe(() => { const f = vPhoto[0]; const a = api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: `${VISIT_TYPE_LABEL[vType]} — site photo` }); const end = new Date(); const start = new Date(end.getTime() - (Number(vHrs) || 1) * 3600000);
+            api.logVisit(user.id, p.id, { visitType: vType, startedAt: start.toISOString(), endedAt: end.toISOString(), findings: vFind, actionsTaken: vAct, costTravel: Number(vTravel) || 0, costLabour: Number(vLabour) || 0, locationId: vLoc, parts: vItem ? [{ itemId: vItem, qty: Number(vQty) || 1 }] : [], attachmentIds: [a.id] }); }, "Visit logged — pending check")) { setVFind(""); setVAct(""); setVTravel(""); setVLabour(""); setVPhoto([]); setVItem(""); } }}>Log visit</button>
         </div></div>}
     </>}
 
@@ -99,10 +100,10 @@ export function ProjectField() {
       {api.can(user.id, "commissioning.create", p.id) && <div className="card"><div className="card__head"><div className="card__title">New commissioning record</div><span className="sm muted">Director or a second lead engineer checks</span></div>
         <div className="card__body stack">
           <div className="form"><select className="ns-input" value={cRes} onChange={(e) => setCRes(e.target.value as typeof cRes)}><option value="pass">pass</option><option value="conditional">conditional</option><option value="fail">fail</option></select>
-            <input className="ns-input" placeholder="Client witness name" value={cWitness} onChange={(e) => setCWitness(e.target.value)} /><input className="ns-input" placeholder="commissioning-photo.jpg (required)" value={cPhoto} onChange={(e) => setCPhoto(e.target.value)} /><input className="ns-input" placeholder="Notes" value={cNotes} onChange={(e) => setCNotes(e.target.value)} /></div>
+            <input className="ns-input" placeholder="Client witness name" value={cWitness} onChange={(e) => setCWitness(e.target.value)} /><FilePick picks={cPhoto} onChange={setCPhoto} required label="Commissioning photo" /><input className="ns-input" placeholder="Notes" value={cNotes} onChange={(e) => setCNotes(e.target.value)} /></div>
           <div className="table--wrap"><table className="table ledger"><thead><tr><th>Checklist item</th><th>Measured</th><th>Pass</th></tr></thead><tbody>{COMMISSIONING_TEMPLATE.map((t) => <tr key={t.key}><td>{t.label}</td><td><input className="ns-input" style={{ minHeight: 30 }} placeholder={t.unit ?? ""} value={cItems[t.key].v} onChange={(e) => setCItems({ ...cItems, [t.key]: { ...cItems[t.key], v: e.target.value } })} /></td><td><input type="checkbox" className="checkbox" checked={cItems[t.key].pass} onChange={(e) => setCItems({ ...cItems, [t.key]: { ...cItems[t.key], pass: e.target.checked } })} /></td></tr>)}</tbody></table></div>
           <div className="row row--wrap sm">{(Object.keys(cMeter) as (keyof typeof cMeter)[]).map((k) => <label key={k} className="row"><input type="checkbox" className="checkbox" checked={cMeter[k]} onChange={(e) => setCMeter({ ...cMeter, [k]: e.target.checked })} />{k}</label>)}</div>
-          <div><button className="ns-btn ns-btn--primary" onClick={() => safe(() => { const a = api.addAttachment(user.id, p.id, { fileName: cPhoto.trim() || "commissioning.jpg", caption: "Commissioning photo" }); const sig = cWitness.trim() ? api.addAttachment(user.id, p.id, { fileName: "witness-signature.png", caption: `Witness — ${cWitness.trim()}` }) : undefined;
+          <div><button className="ns-btn ns-btn--primary" disabled={!cPhoto.length} onClick={() => safe(() => { const f = cPhoto[0]; const a = api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: "Commissioning photo" }); const sig = cWitness.trim() ? api.addAttachment(user.id, p.id, { fileName: "witness-signature.png", caption: `Witness — ${cWitness.trim()}` }) : undefined;
             api.createCommissioning(user.id, p.id, { date: new Date().toISOString().slice(0, 10), result: cRes, notes: cNotes, items: COMMISSIONING_TEMPLATE.map((t) => ({ key: t.key, pass: cItems[t.key].pass, measuredValue: cItems[t.key].v || undefined })), meter: cMeter, clientWitness: cWitness.trim() ? { name: cWitness.trim(), signatureAttachmentId: sig?.id } : undefined, attachmentIds: [a.id] }); }, "Commissioning record submitted — pending check")}>Submit record</button></div>
         </div></div>}
     </>}

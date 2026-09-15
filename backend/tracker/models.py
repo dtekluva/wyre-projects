@@ -8,6 +8,8 @@ import secrets
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from .storage import attachment_path, document_path
+
 
 def _nid(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(4)}"
@@ -230,7 +232,8 @@ class Document(Audit, Reviewable):
     version = models.PositiveIntegerField(default=1)
     file_name = models.CharField(max_length=200)
     size_bytes = models.BigIntegerField(default=0)
-    file = models.FileField(upload_to="documents/%Y/%m/", null=True, blank=True)
+    sha256 = models.CharField(max_length=64, blank=True)
+    file = models.FileField(upload_to=document_path, null=True, blank=True)
 
 
 class Attachment(Reviewable):
@@ -248,7 +251,7 @@ class Attachment(Reviewable):
     uploaded_at = models.DateTimeField()
     linked_to = models.JSONField(null=True, blank=True)
     caption = models.CharField(max_length=300, blank=True, null=True)
-    file = models.FileField(upload_to="attachments/%Y/%m/", null=True, blank=True)
+    file = models.FileField(upload_to=attachment_path, null=True, blank=True)
 
 
 class Approval(models.Model):

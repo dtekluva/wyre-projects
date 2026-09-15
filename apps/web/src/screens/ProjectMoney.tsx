@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FilePick, type Pick } from "../components/FilePick";
 import { Link, useOutletContext } from "react-router-dom";
 import { COST_CATEGORY_LABEL, ROLE_LABEL, fmtDate, naira, pct, relative, type CostCategory, type Project, type PurchaseOrder } from "@wyre/api";
 import { useApi } from "../lib/useApi";
@@ -17,17 +18,17 @@ function PoRow({ po, p }: { po: PurchaseOrder; p: Project }) {
   const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   const [open, setOpen] = useState(false);
   const [qty, setQty] = useState<Record<string, number>>(() => Object.fromEntries(po.items.map((i) => [i.id, api.poRemaining(i, po.id)])));
-  const [ser, setSer] = useState<Record<string, string>>({}); const [file, setFile] = useState(""); const [notes, setNotes] = useState("");
+  const [ser, setSer] = useState<Record<string, string>>({}); const [file, setFile] = useState<Pick[]>([]); const [notes, setNotes] = useState("");
   const ap = po.approvalId ? api.approvals.find((a) => a.id === po.approvalId) : undefined;
   const canReceive = api.can(user.id, "goods_receipt.create", p.id) && ["approved", "partially_delivered"].includes(po.status);
   const grns = api.listGRNs(p.id).filter((g) => g.poId === po.id);
   const [bv, bl] = PO_BADGE[po.status];
   const submit = () => {
     const ok = safe(() => {
-      const att = api.addAttachment(user.id, p.id, { fileName: file.trim() || `delivery-note-${po.poNumber}.jpg`, caption: `Delivery note — ${po.poNumber}`, linkedTo: { model: "PurchaseOrder", id: po.id, label: po.poNumber } });
+      const f = file[0]; const att = api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, kind: f.file.type.startsWith("image/") ? "image" : "document", caption: `Delivery note — ${po.poNumber}`, linkedTo: { model: "PurchaseOrder", id: po.id, label: po.poNumber } });
       api.receiveGoods(user.id, po.id, { attachmentIds: [att.id], notes, lines: po.items.map((i) => ({ purchaseItemId: i.id, qty: qty[i.id] ?? 0, serials: (ser[i.id] ?? "").split(/[\s,;]+/).filter(Boolean) })) });
     }, "Goods receipt submitted — pending check");
-    if (ok) { setOpen(false); setSer({}); setFile(""); setNotes(""); }
+    if (ok) { setOpen(false); setSer({}); setFile([]); setNotes(""); }
   };
   return (
     <div className="po">
@@ -48,9 +49,9 @@ function PoRow({ po, p }: { po: PurchaseOrder; p: Project }) {
           {it?.isSerialised && (qty[i.id] ?? 0) > 0 && <label className="ns-field" style={{ marginTop: 6 }}><span className="ns-field__hint">Serial numbers — {qty[i.id]} required, comma or newline separated (plain ASCII)</span>
             <textarea className="ns-textarea" value={ser[i.id] ?? ""} onChange={(e) => setSer({ ...ser, [i.id]: e.target.value })} placeholder={`e.g. ${it.sku}-0001, ${it.sku}-0002`} /></label>}
         </div>; })}
-        <div className="form"><label className="ns-field"><span className="ns-field__label">Delivery note / receipt photo (required)</span><input className="ns-input" value={file} onChange={(e) => setFile(e.target.value)} placeholder="delivery-note.jpg" /></label>
+        <div className="form"><label className="ns-field"><span className="ns-field__label">Delivery note / receipt photo (required)</span><FilePick picks={file} onChange={setFile} required label="Choose delivery note" /></label>
           <label className="ns-field"><span className="ns-field__label">Notes</span><input className="ns-input" value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
-          <button className="ns-btn ns-btn--primary" onClick={submit}>Submit GRN for check</button></div>
+          <button className="ns-btn ns-btn--primary" onClick={submit} disabled={!file.length}>Submit GRN for check</button></div>
       </div>}
     </div>
   );

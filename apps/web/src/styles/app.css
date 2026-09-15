@@ -348,3 +348,22 @@ textarea.fld { min-height: 84px; }
 .signin__title { font-size: var(--ns-size-heading); line-height: var(--ns-lh-heading); font-weight: var(--ns-weight-bold); }
 .signin .ns-field { text-align: left; }
 .syncpill { position: fixed; top: 10px; right: 12px; z-index: var(--ns-z-toast); background: var(--ns-neutral-900); color: #fff; font-size: var(--ns-size-caption); padding: 4px 10px; border-radius: 999px; opacity: .85; }
+
+/* Real file pickers on the office screens */
+.filepick { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.filepick__btn { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; cursor: pointer;
+  border: var(--ns-border-hairline) dashed var(--ns-color-border-default); border-radius: var(--ns-radius-medium);
+  background: var(--ns-color-surface-subtle); color: var(--ns-color-text-primary); font: inherit; }
+.filepick__btn:hover { border-color: var(--ns-color-accent); color: var(--ns-color-accent); }
+.filepick__btn--req { border-color: var(--ns-color-warning-fill); color: var(--ns-color-warning-fill); }
+.filepick__list { display: flex; flex-wrap: wrap; gap: 6px; }
+.filepick__chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 6px 4px 4px;
+  background: var(--ns-color-surface); border: var(--ns-border-hairline) solid var(--ns-color-border-subtle); border-radius: var(--ns-radius-medium); }
+.filepick__chip img { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; }
+.filepick__doc { width: 28px; height: 28px; display: grid; place-items: center; background: var(--ns-color-surface-subtle); border-radius: 4px; }
+.filepick__name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--ns-size-caption); }
+.filepick__chip button { border: 0; background: none; cursor: pointer; color: var(--ns-color-text-secondary); font-size: 12px; padding: 2px 4px; }
+.filepick__chip button:hover { color: var(--ns-color-danger-fill); }
+.filepick__err { color: var(--ns-color-danger-fill); }
+.filepick__hint { }
+@media (max-width: 860px) { .filepick__name { max-width: 120px; } }

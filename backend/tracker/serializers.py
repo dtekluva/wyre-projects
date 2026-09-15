@@ -64,7 +64,7 @@ def event(e: ChronologyEvent) -> dict:
 
 def document(d: Document) -> dict:
     return {"id": d.id, "projectId": d.project_id, "docType": d.doc_type, "title": d.title, "status": d.status, "issuedAt": iso(d.issued_at), "expiresAt": d8(d.expires_at),
-            "issuer": d.issuer, "version": d.version, "fileName": d.file_name, "sizeBytes": d.size_bytes, "url": url(d.file), **audit(d), **review(d)}
+            "issuer": d.issuer, "version": d.version, "fileName": d.file_name, "sizeBytes": d.size_bytes, "sha256": d.sha256, "url": url(d.file), **audit(d), **review(d)}
 
 
 def attachment(a: Attachment) -> dict:

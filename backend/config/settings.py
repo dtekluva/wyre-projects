@@ -90,6 +90,41 @@ MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", BASE_DIR / "media"))
 FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
 
+# Uploads (spec §9): object storage with signed URLs, originals never overwritten, sha256 stored.
+# Set SPACES_BUCKET to use DigitalOcean Spaces; leave it unset and uploads go to MEDIA_ROOT on disk.
+SPACES_BUCKET = os.environ.get("SPACES_BUCKET", "").strip()
+SPACES_REGION = os.environ.get("SPACES_REGION", "fra1").strip()
+SPACES_ENDPOINT = os.environ.get("SPACES_ENDPOINT", f"https://{SPACES_REGION}.digitaloceanspaces.com").strip()
+# seconds a pre-signed download link stays valid
+SPACES_URL_EXPIRY = int(os.environ.get("SPACES_URL_EXPIRY", "900"))
+
+if SPACES_BUCKET:
+    STORAGES = {
+        "default": {
+            "BACKEND": "tracker.storage.ContentAddressedS3Storage",
+            "OPTIONS": {
+                "bucket_name": SPACES_BUCKET,
+                "region_name": SPACES_REGION,
+                "endpoint_url": SPACES_ENDPOINT,
+                "access_key": os.environ.get("SPACES_KEY", ""),
+                "secret_key": os.environ.get("SPACES_SECRET", ""),
+                # private bucket: every read goes out as a short-lived signed URL
+                "default_acl": None,
+                "querystring_auth": True,
+                "querystring_expire": SPACES_URL_EXPIRY,
+                # keys are the sha256 of the bytes, so re-writing a key writes identical content
+                "file_overwrite": True,
+                "signature_version": "s3v4",
+            },
+        },
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+else:
+    STORAGES = {
+        "default": {"BACKEND": "tracker.storage.ContentAddressedFileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),

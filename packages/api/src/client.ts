@@ -222,14 +222,14 @@ export class MockApi {
   listDocuments(projectId: string) { return this.documents.filter((d) => d.projectId === projectId).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)); }
   listAttachments(projectId: string) { return this.attachments.filter((a) => a.projectId === projectId).sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)); }
 
-  addDocument(actorId: string, projectId: string, input: { docType: DocType; title: string; fileName?: string; sizeBytes?: number; issuer?: string; expiresAt?: string }): Document {
+  addDocument(actorId: string, projectId: string, input: { docType: DocType; title: string; fileName?: string; sizeBytes?: number; issuer?: string; expiresAt?: string; blob?: Blob }): Document {
     this.require(actorId, "document.create", projectId);
     const at = this.now();
     const prior = this.documents.filter((d) => d.projectId === projectId && d.docType === input.docType).length;
     const doc: Document = {
       id: this.id("doc"), projectId, docType: input.docType, title: input.title, status: "submitted",
       issuedAt: at, expiresAt: input.expiresAt, issuer: input.issuer, version: prior + 1,
-      fileName: input.fileName ?? input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".pdf", sizeBytes: input.sizeBytes ?? 320_000,
+      fileName: input.fileName ?? input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".pdf", sizeBytes: input.sizeBytes ?? input.blob?.size ?? 320_000,
       createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId,
       reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1,
     };
@@ -254,10 +254,10 @@ export class MockApi {
   }
 
   /** Evidence attached to an approval-bearing object (e.g. a write-off): the Approval is its four-eyes check (§4.13), so it is not queued separately. */
-  addEvidence(actorId: string, input: { fileName: string; caption?: string; projectId?: string; linkedTo?: Attachment["linkedTo"] }): Attachment {
+  addEvidence(actorId: string, input: { fileName: string; caption?: string; projectId?: string; linkedTo?: Attachment["linkedTo"]; blob?: Blob; sizeBytes?: number }): Attachment {
     this.require(actorId, "attachment.create", input.projectId);
     const at = this.now();
-    const att: Attachment = { id: this.id("att"), projectId: input.projectId ?? "", fileName: input.fileName, mime: "image/jpeg", sizeBytes: 1_200_000, kind: "image", capturedAt: at,
+    const att: Attachment = { id: this.id("att"), projectId: input.projectId ?? "", fileName: input.fileName, mime: "image/jpeg", sizeBytes: input.sizeBytes ?? input.blob?.size ?? 1_200_000, kind: "image", capturedAt: at,
       sha256: Array.from({ length: 64 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join(""), uploadedBy: actorId, uploadedAt: at, linkedTo: input.linkedTo, caption: input.caption,
       reviewStatus: "checked", submittedBy: actorId, submittedAt: at, reviewVersion: 1, checkComment: "Verified through the linked approval" };
     this.attachments.push(att); return att;
