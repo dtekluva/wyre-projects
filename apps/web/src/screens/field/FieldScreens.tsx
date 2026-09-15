@@ -128,7 +128,7 @@ export function FieldVisitNew() {
   const partsCost = Object.entries(parts).reduce((s, [id, q]) => s + q * api.wacOf(id), 0);
   const go = () => {
     const r = submit(`Visit logged — ${VISIT_TYPE_LABEL[type]}`, { kind: "log_visit", actorId: user.id, projectId: pid,
-      photos: shots.map((s) => ({ fileName: s.fileName, caption: `${VISIT_TYPE_LABEL[type]} — site photo`, gps: geo.status === "ok" ? { lat: geo.lat!, lng: geo.lng! } : undefined, blob: s.file })),
+      photos: shots.map((s) => ({ fileName: s.fileName, caption: s.caption?.trim() || `${VISIT_TYPE_LABEL[type]} — site photo`, gps: geo.status === "ok" ? { lat: geo.lat!, lng: geo.lng! } : undefined, blob: s.file })),
       signature: sig && signName.trim() ? { name: signName.trim(), rating: rating || undefined, fileName: `signature-${Date.now()}.png`, blob: dataUrlToBlob(sig) } : undefined,
       input: { visitType: type, startedAt: started, endedAt: new Date().toISOString(), findings: find, actionsTaken: act, costTravel: Number(travel) || 0, costLabour: Number(labour) || 0, locationId: van.id,
         parts: Object.entries(parts).filter(([, q]) => q > 0).map(([itemId, qty]) => ({ itemId, qty })), gps: geo.status === "ok" ? { lat: geo.lat!, lng: geo.lng! } : undefined, offlineCapturedAt: online ? undefined : new Date().toISOString() } });
@@ -145,7 +145,7 @@ export function FieldVisitNew() {
       <button type="button" onClick={() => setParts({ ...parts, [it.id]: Math.max(0, q - 1) })}>−</button><span className="ns-mono">{q}</span><button type="button" onClick={() => setParts({ ...parts, [it.id]: Math.min(av, q + 1) })}>+</button></div>; }) : <div className="sm muted">Nothing on the van.</div>}
     {partsCost > 0 && <div className="sm muted">Parts at WAC: <b className="ns-mono">{naira(partsCost)}</b> — checked together with this visit</div>}
     <div className="fgrid"><input className="ns-input fld" type="number" placeholder="Travel ₦" value={travel} onChange={(e) => setTravel(e.target.value)} /><input className="ns-input fld" type="number" placeholder="Labour ₦" value={labour} onChange={(e) => setLabour(e.target.value)} /></div>
-    <label className="flabel">Site photos</label><CameraInput shots={shots} onChange={setShots} required label="Take photo" />
+    <label className="flabel">Site photos</label><CameraInput shots={shots} onChange={setShots} required captions label="Take photo" />
     <label className="flabel">Client sign-off</label>
     <input className="ns-input fld" placeholder="Client name" value={signName} onChange={(e) => setSignName(e.target.value)} />
     <div className="chips">{[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" className={`chip chip--lg ${rating >= n ? "chip--on" : ""}`} onClick={() => setRating(n)}>★</button>)}</div>

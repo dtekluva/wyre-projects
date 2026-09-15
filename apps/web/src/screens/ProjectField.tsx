@@ -4,6 +4,7 @@ import { useOutletContext } from "react-router-dom";
 import { COMMISSIONING_TEMPLATE, HSE_TYPE_LABEL, VISIT_TYPE_LABEL, fmtDate, naira, relative,
   type HseType, type Issue, type IssueCategory, type IssueSeverity, type IssueStatus, type Project, type VisitType, type WarrantyStatus } from "@wyre/api";
 import { Thumbs } from "../components/Thumbs";
+import { VisitDetail } from "../components/VisitDetail";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
@@ -48,6 +49,7 @@ export function ProjectField() {
   const [tab, setTab] = useState<"issues" | "visits" | "commissioning" | "hse" | "warranty">("issues");
   // forms
   const [iCat, setICat] = useState<IssueCategory>("electrical"); const [iSev, setISev] = useState<IssueSeverity>("medium"); const [iTitle, setITitle] = useState(""); const [iDesc, setIDesc] = useState(""); const [iPhoto, setIPhoto] = useState<Pick[]>([]); const [iAsset, setIAsset] = useState("");
+  const [openVisit, setOpenVisit] = useState<string | null>(null);
   const [vType, setVType] = useState<VisitType>("routine"); const [vFind, setVFind] = useState(""); const [vAct, setVAct] = useState(""); const [vTravel, setVTravel] = useState(""); const [vLabour, setVLabour] = useState(""); const [vPhoto, setVPhoto] = useState<Pick[]>([]); const [vHrs, setVHrs] = useState("2"); const [vItem, setVItem] = useState(""); const [vQty, setVQty] = useState("1"); const [vLoc, setVLoc] = useState("loc_wh");
   const [cRes, setCRes] = useState<"pass" | "conditional" | "fail">("pass"); const [cItems, setCItems] = useState<Record<string, { pass: boolean; v: string }>>(() => Object.fromEntries(COMMISSIONING_TEMPLATE.map((t) => [t.key, { pass: true, v: "" }])));
   const [cMeter, setCMeter] = useState({ serialAscii: true, ctRatioVerified: true, firstLiveReading: true, historicalOk: true }); const [cWitness, setCWitness] = useState(""); const [cNotes, setCNotes] = useState(""); const [cPhoto, setCPhoto] = useState<Pick[]>([]);
@@ -73,7 +75,7 @@ export function ProjectField() {
     </>}
 
     {tab === "visits" && <>
-      {visits.length ? visits.map((v) => <div key={v.id} className="card"><div className="card__head"><div className="card__title">{VISIT_TYPE_LABEL[v.visitType]} · {fmtDate(v.startedAt)} · {v.durationHrs} h</div><ReviewBadge status={v.reviewStatus} /></div>
+      {visits.length ? visits.map((v) => <div key={v.id} className="card"><div className="card__head"><button className="card__title link" onClick={() => setOpenVisit(v.id)} title="Open visit">{VISIT_TYPE_LABEL[v.visitType]} · {fmtDate(v.startedAt)} · {v.durationHrs} h</button><ReviewBadge status={v.reviewStatus} /></div>
         <div className="card__body stack" style={{ gap: 6 }}>
           <div className="sm muted">{v.technicianIds.map((t) => api.userName(t)).join(", ")}{v.gps ? ` · 📍 ${v.gps.lat.toFixed(3)}, ${v.gps.lng.toFixed(3)}` : ""}{v.clientSignoff ? ` · signed: ${v.clientSignoff.name}${v.clientSignoff.rating ? " " + "★".repeat(v.clientSignoff.rating) : ""}` : ""}</div>
           <div className="row row--wrap" style={{ marginTop: 6, gap: 10 }}><Thumbs ids={v.attachmentIds} empty="no photos" />
@@ -82,8 +84,10 @@ export function ProjectField() {
           <div className="row row--wrap sm"><Badge variant="neutral">travel {naira(v.costTravel, true)}</Badge><Badge variant="neutral">labour {naira(v.costLabour, true)}</Badge><Badge variant="neutral">parts {naira(v.costParts, true)}</Badge><b className="ns-mono">{naira(v.costTotal)}</b></div>
           {v.parts.length > 0 && <div className="sm muted">Parts: {v.parts.map((pt) => `${api.itemName(pt.itemId)} × ${pt.qty}`).join(" · ")} — {pendingVisitParts(v.id).every((m) => m.reviewStatus === "checked") ? "posted" : "posts on check"}</div>}
           {v.checkComment && <div className="sm muted">Checker: “{v.checkComment}”</div>}
+          <div><button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setOpenVisit(v.id)}>Open visit</button></div>
         </div></div>) : <Empty title="No visits logged" />}
-      {api.can(user.id, "visit.create", p.id) && <div className="card"><div className="card__head"><div className="card__title">Log a visit</div><span className="sm muted">site photo required · PM / lead engineer checks</span></div>
+      {openVisit && (() => { const v = visits.find((x) => x.id === openVisit); return v ? <VisitDetail visit={v} onClose={() => setOpenVisit(null)} /> : null; })()}
+      {api.can(user.id, "visit.create", p.id) && <div className="card"><div className="card__head"><div className="card__title">Log a visit</div><span className="sm muted">at least one photo · label each · PM / lead engineer checks</span></div>
         <div className="card__body form">
           <select className="ns-input" value={vType} onChange={(e) => setVType(e.target.value as VisitType)}>{(Object.keys(VISIT_TYPE_LABEL) as VisitType[]).map((t) => <option key={t} value={t}>{VISIT_TYPE_LABEL[t]}</option>)}</select>
           <input className="ns-input" type="number" step="0.5" placeholder="Hours" value={vHrs} onChange={(e) => setVHrs(e.target.value)} />
@@ -92,9 +96,9 @@ export function ProjectField() {
           <select className="ns-input" value={vLoc} onChange={(e) => setVLoc(e.target.value)}>{api.listLocations().map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
           <select className="ns-input" value={vItem} onChange={(e) => setVItem(e.target.value)}><option value="">— no parts —</option>{api.items.filter((it) => !it.isSerialised && api.available(it.id, vLoc) > 0).map((it) => <option key={it.id} value={it.id}>{it.name} · {api.available(it.id, vLoc)} free</option>)}</select>
           <input className="ns-input" type="number" min={1} placeholder="Qty" value={vQty} onChange={(e) => setVQty(e.target.value)} />
-          <FilePick picks={vPhoto} onChange={setVPhoto} required label="Site photo" />
-          <button className="ns-btn ns-btn--primary" disabled={!vPhoto.length} onClick={() => { if (safe(() => { const f = vPhoto[0]; const a = api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: `${VISIT_TYPE_LABEL[vType]} — site photo` }); const end = new Date(); const start = new Date(end.getTime() - (Number(vHrs) || 1) * 3600000);
-            api.logVisit(user.id, p.id, { visitType: vType, startedAt: start.toISOString(), endedAt: end.toISOString(), findings: vFind, actionsTaken: vAct, costTravel: Number(vTravel) || 0, costLabour: Number(vLabour) || 0, locationId: vLoc, parts: vItem ? [{ itemId: vItem, qty: Number(vQty) || 1 }] : [], attachmentIds: [a.id] }); }, "Visit logged — pending check")) { setVFind(""); setVAct(""); setVTravel(""); setVLabour(""); setVPhoto([]); setVItem(""); } }}>Log visit</button>
+          <FilePick picks={vPhoto} onChange={setVPhoto} required multiple captions label="Add site photos" captionPlaceholder="Label, e.g. inverter display before" />
+          <button className="ns-btn ns-btn--primary" disabled={!vPhoto.length} onClick={() => { if (safe(() => { const ids = vPhoto.map((f) => api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: f.caption?.trim() || `${VISIT_TYPE_LABEL[vType]} — site photo` }).id); const end = new Date(); const start = new Date(end.getTime() - (Number(vHrs) || 1) * 3600000);
+            api.logVisit(user.id, p.id, { visitType: vType, startedAt: start.toISOString(), endedAt: end.toISOString(), findings: vFind, actionsTaken: vAct, costTravel: Number(vTravel) || 0, costLabour: Number(vLabour) || 0, locationId: vLoc, parts: vItem ? [{ itemId: vItem, qty: Number(vQty) || 1 }] : [], attachmentIds: ids }); }, "Visit logged — pending check")) { setVFind(""); setVAct(""); setVTravel(""); setVLabour(""); setVPhoto([]); setVItem(""); } }}>Log visit</button>
         </div></div>}
     </>}
 

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 
-export type Pick = { fileName: string; url: string; size: number; file: File };
+export type Pick = { fileName: string; url: string; size: number; file: File; caption?: string };
 
 const KB = 1024, MB = KB * 1024;
 export const human = (n: number) => (n < MB ? `${Math.round(n / KB)} KB` : `${(n / MB).toFixed(1)} MB`);
@@ -11,8 +11,8 @@ export const MAX_BYTES = 25 * MB;
  * Real file input for the office screens. Holds the File itself so the API layer can upload the bytes;
  * the field app uses CameraInput instead, which opens the rear camera.
  */
-export function FilePick({ picks, onChange, label = "Choose file", accept = "image/*,application/pdf", multiple = false, required, hint }:
-  { picks: Pick[]; onChange: (p: Pick[]) => void; label?: string; accept?: string; multiple?: boolean; required?: boolean; hint?: string }) {
+export function FilePick({ picks, onChange, label = "Choose file", accept = "image/*,application/pdf", multiple = false, required, hint, captions = false, captionPlaceholder = "Label this photo…" }:
+  { picks: Pick[]; onChange: (p: Pick[]) => void; label?: string; accept?: string; multiple?: boolean; required?: boolean; hint?: string; captions?: boolean; captionPlaceholder?: string }) {
   const ref = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState("");
   const take = (files: FileList | null) => {
@@ -30,11 +30,14 @@ export function FilePick({ picks, onChange, label = "Choose file", accept = "ima
   // `hint` becomes the tooltip rather than in-flow text, which would make this cell taller than its neighbours.
   return (
     <div className="filepick" onDragOver={(e) => e.preventDefault()} onDrop={drop}>
-      {picks.length > 0 && <div className="filepick__list">
+      {picks.length > 0 && <div className={`filepick__list ${captions ? "filepick__list--captioned" : ""}`}>
         {picks.map((p, i) => <span key={i} className="filepick__chip">
           {p.file.type.startsWith("image/") ? <img src={p.url} alt="" /> : <span className="filepick__doc">📄</span>}
-          <span className="filepick__name" title={p.fileName}>{p.fileName}</span>
-          <span className="sm muted">{human(p.size)}</span>
+          <span className="filepick__meta">
+            <span className="filepick__name" title={p.fileName}>{p.fileName} <span className="muted">{human(p.size)}</span></span>
+            {captions && <input className="ns-input filepick__caption" value={p.caption ?? ""} placeholder={captionPlaceholder}
+              onChange={(e) => onChange(picks.map((q, j) => (j === i ? { ...q, caption: e.target.value } : q)))} />}
+          </span>
           <button type="button" aria-label={`Remove ${p.fileName}`} onClick={() => onChange(picks.filter((_, j) => j !== i))}>✕</button>
         </span>)}
       </div>}
