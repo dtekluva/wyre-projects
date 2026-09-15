@@ -2,7 +2,7 @@ import { useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
 import { FileLink } from "../components/FileLink";
 import { useOutletContext } from "react-router-dom";
-import { DOC_TYPE_LABEL, STAGES, bytes, fmtDate, relative, type DocType, type Document, type Project } from "@wyre/api";
+import { DOC_TYPE_LABEL, STAGES, bytes, fmtDate, relative, type Attachment, type DocType, type Document, type Project } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
@@ -26,6 +26,19 @@ function DocRow({ d }: { d: Document }) {
       {expiring && d.reviewStatus === "checked" && <Badge variant="warning">expires soon</Badge>}
       <ReviewBadge status={d.reviewStatus} />
     </div>
+  );
+}
+
+/** Grid tile for an uploaded photo. Falls back to an icon when the bytes are not a decodable image. */
+function PhotoTile({ a }: { a: Attachment }) {
+  const [broken, setBroken] = useState(false);
+  const showImg = a.url && a.kind === "image" && !broken;
+  return (
+    <FileLink kind="attachment" id={a.id} className="photo__img photo__img--btn" title={`Open ${a.fileName}`}>
+      {showImg
+        ? <img src={a.url} alt={a.caption ?? a.fileName} loading="lazy" onError={() => setBroken(true)} />
+        : <span className="photo__ph">{a.kind === "image" ? "📷" : "📄"} {a.fileName}</span>}
+    </FileLink>
   );
 }
 
@@ -71,9 +84,7 @@ export function ProjectDocuments() {
             <button className="ns-btn ns-btn--secondary" type="submit" disabled={!picks.length}>Upload</button>
           </form> : <Note tone="warn">Your role cannot upload to this project.</Note>}
           {atts.length ? <div className="photo-grid">{atts.map((a) => <div key={a.id} className="photo">
-            <FileLink kind="attachment" id={a.id} className="photo__img photo__img--btn" title={`Open ${a.fileName}`}>
-              {a.url && a.kind === "image" ? <img src={a.url} alt={a.caption ?? a.fileName} loading="lazy" /> : <>{a.kind === "image" ? "📷" : "📄"} {a.fileName}</>}
-            </FileLink>
+            <PhotoTile a={a} />
             <div className="photo__cap"><div className="ellipsis" title={a.caption}>{a.caption ?? "—"}</div>
               <div className="sm muted">{api.userName(a.uploadedBy)} · {relative(a.uploadedAt)}{a.gps && " · GPS"}</div><div style={{ marginTop: 4 }}><ReviewBadge status={a.reviewStatus} /></div></div>
           </div>)}</div> : <Empty title="No uploads yet" />}

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useApi } from "../lib/useApi";
 import { FileLink } from "./FileLink";
 
@@ -13,14 +14,22 @@ export function Thumbs({ ids, empty = "—", max = 8, size = "sm" }:
   const shown = atts.slice(0, max);
   return (
     <div className={`thumbs thumbs--${size}`}>
-      {shown.map((a) => (
-        <FileLink key={a.id} kind="attachment" id={a.id} className="thumb" title={a.caption ?? a.fileName}>
-          {a.url && a.kind === "image"
-            ? <img src={a.url} alt={a.caption ?? a.fileName} loading="lazy" />
-            : <span className="thumb__ph">{a.kind === "image" ? "📷" : "📄"}</span>}
-        </FileLink>
-      ))}
+      {shown.map((a) => <Thumb key={a.id} att={a} />)}
       {atts.length > shown.length && <span className="sm muted">+{atts.length - shown.length}</span>}
     </div>
+  );
+}
+
+
+/** One tile. Falls back to an icon if the stored bytes turn out not to be a decodable image. */
+function Thumb({ att }: { att: { id: string; url?: string; kind: string; fileName: string; caption?: string } }) {
+  const [broken, setBroken] = useState(false);
+  const showImg = att.url && att.kind === "image" && !broken;
+  return (
+    <FileLink kind="attachment" id={att.id} className="thumb" title={att.caption ?? att.fileName}>
+      {showImg
+        ? <img src={att.url} alt={att.caption ?? att.fileName} loading="lazy" onError={() => setBroken(true)} />
+        : <span className="thumb__ph">{att.kind === "image" ? "📷" : "📄"}</span>}
+    </FileLink>
   );
 }
