@@ -48,7 +48,8 @@ export function ProjectDocuments() {
                 {STAGES.filter((s) => s.evidence.length).map((s) => <optgroup key={s.stage} label={`${s.stage} · ${s.name}`}>{s.evidence.map((t) => <option key={t} value={t}>{DOC_TYPE_LABEL[t]}</option>)}</optgroup>)}
                 <optgroup label="Other"><option value="contract">Contract</option><option value="other">Other</option></optgroup></select></label>
             <label className="ns-field"><span className="ns-field__label">Title</span><input className="ns-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={DOC_TYPE_LABEL[dt]} /></label>
-            <button className="ns-btn ns-btn--primary" type="submit">Submit document</button>
+            <label className="ns-field"><span className="ns-field__label">File</span><FilePick picks={docFile} onChange={setDocFile} required label="Choose document" hint="PDF or image, up to 25 MB" /></label>
+            <button className="ns-btn ns-btn--primary" type="submit" disabled={!docFile.length}>Submit document</button>
           </form> : <Note tone="warn">Your role cannot add documents to this project.</Note>}
         </div>
       </div>
