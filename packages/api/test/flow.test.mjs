@@ -85,9 +85,10 @@ console.log("\n--- Phase 3 ---");
 // transfers: store keeper makes, Finance checks (not project-scoped); serialised transfer moves the asset
 const vanFuse = api.balanceOf("it_fuse", "loc_van1").qtyOnHand; const whFuse = api.balanceOf("it_fuse", "loc_wh").qtyOnHand;
 const tr = api.transferStock("u_sk", { itemId: "it_fuse", qty: 5, fromId: "loc_wh", toId: "loc_van1" });
-expectErr(() => api.check("stock_movement", tr.id, "u_pm1", "checked"), "forbidden", "PM cannot check a non-project transfer");
-api.check("stock_movement", tr.id, "u_fin", "checked");
-ok(api.balanceOf("it_fuse", "loc_van1").qtyOnHand === vanFuse + 5 && api.balanceOf("it_fuse", "loc_wh").qtyOnHand === whFuse - 5, "transfer moves 5 fuses warehouse → van after Finance check");
+expectErr(() => api.check("stock_movement", tr.id, "u_sk", "checked"), "forbidden", "store keeper cannot check their own transfer");
+expectErr(() => api.check("stock_movement", tr.id, "u_ft1", "checked"), "forbidden", "field tech holds no inventory.check");
+api.check("stock_movement", tr.id, "u_pm1", "checked");  // §4.13: stock movements are checked by a PM (or Finance)
+ok(api.balanceOf("it_fuse", "loc_van1").qtyOnHand === vanFuse + 5 && api.balanceOf("it_fuse", "loc_wh").qtyOnHand === whFuse - 5, "transfer moves 5 fuses warehouse → van once checked");
 const panelSer = api.inStockSerials("it_panel", "loc_wh")[0];
 const tr2 = api.transferStock("u_sk", { itemId: "it_panel", qty: 1, fromId: "loc_wh", toId: "loc_van1", serials: [panelSer] });
 api.check("stock_movement", tr2.id, "u_fin", "checked");
@@ -182,7 +183,10 @@ const npRoles = api.listMemberships(np.id).map((m) => `${m.userId}:${m.role}`).s
 ok(npRoles === "u_le1:lead_engineer,u_pm2:pm", "PM + Lead Engineer memberships granted");
 ok(api.listProjects("u_ft1").some((p) => p.id === np.id), "portfolio is company-wide — every signed-in user sees the new project");
 ok(api.myProjects("u_pm2").some((p) => p.id === np.id) && !api.myProjects("u_ft1").some((p) => p.id === np.id), "but only its PM and lead engineer are assigned to it");
-expectErr(() => api.raiseIssue("u_ft1", np.id, { category: "other", severity: "low", title: "x", description: "", beforeAttachmentIds: ["att1"] }), "forbidden", "seeing a project does not let an unassigned tech act on it");
+const anyIssue = api.raiseIssue("u_ft1", np.id, { category: "other", severity: "low", title: "Roles are company-wide", description: "", beforeAttachmentIds: ["att1"] });
+ok(anyIssue.projectId === np.id, "roles apply company-wide — a field tech can work on a project they are not assigned to");
+expectErr(() => api.check("issue", anyIssue.id, "u_ft1", "checked"), "forbidden", "but still cannot check their own submission");
+expectErr(() => api.createPO("u_ft1", np.id, { vendorId: "v_dixsen", items: [{ description: "x", qty: 1, unitCost: 1 }] }), "forbidden", "and still cannot do what their role forbids");
 ok(api.listEvents(np.id).some((e) => e.eventType === "project_created" && e.actorId === "u_pm1"), "project_created logged with actor");
 ok(api.gateStatus(np.id).stage === 0 && api.gateStatus(np.id).items.length === 3 && !api.gateStatus(np.id).ready, "gate 0 shows 3 missing evidence items");
 expectErr(() => api.createProject("u_admin", npBase), "conflict", "duplicate project name is rejected");

@@ -115,17 +115,17 @@ class FileUrlTest(TestCase):
                    {"payload": '{"projectId": "%s", "input": {"caption": "x"}}' % project, "file": f}, format="multipart")
         return r.json()["result"]["id"]
 
-    def test_resolves_for_a_member_and_refuses_others(self):
+    def test_resolves_for_staff_and_refuses_anonymous(self):
         pm = self.auth("kunle.adebayo")
         att_id = self.upload(pm)
         r = pm.get(f"/api/v1/files/attachment/{att_id}/")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertTrue(r.json()["url"])
         self.assertEqual(r.json()["fileName"], "evidence.jpg")
-        # a PM on other projects is not a member of p1
+        # roles are company-wide, so another PM can read evidence on any project
         other = self.auth("bola.adeyemi")
-        self.assertEqual(other.get(f"/api/v1/files/attachment/{att_id}/").status_code, 403)
-        # unauthenticated
+        self.assertEqual(other.get(f"/api/v1/files/attachment/{att_id}/").status_code, 200)
+        # unauthenticated callers still get nothing
         self.assertEqual(APIClient().get(f"/api/v1/files/attachment/{att_id}/").status_code, 401)
 
     def test_unknown_kind_and_missing_file(self):

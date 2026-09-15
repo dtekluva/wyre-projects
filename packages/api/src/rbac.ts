@@ -1,5 +1,4 @@
 import type { RoleCode, User, ProjectMembership } from "./types";
-import { GLOBAL_ROLES } from "./types";
 
 export type Permission =
   | "project.create" | "project.read" | "project.update"
@@ -48,16 +47,20 @@ export const MATRIX: Record<RoleCode, Permission[]> = {
              "money.read","inventory.read","asset.read","recon.read","dashboard.read"),
 };
 
-/** Roles a user effectively holds on a given project (global roles + memberships) */
-export function rolesOn(user: User, projectId: string | undefined, memberships: ProjectMembership[]): RoleCode[] {
-  const globals = user.roles.filter((r) => GLOBAL_ROLES.includes(r));
-  if (!projectId) return user.roles;
-  const local = memberships.filter((m) => m.projectId === projectId && m.userId === user.id && !m.revokedAt).map((m) => m.role);
-  return Array.from(new Set([...globals, ...local]));
+/**
+ * Roles a user holds on a project. Wyre runs as a single in-house team, so roles apply company-wide: a Lead
+ * Engineer is a Lead Engineer on every project, not only the ones they are assigned to. `ProjectMembership` is
+ * an *assignment* record — who is responsible — rather than a permission gate.
+ *
+ * What still constrains people: the role → permission matrix (§2.2), segregation of duties (nobody checks their
+ * own submission or approves their own request), and actor capture on every change.
+ */
+export function rolesOn(user: User, _projectId: string | undefined, _memberships: ProjectMembership[]): RoleCode[] {
+  return user.roles;
 }
 
-export function can(user: User, perm: Permission, projectId: string | undefined, memberships: ProjectMembership[]): boolean {
-  return rolesOn(user, projectId, memberships).some((r) => MATRIX[r].includes(perm));
+export function can(user: User, perm: Permission, _projectId: string | undefined, _memberships: ProjectMembership[]): boolean {
+  return user.roles.some((r) => MATRIX[r].includes(perm));
 }
 
 /** Who may check whose input — spec §4.13 */

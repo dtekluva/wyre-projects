@@ -18,12 +18,16 @@ const SEVV: Record<IssueSeverity, "danger" | "warning" | "info" | "neutral"> = {
 const CATS: IssueCategory[] = ["electrical", "mechanical", "performance", "data", "safety", "client", "other"];
 const Chips = <T extends string,>({ value, options, onChange, label }: { value: T; options: readonly T[] | T[]; onChange: (v: T) => void; label: (v: T) => React.ReactNode }) =>
   <div className="chips">{options.map((o) => <button key={o} type="button" className={`chip chip--lg ${value === o ? "chip--on" : ""}`} onClick={() => onChange(o)}>{label(o)}</button>)}</div>;
-/** Projects a field user can actually work on. Everyone can *see* every project, but offering one the user
- *  would be refused on just produces a failed submit, so the pickers list what they may act on. */
+/** Every open project. Roles apply company-wide, so a field user can work on any of them; closed projects are
+ *  hidden because there is nothing left to log against them. */
 const useMine = () => {
   const api = useApi(); const { user } = useAuth();
-  const actionable = api.projectsFor(user.id, "visit.create").filter((p) => p.stage < 8);
-  return actionable.length ? actionable : api.listProjects(user.id).filter((p) => p.stage < 8);
+  return api.projectsFor(user.id, "visit.create").filter((p) => p.stage < 8);
+};
+/** Projects this user is actually assigned to — used to mark them, and to sort their own sites to the top. */
+const useAssigned = () => {
+  const api = useApi(); const { user } = useAuth();
+  return new Set(api.myProjects(user.id).map((p) => p.id));
 };
 /** Techs know sites by name, not by code, so lead with the name and keep the code as the secondary line. */
 const useProjectLabel = () => {
@@ -44,7 +48,7 @@ export function FieldSignin() {
 }
 
 export function FieldHome() {
-  const api = useApi(); const { user } = useAuth(); const { online, queue } = useField(); const mine = useMine();
+  const api = useApi(); const { user } = useAuth(); const { online, queue } = useField(); const mine = useMine(); const assigned = useAssigned();
   const issues = mine.flatMap((p) => api.listIssues({ projectId: p.id, openOnly: true })); const breached = issues.filter((i) => api.issueSla(i).breached).length;
   const checks = user.id ? api.reviewQueue(user.id).length : 0;
   return <div className="stack">
@@ -54,11 +58,13 @@ export function FieldHome() {
       <Link to="/field/issues" className="fkpi"><b>{issues.length}</b><span>open issues</span></Link>
       <div className={`fkpi ${breached ? "fkpi--bad" : ""}`}><b>{breached}</b><span>SLA breached</span></div>
       <Link to="/work/reviews" className="fkpi"><b>{checks}</b><span>awaiting my check</span></Link>
-      <div className="fkpi"><b>{mine.length}</b><span>my projects</span></div>
+      <div className="fkpi"><b>{assigned.size}</b><span>assigned to me</span></div>
     </div>
     <div className="fgrid"><Link to="/field/issues/new" className="ns-btn ns-btn--primary ns-btn--block">＋ New issue</Link><Link to="/field/visits/new" className="ns-btn ns-btn--secondary ns-btn--block">＋ Log a visit</Link></div>
-    <h2 className="field__h2">My projects</h2>
-    {mine.map((p) => <Link key={p.id} to={`/field/issues?p=${p.id}`} className="frow"><span className="row"><RagDot rag={p.rag} /><b>{p.name}</b></span><span className="row sm muted"><StageChip stage={p.stage} />{p.location}</span></Link>)}
+    <h2 className="field__h2">Projects</h2>
+    {[...mine].sort((a, b) => Number(assigned.has(b.id)) - Number(assigned.has(a.id))).map((p) => <Link key={p.id} to={`/field/issues?p=${p.id}`} className="frow frow--col">
+      <span className="row" style={{ gap: 8 }}><RagDot rag={p.rag} /><b className="grow">{p.name}</b></span>
+      <span className="row row--wrap sm muted" style={{ gap: 8 }}><StageChip stage={p.stage} />{p.location}{assigned.has(p.id) && <Badge variant="info">assigned to me</Badge>}</span></Link>)}
   </div>;
 }
 

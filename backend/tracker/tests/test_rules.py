@@ -150,8 +150,11 @@ class RulesTest(TestCase):
         self.assertEqual(dec(p.retention_percent), 5); self.assertEqual(p.stage_planned, {"0": "2026-10-01"})
         roles = sorted(f"{m.user_id}:{m.role}" for m in p.memberships.all()); self.assertEqual(roles, ["u_le1:lead_engineer", "u_pm2:pm"])
         self.assertIn(p.id, projects.visible_project_ids(u["u_ft1"]), "portfolio is company-wide — everyone sees it")
-        self.assertIn(p.id, projects.my_project_ids(u["u_pm2"])); self.assertNotIn(p.id, projects.my_project_ids(u["u_ft1"]), "but only its PM and lead engineer are assigned")
-        self.err("forbidden", field.raise_issue, u["u_ft1"], p.id, {"category": "other", "severity": "low", "title": "x", "description": "", "beforeAttachmentIds": ["att1"]})
+        self.assertIn(p.id, projects.my_project_ids(u["u_pm2"])); self.assertNotIn(p.id, projects.my_project_ids(u["u_ft1"]), "assignment is recorded even though it no longer gates access")
+        i = field.raise_issue(u["u_ft1"], p.id, {"category": "other", "severity": "low", "title": "Company-wide roles", "description": "", "beforeAttachmentIds": ["att1"]})
+        self.assertEqual(i.project_id, p.id, "roles apply company-wide, so an unassigned tech can still work on it")
+        self.err("forbidden", review.check, u["u_ft1"], "issue", i.id, "checked")  # but never their own submission
+        self.err("forbidden", money.create_po, u["u_ft1"], p.id, {"vendorId": "v_dixsen", "items": [{"description": "x", "qty": 1, "unitCost": 1}]})
         self.assertTrue(p.events.filter(event_type="project_created", actor=u["u_pm1"]).exists())
         self.err("conflict", projects.create_project, u["u_admin"], base)
 
@@ -243,7 +246,9 @@ class RulesTest(TestCase):
         r = c.post("/api/v1/commands/check/", {"kind": "document", "id": body["result"]["id"], "decision": "checked"}, format="json")
         self.assertEqual(r.status_code, 403); self.assertEqual(r.json()["code"], "forbidden")
         r = c.post("/api/v1/commands/createPO/", {"projectId": "p3", "input": {"vendorId": "v_dixsen", "items": []}}, format="json")
-        self.assertEqual(r.status_code, 403, "not a member of p3")
+        self.assertEqual(r.status_code, 400, "a PM may raise a PO on any project; this one fails only on empty lines")
+        r = c.post("/api/v1/commands/decide/", {"approvalId": "ap1", "decision": "approved"}, format="json")
+        self.assertEqual(r.status_code, 403, "but a PM still cannot approve a gate — the matrix decides that")
         r = c.post("/api/v1/commands/nope/", {}, format="json"); self.assertEqual(r.status_code, 404)
         # multipart upload creates a real attachment with sha256
         from django.core.files.uploadedfile import SimpleUploadedFile

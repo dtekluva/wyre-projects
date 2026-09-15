@@ -140,14 +140,13 @@ export class MockApi {
     const u = this.users.find((x) => x.id === userId);
     return u ? rolesOnFn(u, projectId, this.memberships) : [];
   }
-  /** projectId undefined → only global roles count (no per-project role leaks into global actions).
-   *  An unknown user has no permissions rather than being an error: the store is briefly empty while a
-   *  remote session signs out or before the first snapshot lands, and a render then must not throw. */
+  /** Permission follows the role, on every project — see rbac.rolesOn. An unknown user has no permissions
+   *  rather than being an error: the store is briefly empty while a remote session signs out, and a render
+   *  then must not throw. */
   can(userId: string, perm: Permission, projectId?: string) {
     const u = this.users.find((x) => x.id === userId);
     if (!u) return false;
-    if (projectId) return canFn(u, perm, projectId, this.memberships);
-    return canFn(u, perm, "__global__", this.memberships) || u.roles.filter((r) => !GLOBAL.includes(r)).length === 0 && canFn(u, perm, undefined, this.memberships);
+    return canFn(u, perm, projectId, this.memberships);
   }
   /** can the user do this on ANY project they belong to (for nav / listing) */
   canAnywhere(userId: string, perm: Permission) { return this.can(userId, perm) || this.projects.some((p) => this.can(userId, perm, p.id)); }

@@ -68,21 +68,20 @@ def base_roles(user) -> list[str]:
     return list(user.role_codes())
 
 
-def roles_on(user, project_id: Optional[str], memberships: Optional[Iterable] = None) -> list[str]:
-    """Roles a user effectively holds on a project: global base roles + active memberships. None → base roles."""
-    base = base_roles(user)
-    if project_id is None:
-        return base
-    globals_ = [r for r in base if r in GLOBAL_ROLES]
-    if memberships is None:
-        from .models import ProjectMembership
-        memberships = ProjectMembership.objects.filter(project_id=project_id, user=user, revoked_at__isnull=True)
-    local = [m.role for m in memberships if m.project_id == project_id and m.user_id == user.id and m.revoked_at is None]
-    out: list[str] = []
-    for r in globals_ + local:
-        if r not in out:
-            out.append(r)
-    return out
+def roles_on(user, project_id: Optional[str] = None, memberships: Optional[Iterable] = None) -> list[str]:
+    """Roles a user holds on a project.
+
+    Wyre runs this as a single in-house team, so roles apply company-wide: a Lead Engineer is a Lead Engineer on
+    every project, not only the ones they are assigned to (user decision, 2026-09-15). `ProjectMembership` is
+    therefore an *assignment* record — who is responsible, shown in the UI and used to pick defaults — and no
+    longer a permission gate.
+
+    What still constrains people is unchanged and is not membership-based:
+      * the role → permission matrix (§2.2): a Field Tech cannot approve a PO anywhere;
+      * segregation of duties (§4.13, §5): nobody checks their own submission or approves their own request;
+      * actor capture: every create, edit and decision records who did it, on every project.
+    """
+    return base_roles(user)
 
 
 def _has(roles: Iterable[str], perm: str) -> bool:
@@ -91,13 +90,8 @@ def _has(roles: Iterable[str], perm: str) -> bool:
 
 
 def can(user, perm: str, project_id: Optional[str] = None) -> bool:
-    """projectId None → only global roles count, unless the user holds no project-scoped role at all (mirror of MockApi.can)."""
-    base = base_roles(user)
-    if project_id:
-        return _has(roles_on(user, project_id), perm)
-    if _has([r for r in base if r in GLOBAL_ROLES], perm):
-        return True
-    return all(r in GLOBAL_ROLES for r in base) and _has(base, perm)
+    """Permission follows the role, on every project. See `roles_on` for what still constrains people."""
+    return _has(base_roles(user), perm)
 
 
 def can_by_base_role(user, perm: str) -> bool:
