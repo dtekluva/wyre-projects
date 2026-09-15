@@ -18,7 +18,7 @@ export function ProjectPeople() {
       <div className="card table--wrap">
         <div className="card__head"><div className="card__title">Project members</div><span className="sm muted">Per-project roles · scoped by <span className="ns-mono">ProjectMembership</span></span></div>
         <table className="table"><thead><tr><th>Person</th><th>Role</th><th>Granted by</th><th>Since</th><th></th></tr></thead>
-          <tbody>{members.map((m) => { const u = api.getUser(m.userId); return <tr key={m.id}>
+          <tbody>{members.map((m) => { const u = api.userOrStub(m.userId); return <tr key={m.id}>
             <td><span className="row"><Avatar user={u} sm />{u.name}<span className="sm muted">{u.email}</span></span></td>
             <td><Badge variant="info">{ROLE_LABEL[m.role]}</Badge></td><td className="sm">{api.userName(m.grantedBy)}</td><td className="sm">{fmtDate(m.grantedAt)}</td>
             <td className="num">{canManage && <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => safe(() => api.revokeMembership(user.id, m.id), "Role revoked")}>Revoke</button>}</td>

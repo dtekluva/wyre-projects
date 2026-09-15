@@ -18,7 +18,13 @@ const SEVV: Record<IssueSeverity, "danger" | "warning" | "info" | "neutral"> = {
 const CATS: IssueCategory[] = ["electrical", "mechanical", "performance", "data", "safety", "client", "other"];
 const Chips = <T extends string,>({ value, options, onChange, label }: { value: T; options: readonly T[] | T[]; onChange: (v: T) => void; label: (v: T) => React.ReactNode }) =>
   <div className="chips">{options.map((o) => <button key={o} type="button" className={`chip chip--lg ${value === o ? "chip--on" : ""}`} onClick={() => onChange(o)}>{label(o)}</button>)}</div>;
-const useMine = () => { const api = useApi(); const { user } = useAuth(); return api.listProjects(user.id).filter((p) => p.stage < 8); };
+/** Projects a field user can actually work on. Everyone can *see* every project, but offering one the user
+ *  would be refused on just produces a failed submit, so the pickers list what they may act on. */
+const useMine = () => {
+  const api = useApi(); const { user } = useAuth();
+  const actionable = api.projectsFor(user.id, "visit.create").filter((p) => p.stage < 8);
+  return actionable.length ? actionable : api.listProjects(user.id).filter((p) => p.stage < 8);
+};
 /** Techs know sites by name, not by code, so lead with the name and keep the code as the secondary line. */
 const useProjectLabel = () => {
   const api = useApi();
@@ -40,9 +46,9 @@ export function FieldSignin() {
 export function FieldHome() {
   const api = useApi(); const { user } = useAuth(); const { online, queue } = useField(); const mine = useMine();
   const issues = mine.flatMap((p) => api.listIssues({ projectId: p.id, openOnly: true })); const breached = issues.filter((i) => api.issueSla(i).breached).length;
-  const checks = api.reviewQueue(user.id).length;
+  const checks = user.id ? api.reviewQueue(user.id).length : 0;
   return <div className="stack">
-    <div><div className="muted sm">{new Date().toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "short" })}</div><h1 className="field__title">Hi {user.name.split(" ")[0]}</h1></div>
+    <div><div className="muted sm">{new Date().toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "short" })}</div><h1 className="field__title">Hi {(user.name || "there").split(" ")[0]}</h1></div>
     {!online && <div className="fnote fnote--warn">You're offline — anything you submit is queued ({queue.length}) and syncs automatically.</div>}
     <div className="fgrid">
       <Link to="/field/issues" className="fkpi"><b>{issues.length}</b><span>open issues</span></Link>

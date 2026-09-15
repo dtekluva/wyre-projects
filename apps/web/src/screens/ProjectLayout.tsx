@@ -26,7 +26,7 @@ export function ProjectLayout() {
         </div>
         <div className="stack page-head__side">
           <div className="row"><StageChip stage={p.stage} /><Badge variant={p.rag === "green" ? "success" : p.rag === "amber" ? "warning" : "danger"}><RagDot rag={p.rag} /> {p.rag.toUpperCase()}</Badge></div>
-          <div className="row row--wrap sm muted">PM <Avatar user={api.getUser(p.pmId)} sm /> {api.userName(p.pmId)} · Lead Eng <Avatar user={api.getUser(p.leadEngineerId)} sm /> {api.userName(p.leadEngineerId)}</div>
+          <div className="row row--wrap sm muted">PM <Avatar user={api.userOrStub(p.pmId)} sm /> {api.userName(p.pmId)} · Lead Eng <Avatar user={api.userOrStub(p.leadEngineerId)} sm /> {api.userName(p.leadEngineerId)}</div>
         </div>
       </div>
       {p.ragReason && <div style={{ marginBottom: 16 }}><Note tone={p.rag === "red" ? "danger" : "warn"}><b>Why {p.rag}:</b> {p.ragReason}</Note></div>}
@@ -46,7 +46,7 @@ export function ProjectLayout() {
             {pending.length ? <div className="stack">{pending.map((a) => <div key={a.id} className="sm"><Link to="/work/approvals" className="link">{a.title}</Link><div className="muted">needs {a.requiredRoles.filter((r) => !a.decisions.some((d) => d.role === r)).map((r) => ROLE_LABEL[r]).join(", ")}</div></div>)}</div>
               : <div className="sm muted">Nothing pending</div>}</div>
           <div className="card ctx__card"><div className="ctx__title">Stage</div><div className="sm"><b>{STAGES[p.stage].name}</b><div className="muted">{p.stagePlanned[p.stage] ? `Planned exit ${p.stagePlanned[p.stage]}` : "No planned exit date"}</div></div></div>
-          <div className="card ctx__card"><div className="ctx__title">Team</div><div className="stack" style={{ gap: 6 }}>{team.map((m) => <div key={m.id} className="row sm"><Avatar user={api.getUser(m.userId)} sm /><span className="grow ellipsis">{api.userName(m.userId)}</span><span className="muted">{ROLE_LABEL[m.role]}</span></div>)}</div></div>
+          <div className="card ctx__card"><div className="ctx__title">Team</div><div className="stack" style={{ gap: 6 }}>{team.map((m) => <div key={m.id} className="row sm"><Avatar user={api.userOrStub(m.userId)} sm /><span className="grow ellipsis">{api.userName(m.userId)}</span><span className="muted">{ROLE_LABEL[m.role]}</span></div>)}</div></div>
           <div className="card ctx__card"><div className="ctx__title">Recent activity</div><Timeline events={api.listEvents(p.id)} limit={5} /><Link to={`/projects/${p.id}/timeline`} className="sm link">Full timeline →</Link></div>
         </aside>
       </div>

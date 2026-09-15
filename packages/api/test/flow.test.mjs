@@ -180,7 +180,9 @@ ok(/^WYR-\d{4}-\d{3}$/.test(np.code) && !api.projects.some((p) => p !== np && p.
 ok(np.createdBy === "u_pm1" && np.retentionPercent === 5 && np.stagePlanned[0] === "2026-10-01", "actor captured, retention defaulted from threshold, proposal date planned");
 const npRoles = api.listMemberships(np.id).map((m) => `${m.userId}:${m.role}`).sort().join(",");
 ok(npRoles === "u_le1:lead_engineer,u_pm2:pm", "PM + Lead Engineer memberships granted");
-ok(api.listProjects("u_pm2").some((p) => p.id === np.id) && !api.listProjects("u_ft1").some((p) => p.id === np.id), "visible to its PM, not to an unrelated field tech");
+ok(api.listProjects("u_ft1").some((p) => p.id === np.id), "portfolio is company-wide — every signed-in user sees the new project");
+ok(api.myProjects("u_pm2").some((p) => p.id === np.id) && !api.myProjects("u_ft1").some((p) => p.id === np.id), "but only its PM and lead engineer are assigned to it");
+expectErr(() => api.raiseIssue("u_ft1", np.id, { category: "other", severity: "low", title: "x", description: "", beforeAttachmentIds: ["att1"] }), "forbidden", "seeing a project does not let an unassigned tech act on it");
 ok(api.listEvents(np.id).some((e) => e.eventType === "project_created" && e.actorId === "u_pm1"), "project_created logged with actor");
 ok(api.gateStatus(np.id).stage === 0 && api.gateStatus(np.id).items.length === 3 && !api.gateStatus(np.id).ready, "gate 0 shows 3 missing evidence items");
 expectErr(() => api.createProject("u_admin", npBase), "conflict", "duplicate project name is rejected");

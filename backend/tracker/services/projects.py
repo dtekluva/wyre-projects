@@ -28,14 +28,19 @@ def next_project_code() -> str:
 
 
 def list_projects(user: User):
-    if rbac.has_global(user):
-        return Project.objects.all().order_by("code")
-    ids = ProjectMembership.objects.filter(user=user, revoked_at__isnull=True).values_list("project_id", flat=True)
-    return Project.objects.filter(pk__in=list(ids)).order_by("code")
+    """The portfolio is company-wide: any signed-in member of staff can see every project.
+    Membership no longer gates *reading* a project — it gates acting on one, which `rbac.can` still enforces."""
+    return Project.objects.all().order_by("code")
 
 
 def visible_project_ids(user: User) -> list[str]:
     return list(list_projects(user).values_list("id", flat=True))
+
+
+def my_project_ids(user: User) -> list[str]:
+    """Projects this user is actually assigned to, for 'my work' views and for pickers that must not offer
+    a project the user would be refused on."""
+    return list(ProjectMembership.objects.filter(user=user, revoked_at__isnull=True).values_list("project_id", flat=True).distinct())
 
 
 @transaction.atomic

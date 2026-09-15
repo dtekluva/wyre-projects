@@ -149,7 +149,9 @@ class RulesTest(TestCase):
         self.assertEqual(Project.objects.count(), n + 1); self.assertEqual(p.stage, 0); self.assertEqual(p.code, "WYR-2026-006")
         self.assertEqual(dec(p.retention_percent), 5); self.assertEqual(p.stage_planned, {"0": "2026-10-01"})
         roles = sorted(f"{m.user_id}:{m.role}" for m in p.memberships.all()); self.assertEqual(roles, ["u_le1:lead_engineer", "u_pm2:pm"])
-        self.assertIn(p.id, projects.visible_project_ids(u["u_pm2"])); self.assertNotIn(p.id, projects.visible_project_ids(u["u_ft1"]))
+        self.assertIn(p.id, projects.visible_project_ids(u["u_ft1"]), "portfolio is company-wide — everyone sees it")
+        self.assertIn(p.id, projects.my_project_ids(u["u_pm2"])); self.assertNotIn(p.id, projects.my_project_ids(u["u_ft1"]), "but only its PM and lead engineer are assigned")
+        self.err("forbidden", field.raise_issue, u["u_ft1"], p.id, {"category": "other", "severity": "low", "title": "x", "description": "", "beforeAttachmentIds": ["att1"]})
         self.assertTrue(p.events.filter(event_type="project_created", actor=u["u_pm1"]).exists())
         self.err("conflict", projects.create_project, u["u_admin"], base)
 
@@ -231,9 +233,9 @@ class RulesTest(TestCase):
         self.assertEqual(c.get("/api/v1/snapshot/").status_code, 401)
         c.credentials(HTTP_AUTHORIZATION=f"Bearer {tok}")
         snap = c.get("/api/v1/snapshot/").json()
-        self.assertEqual(sorted(p["id"] for p in snap["projects"]), ["p1", "p2", "p5", "p7"], "PM sees only member projects")
+        self.assertEqual(len(snap["projects"]), Project.objects.count(), "portfolio is company-wide")
         self.assertEqual(snap["qbBills"], [], "no recon.read → no bills")
-        self.assertTrue(all(m["projectId"] in ("p1", "p2", "p5", "p7", None) for m in snap["movements"]))
+        self.assertTrue(snap["purchaseOrders"], "a PM holds money.read, so budgets come through")
         r = c.post("/api/v1/commands/addDocument/", {"projectId": "p1", "input": {"docType": "progress_photos", "title": "Week 4 photos"}}, format="json")
         self.assertEqual(r.status_code, 200, r.content); body = r.json()
         self.assertEqual(body["result"]["reviewStatus"], "pending"); self.assertEqual(body["result"]["createdBy"], "u_pm1")
@@ -253,6 +255,18 @@ class RulesTest(TestCase):
         r = c.post("/api/v1/auth/token/", {"username": "musa.ibrahim", "password": "wyre-demo-2026"}, format="json")
         c.credentials(HTTP_AUTHORIZATION=f"Bearer {r.json()['access']}")
         self.assertEqual(len(c.get("/api/v1/snapshot/").json()["projects"]), Project.objects.count())
+
+    def test_field_tech_sees_every_project_but_no_money(self):
+        """Widening visibility must not widen what the API hands out: the snapshot is gated by permission."""
+        c = APIClient()
+        r = c.post("/api/v1/auth/token/", {"username": "segun.alabi", "password": "wyre-demo-2026"}, format="json")
+        c.credentials(HTTP_AUTHORIZATION=f"Bearer {r.json()['access']}")
+        snap = c.get("/api/v1/snapshot/").json()
+        self.assertEqual(len(snap["projects"]), Project.objects.count(), "sees the whole portfolio")
+        for empty in ("costItems", "purchaseOrders", "actuals", "changeOrders", "retentions", "qbBills", "approvals"):
+            self.assertEqual(snap[empty], [], f"field tech holds no permission for {empty}")
+        self.assertTrue(snap["movements"], "but does hold inventory.read")
+        self.assertTrue(snap["issues"], "and sees field records")
 
 
 class ClientIdTest(TestCase):

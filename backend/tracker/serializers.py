@@ -202,18 +202,21 @@ def open_issue_counts() -> dict:
 
 
 def snapshot(u: User) -> dict:
-    """Everything the web app's in-memory store needs, scoped to what this user may see (§2.3)."""
-    everything = rbac.has_global(u)
-    pids = None if everything else set(visible_project_ids(u))
+    """Everything the web app's in-memory store needs.
 
+    The portfolio is company-wide, so every project is readable by any signed-in member of staff. What a user
+    receives is therefore gated by *permission* rather than by membership: a Field Tech sees every project and its
+    evidence, but no budgets, purchase orders or actuals, because they hold no `money.read`. Membership still
+    decides what they may *do*, which `rbac.can` enforces on every command.
+    """
     def scoped(qs, field="project_id", allow_null=False):
-        if pids is None:
-            return qs
-        if allow_null:
-            from django.db.models import Q
-            return qs.filter(Q(**{f"{field}__in": pids}) | Q(**{f"{field}__isnull": True}))
-        return qs.filter(**{f"{field}__in": pids})
+        return qs
 
+    may = lambda perm: rbac.can(u, perm) or any(rbac.can(u, perm, p) for p in visible_project_ids(u))
+    sees_money = may("money.read")
+    sees_stock = may("inventory.read")
+    sees_assets = may("asset.read")
+    sees_approvals = may("approval.read")
     oi = open_issue_counts()
     return {
         "users": [user(x) for x in User.objects.filter(is_active=True).prefetch_related("roles").order_by("name")],
@@ -222,24 +225,24 @@ def snapshot(u: User) -> dict:
         "documents": [document(d) for d in scoped(Document.objects.all()).order_by("-submitted_at")],
         "attachments": [attachment(a) for a in scoped(Attachment.objects.all(), allow_null=True).order_by("-uploaded_at")],
         "events": [event(e) for e in scoped(ChronologyEvent.objects.all()).order_by("-occurred_at")],
-        "approvals": [approval(a) for a in scoped(Approval.objects.all(), allow_null=True).order_by("-requested_at")],
+        "approvals": [approval(a) for a in Approval.objects.all().order_by("-requested_at")] if sees_approvals else [],
         "thresholds": [threshold(t) for t in Threshold.objects.all().order_by("key")],
         "vendors": [vendor(v) for v in Vendor.objects.all().order_by("name")],
         "locations": [location(l) for l in StockLocation.objects.all().order_by("id")],
-        "items": [item(i) for i in InventoryItem.objects.all().order_by("id")],
-        "costItems": [cost_item(c) for c in scoped(CostItem.objects.all()).order_by("created_at")],
-        "purchaseOrders": [purchase_order(p) for p in scoped(PurchaseOrder.objects.all()).prefetch_related("items").order_by("-raised_at")],
-        "goodsReceipts": [goods_receipt(g) for g in scoped(GoodsReceipt.objects.all()).order_by("-received_at")],
-        "assets": [asset(a) for a in scoped(Asset.objects.all(), allow_null=True).order_by("created_at")],
-        "movements": [movement(m) for m in scoped(StockMovement.objects.all(), allow_null=True).order_by("created_at", "id")],
-        "actuals": [actual(a) for a in scoped(Actual.objects.all()).order_by("-date")],
-        "changeOrders": [change_order(c) for c in scoped(ChangeOrder.objects.all()).order_by("-created_at")],
-        "retentions": [retention(r) for r in scoped(Retention.objects.all())],
+        "items": [item(i) for i in InventoryItem.objects.all().order_by("id")] if sees_stock else [],
+        "costItems": [cost_item(c) for c in CostItem.objects.all().order_by("created_at")] if sees_money else [],
+        "purchaseOrders": [purchase_order(p) for p in PurchaseOrder.objects.all().prefetch_related("items").order_by("-raised_at")] if sees_money else [],
+        "goodsReceipts": [goods_receipt(g) for g in GoodsReceipt.objects.all().order_by("-received_at")] if (sees_money or sees_stock) else [],
+        "assets": [asset(a) for a in Asset.objects.all().order_by("created_at")] if sees_assets else [],
+        "movements": [movement(m) for m in StockMovement.objects.all().order_by("created_at", "id")] if sees_stock else [],
+        "actuals": [actual(a) for a in Actual.objects.all().order_by("-date")] if sees_money else [],
+        "changeOrders": [change_order(c) for c in ChangeOrder.objects.all().order_by("-created_at")] if sees_money else [],
+        "retentions": [retention(r) for r in Retention.objects.all()] if sees_money else [],
         "qbBills": [qb_bill(q) for q in QbBill.objects.all().order_by("-txn_date")] if rbac.can(u, "recon.read") else [],
         "visits": [visit(v) for v in scoped(SiteVisit.objects.all()).order_by("-started_at")],
         "issues": [issue(i) for i in scoped(Issue.objects.all()).order_by("-raised_at")],
         "commissionings": [commissioning(c) for c in scoped(CommissioningRecord.objects.all()).order_by("-date")],
         "hseIncidents": [hse(h) for h in scoped(HseIncident.objects.all()).order_by("-occurred_at")],
         "warrantyClaims": [warranty(w) for w in scoped(WarrantyClaim.objects.all()).order_by("-claimed_at")],
-        "stockCounts": [stock_count(s) for s in StockCount.objects.all().order_by("-created_at")],
+        "stockCounts": [stock_count(s) for s in StockCount.objects.all().order_by("-created_at")] if sees_stock else [],
     }

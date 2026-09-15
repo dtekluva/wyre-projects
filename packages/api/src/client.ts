@@ -129,11 +129,23 @@ export class MockApi {
   // ---------- users & access ----------
   getUsers() { return this.users; }
   getUser(id: string) { const u = this.users.find((x) => x.id === id); if (!u) throw new ApiError("User not found", "not_found"); return u; }
+  /** Display-safe lookup: returns a placeholder instead of throwing when the store has not hydrated yet
+   *  (remote sign-out, or the first render before the snapshot lands). Use in render paths; `getUser` in rules. */
+  userOrStub(id?: string): User {
+    const u = id ? this.users.find((x) => x.id === id) : undefined;
+    return u ?? { id: id ?? "", name: id ?? "—", email: "", roles: [], initials: "—" };
+  }
   userName(id?: string) { return id ? this.users.find((x) => x.id === id)?.name ?? id : "—"; }
-  rolesOn(userId: string, projectId?: string): RoleCode[] { return rolesOnFn(this.getUser(userId), projectId, this.memberships); }
-  /** projectId undefined → only global roles count (no per-project role leaks into global actions) */
+  rolesOn(userId: string, projectId?: string): RoleCode[] {
+    const u = this.users.find((x) => x.id === userId);
+    return u ? rolesOnFn(u, projectId, this.memberships) : [];
+  }
+  /** projectId undefined → only global roles count (no per-project role leaks into global actions).
+   *  An unknown user has no permissions rather than being an error: the store is briefly empty while a
+   *  remote session signs out or before the first snapshot lands, and a render then must not throw. */
   can(userId: string, perm: Permission, projectId?: string) {
-    const u = this.getUser(userId);
+    const u = this.users.find((x) => x.id === userId);
+    if (!u) return false;
     if (projectId) return canFn(u, perm, projectId, this.memberships);
     return canFn(u, perm, "__global__", this.memberships) || u.roles.filter((r) => !GLOBAL.includes(r)).length === 0 && canFn(u, perm, undefined, this.memberships);
   }
@@ -142,7 +154,7 @@ export class MockApi {
   private require(userId: string, perm: Permission, projectId?: string) {
     if (!this.can(userId, perm, projectId)) throw new ApiError(`Your role does not allow "${perm}" here`, "forbidden");
   }
-  private hasGlobal(userId: string) { return this.getUser(userId).roles.some((r) => GLOBAL.includes(r)); }
+  hasGlobal(userId: string) { return this.getUser(userId).roles.some((r) => GLOBAL.includes(r)); }
 
   // ---------- lookups ----------
   vendorName(id?: string) { return id ? this.vendors.find((v) => v.id === id)?.name ?? id : "—"; }
@@ -152,17 +164,19 @@ export class MockApi {
   projectCode(id?: string) { return id ? this.projects.find((p) => p.id === id)?.code ?? id : "—"; }
 
   // ---------- projects ----------
-  listProjects(userId: string): Project[] {
-    if (this.hasGlobal(userId)) return this.projects;
+  /** The portfolio is company-wide: any signed-in member of staff sees every project. Membership decides what
+   *  you may DO on a project, which `can()` still enforces — not whether you may look at it. */
+  listProjects(_userId: string): Project[] { return this.projects; }
+  /** Projects this user is assigned to — for "my work" views and for pickers that must not offer a project
+   *  the user would be refused on. */
+  myProjects(userId: string): Project[] {
     const mine = new Set(this.memberships.filter((m) => m.userId === userId && !m.revokedAt).map((m) => m.projectId));
     return this.projects.filter((p) => mine.has(p.id));
   }
+  /** Projects where this user may actually perform `perm` (membership or a global role). */
+  projectsFor(userId: string, perm: Permission): Project[] { return this.projects.filter((p) => this.can(userId, perm, p.id)); }
   private raw(id: string) { const p = this.projects.find((x) => x.id === id); if (!p) throw new ApiError("Project not found", "not_found"); return p; }
-  getProject(userId: string, id: string): Project {
-    const p = this.raw(id);
-    if (!this.listProjects(userId).some((x) => x.id === id)) throw new ApiError("You are not a member of this project", "forbidden");
-    return p;
-  }
+  getProject(_userId: string, id: string): Project { return this.raw(id); }
   listMemberships(projectId: string) { return this.memberships.filter((m) => m.projectId === projectId && !m.revokedAt); }
 
   /** project.create is granted by base role (Admin, PM) — there is no project to be a member of yet */
