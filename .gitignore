@@ -5,6 +5,10 @@ packages/tokens/dist/
 *.log
 .env
 .env.*
+# …but the templates must ship: a clone has no way to know what config it needs otherwise
+!.env.example
+!*.env.example
+!.env.docker.example
 packages/api/dist/
 apps/mobile/.expo/
 apps/mobile/ios/
