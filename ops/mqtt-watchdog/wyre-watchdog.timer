@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Wyre MQTT ingestion watchdog every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=wyre-watchdog.service
+
+[Install]
+WantedBy=timers.target

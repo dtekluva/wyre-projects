@@ -1,0 +1,14 @@
+[Unit]
+Description=Wyre MQTT ingestion watchdog (restarts a path that has stopped writing)
+Documentation=https://github.com/dtekluva/wyre-projects
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/wyre-watchdog/watchdog.py
+Environment=WYRE_ENV=/home/wyremqtt/.env
+Environment=STALE_MINUTES=15
+Environment=COOLDOWN_MINUTES=10
+Environment=MAX_RESTARTS_PER_HOUR=4
+StateDirectory=wyre-watchdog
+TimeoutStartSec=180
