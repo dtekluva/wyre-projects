@@ -1,5 +1,5 @@
 /* Wyre Field service worker — app-shell cache + offline navigation fallback. */
-const VERSION = "wyre-field-v1";
+const VERSION = "wyre-field-v2";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/wyre-logo.png", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/maskable-512.png", "/icons/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
@@ -10,7 +10,11 @@ self.addEventListener("activate", (e) => {
 });
 self.addEventListener("fetch", (e) => {
   const req = e.request;
-  if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== "GET" || url.origin !== self.location.origin) return;
+  // The API is same-origin in production. Its replies are per-user and authenticated — never cache them,
+  // and never serve a stale snapshot to somebody who has just signed in as someone else.
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/admin/") || url.pathname.startsWith("/static/admin/")) return;
   if (req.mode === "navigate") {
     // network first, fall back to the cached shell so the app opens offline
     e.respondWith(fetch(req).then((res) => { caches.open(VERSION).then((c) => c.put("/index.html", res.clone())); return res; }).catch(() => caches.match("/index.html")));

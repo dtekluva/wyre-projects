@@ -4,15 +4,15 @@ set -e
 
 python - <<'PY'
 import os, time, sys
-from urllib.parse import urlparse
 import psycopg
 
 url = os.environ.get("DATABASE_URL", "")
 if url.startswith("postgres"):
-    u = urlparse(url)
     for attempt in range(60):
         try:
-            psycopg.connect(dbname=u.path.lstrip("/"), user=u.username, password=u.password, host=u.hostname, port=u.port or 5432, connect_timeout=3).close()
+            # the whole URL, not picked-apart pieces: psycopg speaks libpq conninfo, so ?sslmode=require
+            # and friends survive — a managed cluster rejects the connection without them
+            psycopg.connect(url, connect_timeout=5).close()
             print("database ready", flush=True)
             break
         except Exception as exc:
@@ -24,6 +24,8 @@ PY
 
 python manage.py migrate --noinput
 python manage.py seed_rbac
+# whitenoise serves from STATIC_ROOT, so the admin's assets have to be collected into it first
+python manage.py collectstatic --noinput --clear >/dev/null
 
 if [ "$SEED_DEMO" = "1" ]; then
   python manage.py seed_demo

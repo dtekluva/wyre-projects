@@ -19,9 +19,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-    # host port only for inspection with psql; the API talks to it over the compose network
+    # loopback only: this is for psql on the machine running the stack, not for the internet.
+    # The API reaches it over the compose network and needs no published port at all.
     ports:
-      - "${DB_PORT:-5433}:5432"
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
 
   api:
     build: .
@@ -48,8 +49,9 @@ services:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5174}
     volumes:
       - media:/app/media
+    # loopback only: nginx (host or the web container) is what the outside world talks to
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "127.0.0.1:${API_PORT:-8000}:8000"
 
   # The schedule lives in the stack, not on somebody's laptop: same image, no cron daemon, restarts with
   # everything else. Reconciling alerts is harmless; the email digest stays off until DIGEST_ENABLED=1.

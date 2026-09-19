@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from datetime import timedelta
 from pathlib import Path
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs
 
 from dotenv import load_dotenv
 
@@ -30,6 +30,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # serves STATIC_ROOT itself; with DEBUG=0 nothing else does, and the admin would come up unstyled
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -53,9 +55,16 @@ TEMPLATES = [{
 WSGI_APPLICATION = "config.wsgi.application"
 
 
+# libpq keywords worth honouring from the URL's query string. A managed cluster hands you a URL ending
+# in ?sslmode=require and refuses plaintext, so dropping the query string here is not cosmetic.
+_LIBPQ_OPTS = ("sslmode", "sslrootcert", "sslcert", "sslkey", "connect_timeout", "target_session_attrs")
+
+
 def _database_from_url(url: str) -> dict:
     u = urlparse(url)
     if u.scheme.startswith("postgres"):
+        q = parse_qs(u.query)
+        options = {k: q[k][0] for k in _LIBPQ_OPTS if q.get(k)}
         return {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": u.path.lstrip("/"),
@@ -64,6 +73,7 @@ def _database_from_url(url: str) -> dict:
             "HOST": u.hostname or "localhost",
             "PORT": str(u.port or 5432),
             "CONN_MAX_AGE": 60,
+            "OPTIONS": options,
         }
     if u.scheme == "sqlite":
         return {"ENGINE": "django.db.backends.sqlite3", "NAME": str(BASE_DIR / (u.path.lstrip("/") or "db.sqlite3"))}
@@ -117,12 +127,12 @@ if SPACES_BUCKET:
                 "signature_version": "s3v4",
             },
         },
-        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
     }
 else:
     STORAGES = {
         "default": {"BACKEND": "tracker.storage.ContentAddressedFileSystemStorage"},
-        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
     }
 
 REST_FRAMEWORK = {
@@ -150,6 +160,21 @@ MAILGUN_BASE = os.environ.get("MAILGUN_BASE", "https://api.mailgun.net/v3").stri
 MAILGUN_FROM = os.environ.get("MAILGUN_FROM", "Wyre Tracker <postmaster@mg.wyreng.com>").strip()
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5174").rstrip("/")
 
+# --- Behind a TLS-terminating nginx (spec §10). Without the proxy header Django believes every request
+# arrived over plain http, builds http:// absolute URLs and rejects the admin's own CSRF token.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if o]
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", "0"))  # raise once TLS is proven
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    X_FRAME_OPTIONS = "DENY"
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = "same-origin"
+
+# Same-origin deployments (app and API behind one nginx) send no Origin header worth checking, so this
+# list stays empty there; it exists for the split-origin dev setup.
 CORS_ALLOWED_ORIGINS = [o for o in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",") if o]
 CORS_ALLOW_CREDENTIALS = False
 if DEBUG:

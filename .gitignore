@@ -21,3 +21,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 backend/.env.docker
+!.env.prod.example
+apps/web/tsconfig.tsbuildinfo
+*.tsbuildinfo

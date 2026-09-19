@@ -1,0 +1,100 @@
+# Wyre Tracker — production stack (spec §10).
+#
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Reads .env from this directory (see .env.prod.example). Deliberate choices for the host this runs on,
+# a 2 GB / 2 vCPU droplet that is ALSO the MQTT ingestion box:
+#   * the database is a DigitalOcean managed cluster, not a container: backups and PITR are handled
+#     there, and the 2 GB host keeps its RAM for telemetry ingestion;
+#   * nothing but the web container publishes a port, and that one is on loopback for nginx to reach;
+#   * every service has a memory ceiling, so a runaway request cannot starve wyremqtt.service;
+#   * the web image is built elsewhere and loaded here: `npm ci && vite build` wants ~1 GB and both
+#     cores for several minutes, which is exactly what ingestion cannot spare. See DEPLOY.md.
+name: wyre-tracker
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  api:
+    build: ./backend
+    image: wyre-tracker-api:latest
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 640m
+    environment:
+      # full managed-cluster URL including ?sslmode=require — the cluster refuses plaintext
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      DEBUG: "0"
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?set ALLOWED_HOSTS in .env}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      SEED_DEMO: "0"          # never on production data
+      SPACES_BUCKET: ${SPACES_BUCKET:-}
+      SPACES_REGION: ${SPACES_REGION:-lon1}
+      SPACES_ENDPOINT: ${SPACES_ENDPOINT:-}
+      SPACES_KEY: ${SPACES_KEY:-}
+      SPACES_SECRET: ${SPACES_SECRET:-}
+      SPACES_URL_EXPIRY: ${SPACES_URL_EXPIRY:-900}
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-mg.wyreng.com}
+      MAILGUN_FROM: ${MAILGUN_FROM:-Wyre Tracker <postmaster@mg.wyreng.com>}
+      APP_BASE_URL: ${APP_BASE_URL:?set APP_BASE_URL in .env}
+    volumes:
+      - media:/app/media     # only used when SPACES_BUCKET is unset; uploads normally go to Spaces
+    # 2 workers for 2 vCPU. Three would win nothing and cost ~60 MB the ingestion service may need.
+    command: ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000",
+              "--workers", "2", "--timeout", "60", "--access-logfile", "-"]
+
+  scheduler:
+    build: ./backend
+    image: wyre-tracker-api:latest
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 256m
+    depends_on:
+      api: { condition: service_started }   # the api container owns migrations; wait for it
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      DEBUG: "0"
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+      SPACES_BUCKET: ${SPACES_BUCKET:-}
+      SPACES_REGION: ${SPACES_REGION:-lon1}
+      SPACES_ENDPOINT: ${SPACES_ENDPOINT:-}
+      SPACES_KEY: ${SPACES_KEY:-}
+      SPACES_SECRET: ${SPACES_SECRET:-}
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-mg.wyreng.com}
+      MAILGUN_FROM: ${MAILGUN_FROM:-Wyre Tracker <postmaster@mg.wyreng.com>}
+      APP_BASE_URL: ${APP_BASE_URL}
+      ALERTS_INTERVAL_MINUTES: ${ALERTS_INTERVAL_MINUTES:-60}
+      DIGEST_AT: ${DIGEST_AT:-07:30}
+      DIGEST_ENABLED: ${DIGEST_ENABLED:-0}   # stays 0 until real staff accounts exist
+      DIGEST_TO: ${DIGEST_TO:-}
+    volumes:
+      - media:/app/media
+    entrypoint: ["python", "manage.py", "scheduler"]
+
+  web:
+    # Built off-box and loaded with `docker load` (DEPLOY.md). `build:` is here so the same file can
+    # rebuild it on a machine that has the headroom — never pass --build on the droplet.
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api/v1}
+    image: wyre-tracker-web:latest
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 128m
+    depends_on:
+      api: { condition: service_started }
+    # loopback only: the host's nginx terminates TLS and proxies here
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+
+volumes:
+  media:

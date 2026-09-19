@@ -11,15 +11,31 @@ from tracker.models import Role, RolePermission, Threshold
 
 
 def seed_rbac(reset_matrix: bool = False) -> None:
-    for code in ROLE_CODES:
-        Role.objects.update_or_create(code=code, defaults={"name": ROLE_LABEL[code], "is_global": code in GLOBAL_ROLES})
+    """A handful of statements, not one per row. This runs on every container start, and a
+    row-at-a-time loop costs ~400 round trips — trivial against a local socket, ten minutes
+    against a managed cluster a continent away."""
+    Role.objects.bulk_create(
+        [Role(code=code, name=ROLE_LABEL[code], is_global=code in GLOBAL_ROLES) for code in ROLE_CODES],
+        update_conflicts=True, update_fields=["name", "is_global"], unique_fields=["code"],
+    )
+
     if reset_matrix:
         RolePermission.objects.all().delete()
-    for code, perms in rbac.MATRIX.items():
-        for p in perms:
-            RolePermission.objects.get_or_create(role_id=code, permission=p)
-    for key, label, value, unit in DEFAULT_THRESHOLDS:
-        Threshold.objects.get_or_create(key=key, defaults={"label": label, "value": str(value), "unit": unit, "effective_from": date(2026, 9, 1)})
+    # one read to learn what exists, one write for whatever is missing
+    wanted = {(code, p) for code, perms in rbac.MATRIX.items() for p in perms}
+    have = set(RolePermission.objects.values_list("role_id", "permission"))
+    RolePermission.objects.bulk_create(
+        [RolePermission(role_id=code, permission=p) for code, p in sorted(wanted - have)],
+        ignore_conflicts=True,
+    )
+
+    # defaults only: an existing threshold has been tuned by someone and must not be overwritten
+    existing = set(Threshold.objects.values_list("key", flat=True))
+    Threshold.objects.bulk_create(
+        [Threshold(key=key, label=label, value=str(value), unit=unit, effective_from=date(2026, 9, 1))
+         for key, label, value, unit in DEFAULT_THRESHOLDS if key not in existing],
+        ignore_conflicts=True,
+    )
     rbac.invalidate()
 
 

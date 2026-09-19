@@ -8,3 +8,4 @@ Pillow>=11
 gunicorn>=23
 django-storages[s3]>=1.14
 boto3>=1.35
+whitenoise>=6.8
