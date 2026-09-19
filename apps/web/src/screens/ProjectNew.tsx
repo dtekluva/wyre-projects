@@ -10,13 +10,14 @@ const TYPES = Object.keys(PROJECT_TYPE_LABEL) as ProjectType[];
 
 export function ProjectNew() {
   const api = useApi(); const { user } = useAuth(); const safe = useSafe(); const nav = useNavigate();
-  const pms = api.getUsers().filter((u) => u.roles.includes("pm"));
-  const les = api.getUsers().filter((u) => u.roles.includes("lead_engineer"));
+  // both owners are Tech Leads now; the two fields still name who is responsible for what
+  const pms = api.getUsers().filter((u) => u.roles.includes("techlead"));
+  const les = pms;
   const [name, setName] = useState(""); const [client, setClient] = useState(""); const [branch, setBranch] = useState(""); const [loc, setLoc] = useState("");
   const [type, setType] = useState<ProjectType>("solar_battery"); const [kwp, setKwp] = useState("");
   const [contract, setContract] = useState(""); const [budget, setBudget] = useState("");
   const [retention, setRetention] = useState(String(api.thresholdNum("retention.percent", 5)));
-  const [pmId, setPmId] = useState(user.roles.includes("pm") ? user.id : pms[0]?.id ?? ""); const [leId, setLeId] = useState(les[0]?.id ?? "");
+  const [pmId, setPmId] = useState(user.roles.includes("techlead") ? user.id : pms[0]?.id ?? ""); const [leId, setLeId] = useState(les[0]?.id ?? "");
   const [due, setDue] = useState("");
   const allowed = api.canCreateProject(user.id);
   const nextCode = api.nextProjectCode();
@@ -45,7 +46,7 @@ export function ProjectNew() {
           <div className="page-sub">Opens at stage 0 · Lead / Proposal. Next code <span className="ns-mono">{nextCode}</span>. Creator and every later change are captured in the chronology.</div>
         </div>
       </div>
-      {!allowed ? <Note tone="warn">Only a {ROLE_LABEL.pm} or {ROLE_LABEL.admin} can open a project. You are signed in as {user.name} ({user.roles.map((r) => ROLE_LABEL[r]).join(", ")}).</Note> :
+      {!allowed ? <Note tone="warn">Only a {ROLE_LABEL.techlead} or {ROLE_LABEL.director} can open a project. You are signed in as {user.name} ({user.roles.map((r) => ROLE_LABEL[r]).join(", ")}).</Note> :
       <form className="stack" onSubmit={submit} style={{ maxWidth: 860 }}>
         <div className="card">
           <div className="card__head"><b>Client & site</b></div>

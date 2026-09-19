@@ -40,7 +40,7 @@ export interface NewProjectInput {
 type Listener = () => void;
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 const round = (n: number) => Math.round(n * 100) / 100;
-const GLOBAL: RoleCode[] = ["admin", "director", "finance", "store_keeper", "auditor"];
+const GLOBAL: RoleCode[] = ["director", "finance", "store_keeper", "auditor"];
 const CATS: CostCategory[] = ["equipment", "civil", "labour", "logistics", "permits", "contingency", "om"];
 
 export class MockApi {
@@ -197,8 +197,8 @@ export class MockApi {
     if (!Number.isFinite(retentionPercent) || retentionPercent < 0 || retentionPercent > 20) throw new ApiError("Retention must be between 0 and 20 %", "invalid");
     if (input.systemCapacityKwp !== undefined && !(Number(input.systemCapacityKwp) > 0)) throw new ApiError("System capacity must be a positive number of kWp", "invalid");
     if (input.proposalDueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.proposalDueDate)) throw new ApiError("Proposal due date must be YYYY-MM-DD", "invalid");
-    const pm = this.getUser(input.pmId); if (!pm.roles.includes("pm")) throw new ApiError(`${pm.name} is not a Project Manager`, "invalid");
-    const le = this.getUser(input.leadEngineerId); if (!le.roles.includes("lead_engineer")) throw new ApiError(`${le.name} is not a Lead Engineer`, "invalid");
+    const pm = this.getUser(input.pmId); if (!pm.roles.includes("techlead")) throw new ApiError(`${pm.name} is not a Tech Lead`, "invalid");
+    const le = this.getUser(input.leadEngineerId); if (!le.roles.includes("techlead")) throw new ApiError(`${le.name} is not a Tech Lead`, "invalid");
     if (this.projects.some((p) => p.name.trim().toLowerCase() === name.toLowerCase())) throw new ApiError("A project with that name already exists", "conflict");
     const at = this.now();
     const p: Project = {
@@ -212,7 +212,7 @@ export class MockApi {
     };
     this.projects.push(p);
     this.log(p.id, actorId, "project_created", `Project created — ${p.code} · ${PROJECT_TYPE_LABEL[p.projectType]} · ${this.fmt(contractValue)}`, undefined, { model: "Project", id: p.id });
-    for (const [uid, role] of [[pm.id, "pm"], [le.id, "lead_engineer"]] as const) {
+    for (const [uid, role] of [[pm.id, "techlead"], [le.id, "techlead"]] as const) {
       this.memberships.push({ id: this.id("m"), projectId: p.id, userId: uid, role, grantedBy: actorId, grantedAt: at });
       this.log(p.id, actorId, "role_granted", `${this.userName(uid)} granted ${role}`);
     }

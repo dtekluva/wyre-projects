@@ -1,15 +1,17 @@
 // Domain types — mirror spec §2, §3, §4 (project_tracker_spec.md)
 
+// Six roles, and they stack: a User holds many, and `can()` unions their permissions, so one person can be
+// techlead + finance without a combined role existing. Keep them narrow for that reason.
 export type RoleCode =
-  | "admin" | "director" | "finance" | "pm" | "lead_engineer"
-  | "field_tech" | "store_keeper" | "auditor";
+  | "director" | "techlead" | "tech"
+  | "finance" | "store_keeper" | "auditor";
 
 export const ROLE_LABEL: Record<RoleCode, string> = {
-  admin: "Admin", director: "Director", finance: "Finance", pm: "Project Manager",
-  lead_engineer: "Lead Engineer", field_tech: "Field Tech", store_keeper: "Store Keeper", auditor: "Auditor",
+  director: "Director", techlead: "Tech Lead", tech: "Tech",
+  finance: "Finance", store_keeper: "Store Keeper", auditor: "Auditor",
 };
 /** Roles that apply to every project without a membership */
-export const GLOBAL_ROLES: readonly RoleCode[] = ["admin", "director", "finance", "store_keeper", "auditor"];
+export const GLOBAL_ROLES: readonly RoleCode[] = ["director", "finance", "store_keeper", "auditor"];
 
 export interface User { id: string; name: string; email: string; roles: RoleCode[]; initials: string }
 

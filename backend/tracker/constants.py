@@ -1,12 +1,15 @@
 """Labels and templates — mirror packages/api/src/types.ts so summaries and generated titles match the web app."""
 from __future__ import annotations
 
-ROLE_CODES = ["admin", "director", "finance", "pm", "lead_engineer", "field_tech", "store_keeper", "auditor"]
+# Six roles, and people stack them: a User has many Roles and `can()` unions their permissions, so one
+# person can be techlead + finance without a combined role existing. That is why these stay narrow —
+# admin folded into director (2026-09-19), and pm + lead_engineer became the single techlead.
+ROLE_CODES = ["director", "techlead", "tech", "finance", "store_keeper", "auditor"]
 ROLE_LABEL = {
-    "admin": "Admin", "director": "Director", "finance": "Finance", "pm": "Project Manager",
-    "lead_engineer": "Lead Engineer", "field_tech": "Field Tech", "store_keeper": "Store Keeper", "auditor": "Auditor",
+    "director": "Director", "techlead": "Tech Lead", "tech": "Tech",
+    "finance": "Finance", "store_keeper": "Store Keeper", "auditor": "Auditor",
 }
-GLOBAL_ROLES = ["admin", "director", "finance", "store_keeper", "auditor"]
+GLOBAL_ROLES = ["director", "finance", "store_keeper", "auditor"]
 
 PROJECT_TYPE_LABEL = {
     "solar_battery": "Solar + Battery", "gen_rightsizing": "Generator Right-sizing", "ems": "EMS",

@@ -125,7 +125,8 @@ class RulesTest(TestCase):
         sizing = Document.objects.get(project_id="p7", doc_type="sizing")
         review.check(u["u_dir"], "document", sizing.id, "checked")  # Director checks globally; u_le1 is not on p7
         g = gates.gate_status("p7"); self.assertTrue(g["ready"])
-        self.err("forbidden", gates.request_gate, u["u_le2"], "p7")
+        # techlead holds gate.request (it absorbed pm), so u_le2 may request here; a tech still may not
+        self.err("forbidden", gates.request_gate, u["u_ft1"], "p7")
         ap = gates.request_gate(u["u_pm1"], "p7")
         self.assertEqual(ap.required_roles, ["director"])
         self.err("conflict", gates.request_gate, u["u_pm1"], "p7")
@@ -142,13 +143,15 @@ class RulesTest(TestCase):
         self.err("forbidden", projects.create_project, u["u_ft1"], base)
         self.err("forbidden", projects.create_project, u["u_fin"], base)
         self.err("invalid", projects.create_project, u["u_pm1"], {**base, "name": " "})
-        self.err("invalid", projects.create_project, u["u_pm1"], {**base, "pmId": "u_le1"})
+        # pm + lead_engineer merged into techlead, so u_le1 is a valid owner. A tech is not.
+        self.err("invalid", projects.create_project, u["u_pm1"], {**base, "pmId": "u_ft1"})
+        self.err("invalid", projects.create_project, u["u_pm1"], {**base, "leadEngineerId": "u_sk"})
         self.err("invalid", projects.create_project, u["u_pm1"], {**base, "approvedBudget": 60_000_000})
         n = Project.objects.count()
         p = projects.create_project(u["u_pm1"], base)
         self.assertEqual(Project.objects.count(), n + 1); self.assertEqual(p.stage, 0); self.assertEqual(p.code, "WYR-2026-006")
         self.assertEqual(dec(p.retention_percent), 5); self.assertEqual(p.stage_planned, {"0": "2026-10-01"})
-        roles = sorted(f"{m.user_id}:{m.role}" for m in p.memberships.all()); self.assertEqual(roles, ["u_le1:lead_engineer", "u_pm2:pm"])
+        roles = sorted(f"{m.user_id}:{m.role}" for m in p.memberships.all()); self.assertEqual(roles, ["u_le1:techlead", "u_pm2:techlead"])
         self.assertIn(p.id, projects.visible_project_ids(u["u_ft1"]), "portfolio is company-wide — everyone sees it")
         self.assertIn(p.id, projects.my_project_ids(u["u_pm2"])); self.assertNotIn(p.id, projects.my_project_ids(u["u_ft1"]), "assignment is recorded even though it no longer gates access")
         i = field.raise_issue(u["u_ft1"], p.id, {"category": "other", "severity": "low", "title": "Company-wide roles", "description": "", "beforeAttachmentIds": ["att1"]})
@@ -189,7 +192,8 @@ class RulesTest(TestCase):
         self.err("invalid", field.create_commissioning, u["u_le1"], "p1", {"date": "2026-09-10", "result": "pass", "notes": "", "items": items[:-1], "meter": {}, "attachmentIds": ["a"]})
         c = field.create_commissioning(u["u_le1"], "p1", {"date": "2026-09-10", "result": "pass", "notes": "ok", "items": items, "meter": {"serialAscii": True, "ctRatioVerified": True, "firstLiveReading": True, "historicalOk": True},
                                                           "clientWitness": {"name": "Client", "signatureAttachmentId": "sig"}, "attachmentIds": ["a"]})
-        self.err("forbidden", review.check, u["u_pm1"], "commissioning", c.id, "checked")
+        self.err("forbidden", review.check, u["u_le1"], "commissioning", c.id, "checked")  # cannot check own
+        self.err("forbidden", review.check, u["u_ft1"], "commissioning", c.id, "checked")  # tech has no check perm
         review.check(u["u_dir"], "commissioning", c.id, "checked")
         for t in ("commissioning_record", "meter_integrity", "client_witness", "commissioning_photos"):
             self.assertTrue(Document.objects.filter(project_id="p1", doc_type=t, review_status="checked").exists(), t)
@@ -232,7 +236,7 @@ class RulesTest(TestCase):
     def test_http_snapshot_and_commands(self):
         c = APIClient()
         r = c.post("/api/v1/auth/token/", {"username": "kunle.adebayo", "password": "wyre-demo-2026"}, format="json")
-        self.assertEqual(r.status_code, 200, r.content); tok = r.json()["access"]; self.assertEqual(r.json()["user"]["roles"], ["pm"])
+        self.assertEqual(r.status_code, 200, r.content); tok = r.json()["access"]; self.assertEqual(r.json()["user"]["roles"], ["techlead"])
         self.assertEqual(c.get("/api/v1/snapshot/").status_code, 401)
         c.credentials(HTTP_AUTHORIZATION=f"Bearer {tok}")
         snap = c.get("/api/v1/snapshot/").json()
@@ -255,13 +259,15 @@ class RulesTest(TestCase):
         f = SimpleUploadedFile("site.jpg", b"\xff\xd8\xff\xe0 fake jpeg bytes", content_type="image/jpeg")
         r = c.post("/api/v1/commands/addAttachment/?snapshot=0", {"payload": '{"projectId": "p1", "input": {"caption": "String 4"}}', "file": f}, format="multipart")
         self.assertEqual(r.status_code, 200, r.content); att = r.json()["result"]
-        self.assertEqual(att["sizeBytes"], 20); self.assertEqual(len(att["sha256"]), 64); self.assertIn("/media/attachments/", att["url"]); self.assertTrue(att["url"].endswith(".jpg")); self.assertEqual(att["reviewStatus"], "pending")
+        self.assertEqual(att["sizeBytes"], 20); self.assertEqual(len(att["sha256"]), 64); # storage-agnostic: local FileSystemStorage gives /media/attachments/…, Spaces gives a pre-signed
+        # https URL with a query string. Both are content-addressed under attachments/.
+        self.assertIn("attachments/", att["url"]); self.assertTrue(att["url"].split("?")[0].endswith(".jpg")); self.assertEqual(att["reviewStatus"], "pending")
         # store keeper (global) sees everything
         r = c.post("/api/v1/auth/token/", {"username": "musa.ibrahim", "password": "wyre-demo-2026"}, format="json")
         c.credentials(HTTP_AUTHORIZATION=f"Bearer {r.json()['access']}")
         self.assertEqual(len(c.get("/api/v1/snapshot/").json()["projects"]), Project.objects.count())
 
-    def test_field_tech_sees_every_project_but_no_money(self):
+    def test_tech_sees_every_project_but_no_money(self):
         """Widening visibility must not widen what the API hands out: the snapshot is gated by permission."""
         c = APIClient()
         r = c.post("/api/v1/auth/token/", {"username": "segun.alabi", "password": "wyre-demo-2026"}, format="json")

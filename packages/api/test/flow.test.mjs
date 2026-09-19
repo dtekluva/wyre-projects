@@ -129,8 +129,10 @@ const meter = { serialAscii: true, ctRatioVerified: true, firstLiveReading: true
 expectErr(() => api.createCommissioning("u_ft1", "p1", { date: "2026-09-09", result: "pass", notes: "", items, meter, attachmentIds: ["c1"] }), "forbidden", "field tech cannot create a commissioning record");
 expectErr(() => api.createCommissioning("u_le1", "p1", { date: "2026-09-09", result: "pass", notes: "", items: items.map((i, k) => (k === 0 ? { ...i, pass: false } : i)), meter, attachmentIds: ["c1"] }), "invalid", "'pass' with a failed checklist item is rejected");
 const com = api.createCommissioning("u_le1", "p1", { date: "2026-09-09", result: "pass", notes: "n", items, meter, clientWitness: { name: "Client", signatureAttachmentId: "sig" }, attachmentIds: ["c1"] });
-expectErr(() => api.check("commissioning", com.id, "u_pm1", "checked"), "forbidden", "PM cannot check a commissioning record");
-expectErr(() => api.check("commissioning", com.id, "u_le1", "checked"), "forbidden", "engineer cannot check own record");
+// pm and lead_engineer merged into techlead (2026-09-19), so "a PM may not check this" no longer means
+// anything — both are the same role. What still holds, and matters more, is the person-level rule.
+expectErr(() => api.check("commissioning", com.id, "u_le1", "checked"), "forbidden", "author cannot check their own commissioning record");
+expectErr(() => api.check("commissioning", com.id, "u_ft1", "checked"), "forbidden", "a tech cannot check a commissioning record");
 api.check("commissioning", com.id, "u_dir", "checked");
 const g5 = api.listDocuments("p1").filter((d) => ["commissioning_record", "meter_integrity", "client_witness", "commissioning_photos"].includes(d.docType) && d.reviewStatus === "checked");
 ok(g5.length === 4, "checked commissioning generates all 4 gate-5 evidence documents");
@@ -170,8 +172,10 @@ const npBase = { name: "Test Client HQ — 50 kWp Solar", clientName: "Test Clie
 expectErr(() => api.createProject("u_ft1", npBase), "forbidden", "field tech cannot create a project");
 expectErr(() => api.createProject("u_fin", npBase), "forbidden", "finance cannot create a project");
 expectErr(() => api.createProject("u_pm1", { ...npBase, name: " " }), "invalid", "name is required");
-expectErr(() => api.createProject("u_pm1", { ...npBase, pmId: "u_le1" }), "invalid", "PM must hold the pm role");
-expectErr(() => api.createProject("u_pm1", { ...npBase, leadEngineerId: "u_pm1" }), "invalid", "lead engineer must hold the lead_engineer role");
+// Both named owners must be techleads now; u_le1 and u_pm1 are both techlead, so asserting one cannot
+// stand in for the other is meaningless. Assert against roles that genuinely cannot own a project.
+expectErr(() => api.createProject("u_pm1", { ...npBase, pmId: "u_ft1" }), "invalid", "a tech cannot be named project owner");
+expectErr(() => api.createProject("u_pm1", { ...npBase, leadEngineerId: "u_sk" }), "invalid", "a store keeper cannot be named lead");
 expectErr(() => api.createProject("u_pm1", { ...npBase, approvedBudget: 60_000_000 }), "invalid", "budget above contract value is rejected");
 expectErr(() => api.createProject("u_pm1", { ...npBase, contractValue: -1 }), "invalid", "negative contract value is rejected");
 const nProjects = api.projects.length;
@@ -180,7 +184,7 @@ ok(api.projects.length === nProjects + 1 && np.stage === 0 && np.rag === "green"
 ok(/^WYR-\d{4}-\d{3}$/.test(np.code) && !api.projects.some((p) => p !== np && p.code === np.code), `code ${np.code} is unique and well-formed`);
 ok(np.createdBy === "u_pm1" && np.retentionPercent === 5 && np.stagePlanned[0] === "2026-10-01", "actor captured, retention defaulted from threshold, proposal date planned");
 const npRoles = api.listMemberships(np.id).map((m) => `${m.userId}:${m.role}`).sort().join(",");
-ok(npRoles === "u_le1:lead_engineer,u_pm2:pm", "PM + Lead Engineer memberships granted");
+ok(npRoles === "u_le1:techlead,u_pm2:techlead", "both named owners granted techlead membership");
 ok(api.listProjects("u_ft1").some((p) => p.id === np.id), "portfolio is company-wide — every signed-in user sees the new project");
 ok(api.myProjects("u_pm2").some((p) => p.id === np.id) && !api.myProjects("u_ft1").some((p) => p.id === np.id), "but only its PM and lead engineer are assigned to it");
 const anyIssue = api.raiseIssue("u_ft1", np.id, { category: "other", severity: "low", title: "Roles are company-wide", description: "", beforeAttachmentIds: ["att1"] });

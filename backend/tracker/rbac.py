@@ -7,30 +7,36 @@ from typing import Iterable, Optional
 from .constants import GLOBAL_ROLES
 
 MATRIX: dict[str, list[str]] = {
-    "admin": ["project.create", "project.read", "project.update", "chronology.read", "document.create", "document.read", "document.update",
-              "attachment.create", "attachment.read", "po.read", "approval.read", "membership.manage", "users.manage",
-              "thresholds.read", "thresholds.manage", "money.read", "inventory.read", "asset.read", "recon.read", "dashboard.read"],
-    "director": ["commissioning.check", "stockcount.approve", "project.read", "gate.approve", "chronology.read", "document.read", "document.check",
-                 "attachment.read", "po.read", "po.approve", "writeoff.approve", "approval.read", "thresholds.read", "money.read",
-                 "inventory.read", "asset.read", "recon.read", "dashboard.read"],
+    # Approver, and the administrator: `admin` folded in here on 2026-09-19, so this is the only role that
+    # manages users and thresholds. It approves and checks; it does not raise POs or cost items, so a
+    # director cannot manufacture the thing they then approve.
+    "director": ["project.create", "project.read", "project.update", "gate.approve", "chronology.read",
+                 "document.create", "document.read", "document.update", "document.check",
+                 "attachment.create", "attachment.read", "po.read", "po.approve", "writeoff.approve",
+                 "stockcount.approve", "commissioning.check", "approval.read", "membership.manage", "users.manage",
+                 "thresholds.read", "thresholds.manage", "money.read", "inventory.read", "asset.read",
+                 "recon.read", "dashboard.read"],
+    # Checker and project owner — the old pm and lead_engineer, merged. It holds both gate.request and
+    # gate.approve, which is safe because segregation of duties is enforced per *person*
+    # (approvals.py and review.py refuse your own request or your own submission), not per role.
+    "techlead": ["project.create", "project.read", "project.update", "gate.request", "gate.approve",
+                 "chronology.read", "document.create", "document.read", "document.update", "document.check",
+                 "attachment.create", "attachment.read", "attachment.check", "po.create", "po.read",
+                 "approval.read", "membership.manage", "thresholds.read", "money.read",
+                 "cost.create", "change_order.create", "goods_receipt.create", "goods_receipt.check",
+                 "inventory.read", "inventory.request", "inventory.check", "asset.read", "asset.write",
+                 "visit.create", "visit.check", "issue.create", "issue.update", "issue.check",
+                 "commissioning.create", "commissioning.check", "hse.create", "hse.check",
+                 "warranty.create", "warranty.check", "dashboard.read"],
+    # Field capture — the old field_tech, renamed. Creates, never checks.
+    "tech": ["project.read", "chronology.read", "document.create", "document.read",
+             "attachment.create", "attachment.read", "goods_receipt.create",
+             "inventory.read", "inventory.request", "asset.read", "asset.write",
+             "visit.create", "issue.create", "issue.update", "hse.create", "dashboard.read"],
     "finance": ["stockcount.approve", "warranty.check", "project.read", "gate.approve", "chronology.read", "document.read", "attachment.read",
                 "po.read", "po.approve", "writeoff.approve", "approval.read", "thresholds.read", "money.read", "money.write", "cost.create",
                 "cost.check", "goods_receipt.check", "inventory.read", "inventory.check", "retention.request", "asset.read", "recon.read",
                 "recon.write", "dashboard.read"],
-    "pm": ["visit.create", "visit.check", "issue.create", "issue.update", "issue.check", "hse.create", "hse.check", "warranty.create",
-           "warranty.check", "project.create", "project.read", "project.update", "gate.request", "chronology.read", "document.create",
-           "document.read", "document.update", "attachment.create", "attachment.read", "attachment.check", "po.create", "po.read",
-           "approval.read", "membership.manage", "thresholds.read", "money.read", "cost.create", "change_order.create",
-           "goods_receipt.create", "goods_receipt.check", "inventory.read", "inventory.request", "inventory.check", "asset.read",
-           "asset.write", "dashboard.read"],
-    "lead_engineer": ["visit.create", "visit.check", "issue.create", "issue.update", "issue.check", "commissioning.create", "commissioning.check",
-                      "hse.create", "hse.check", "warranty.create", "project.read", "gate.approve", "chronology.read", "document.create",
-                      "document.read", "document.update", "document.check", "attachment.create", "attachment.read", "attachment.check",
-                      "po.read", "approval.read", "thresholds.read", "goods_receipt.create", "inventory.read", "asset.read", "asset.write",
-                      "dashboard.read"],
-    "field_tech": ["visit.create", "issue.create", "issue.update", "hse.create", "project.read", "chronology.read", "document.create",
-                   "document.read", "attachment.create", "attachment.read", "goods_receipt.create", "inventory.read", "inventory.request",
-                   "asset.read", "asset.write"],
     "store_keeper": ["stockcount.create", "project.read", "chronology.read", "attachment.create", "attachment.read", "po.read",
                      "goods_receipt.create", "inventory.read", "inventory.write", "asset.read", "asset.write", "thresholds.read", "dashboard.read"],
     "auditor": ["project.read", "chronology.read", "document.read", "attachment.read", "po.read", "approval.read", "thresholds.read",

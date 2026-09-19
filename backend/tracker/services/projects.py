@@ -80,10 +80,10 @@ def create_project(actor: User, input: dict) -> Project:
     if due and not re.match(r"^\d{4}-\d{2}-\d{2}$", str(due)):
         raise ApiError("Proposal due date must be YYYY-MM-DD", "invalid")
     pm = b.get_user(input.get("pmId"))
-    if "pm" not in pm.role_codes():
+    if "techlead" not in pm.role_codes():
         raise ApiError(f"{pm.name} is not a Project Manager", "invalid")
     le = b.get_user(input.get("leadEngineerId"))
-    if "lead_engineer" not in le.role_codes():
+    if "techlead" not in le.role_codes():
         raise ApiError(f"{le.name} is not a Lead Engineer", "invalid")
     if Project.objects.filter(name__iexact=name).exists():
         raise ApiError("A project with that name already exists", "conflict")
@@ -96,7 +96,7 @@ def create_project(actor: User, input: dict) -> Project:
         created_at=at, created_by=actor, updated_at=at, updated_by=actor,
     )
     b.log(p.id, actor, "project_created", f"Project created — {p.code} · {PROJECT_TYPE_LABEL[ptype]} · {b.fmt(contract_value)}", None, {"model": "Project", "id": p.id})
-    for u, role in ((pm, "pm"), (le, "lead_engineer")):
+    for u, role in ((pm, "techlead"), (le, "techlead")):
         ProjectMembership.objects.create(project=p, user=u, role=role, granted_by=actor, granted_at=at)
         b.log(p.id, actor, "role_granted", f"{u.name} granted {role}")
     return p

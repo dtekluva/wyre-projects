@@ -42,9 +42,9 @@ def add_months(dt: date, months: int) -> date:
     return date(y, m, min(dt.day, calendar.monthrange(y, m)[1]))
 
 
-USERS = [("u_admin", "Ada Okafor", ["admin"]), ("u_dir", "Tunde Bakare", ["director"]), ("u_fin", "Ngozi Eze", ["finance"]), ("u_pm1", "Kunle Adebayo", ["pm"]),
-         ("u_pm2", "Bola Adeyemi", ["pm"]), ("u_le1", "Chidi Okoro", ["lead_engineer"]), ("u_le2", "Amaka Obi", ["lead_engineer"]), ("u_ft1", "Segun Alabi", ["field_tech"]),
-         ("u_ft2", "Yusuf Danladi", ["field_tech"]), ("u_sk", "Musa Ibrahim", ["store_keeper"]), ("u_aud", "Funke Ojo", ["auditor"])]
+USERS = [("u_admin", "Ada Okafor", ["director"]), ("u_dir", "Tunde Bakare", ["director"]), ("u_fin", "Ngozi Eze", ["finance"]), ("u_pm1", "Kunle Adebayo", ["techlead"]),
+         ("u_pm2", "Bola Adeyemi", ["techlead"]), ("u_le1", "Chidi Okoro", ["techlead"]), ("u_le2", "Amaka Obi", ["techlead"]), ("u_ft1", "Segun Alabi", ["tech"]),
+         ("u_ft2", "Yusuf Danladi", ["tech"]), ("u_sk", "Musa Ibrahim", ["store_keeper"]), ("u_aud", "Funke Ojo", ["auditor"])]
 
 PROJECTS = [
     dict(id="p1", code="WYR-2026-001", name="Sweet Sensation Sango — Solar + Battery", client="Sweet Sensation", branch="Sango", location="Sango-Ota, Ogun", type="solar_battery", kwp="40.6",
@@ -71,10 +71,10 @@ PROJECTS = [
          stage=8, rag="green", reason=None, pm="u_pm2", le="u_le1", contract=68_000_000, budget=58_500_000, committed=58_500_000, actual=57_900_000, planned={},
          actual_dates={"0": d(700), "1": d(680), "2": d(650), "3": d(620), "4": d(590), "5": d(575), "6": d(560), "7": d(560), "8": d(160)}, by="u_pm2", created=700),
 ]
-MEMBERSHIPS = [("p1", "u_pm1", "pm"), ("p1", "u_le1", "lead_engineer"), ("p1", "u_ft1", "field_tech"), ("p2", "u_pm1", "pm"), ("p2", "u_le2", "lead_engineer"), ("p2", "u_ft1", "field_tech"),
-               ("p2", "u_ft2", "field_tech"), ("p3", "u_pm2", "pm"), ("p3", "u_le1", "lead_engineer"), ("p3", "u_ft2", "field_tech"), ("p4", "u_pm2", "pm"), ("p4", "u_le2", "lead_engineer"),
-               ("p4", "u_ft1", "field_tech"), ("p5", "u_pm1", "pm"), ("p5", "u_le1", "lead_engineer"), ("p5", "u_ft2", "field_tech"), ("p6", "u_pm2", "pm"), ("p6", "u_le2", "lead_engineer"),
-               ("p6", "u_ft1", "field_tech"), ("p7", "u_pm1", "pm"), ("p7", "u_le2", "lead_engineer"), ("p8", "u_pm2", "pm"), ("p8", "u_le1", "lead_engineer")]
+MEMBERSHIPS = [("p1", "u_pm1", "techlead"), ("p1", "u_le1", "techlead"), ("p1", "u_ft1", "tech"), ("p2", "u_pm1", "techlead"), ("p2", "u_le2", "techlead"), ("p2", "u_ft1", "tech"),
+               ("p2", "u_ft2", "tech"), ("p3", "u_pm2", "techlead"), ("p3", "u_le1", "techlead"), ("p3", "u_ft2", "tech"), ("p4", "u_pm2", "techlead"), ("p4", "u_le2", "techlead"),
+               ("p4", "u_ft1", "tech"), ("p5", "u_pm1", "techlead"), ("p5", "u_le1", "techlead"), ("p5", "u_ft2", "tech"), ("p6", "u_pm2", "techlead"), ("p6", "u_le2", "techlead"),
+               ("p6", "u_ft1", "tech"), ("p7", "u_pm1", "techlead"), ("p7", "u_le2", "techlead"), ("p8", "u_pm2", "techlead"), ("p8", "u_le1", "techlead")]
 
 # (project, docType, title, by, daysAgo, rs, checkedBy, comment, expires, issuer)
 DOCS = [
@@ -169,7 +169,7 @@ class Seeder:
         self.users = {}
         for uid, name, roles in USERS:
             username = name.lower().replace(" ", ".")
-            user, _ = User.objects.get_or_create(id=uid, defaults={"username": username, "name": name, "email": f"{username}@wyreng.com", "is_staff": "admin" in roles, "is_superuser": "admin" in roles})
+            user, _ = User.objects.get_or_create(id=uid, defaults={"username": username, "name": name, "email": f"{username}@wyreng.com", "is_staff": "director" in roles, "is_superuser": "director" in roles})
             user.name = name; user.username = username; user.set_password(self.password); user.save()
             user.roles.set(Role.objects.filter(code__in=roles)); self.users[uid] = user
         for p in PROJECTS:
@@ -214,7 +214,7 @@ class Seeder:
         A(id="ap3", project_id="p1", kind="change_order", title="CO-04 · +6 panels (roof edge row)", description="Client requested extra row; +6 × 615W, +₦1.2M, +2 days. Below ₦2M and 10% → Finance only.",
           requested_by=self.u("u_pm1"), requested_at=d(1, 9), required_roles=["finance"], amount=1_200_000, decisions=[], status="pending")
         A(id="ap4", project_id="p5", kind="gate", title="Gate 1 → 2 · Survey → Design", description="Survey, roof assessment, structural cert, load audit, photos — all checked.",
-          requested_by=self.u("u_pm1"), requested_at=d(39), required_roles=["lead_engineer"], decisions=[{"approverId": "u_le1", "role": "lead_engineer", "decision": "approved", "at": iso(d(38))}], status="approved", target_stage=2)
+          requested_by=self.u("u_pm1"), requested_at=d(39), required_roles=["techlead"], decisions=[{"approverId": "u_le1", "role": "techlead", "decision": "approved", "at": iso(d(38))}], status="approved", target_stage=2)
         A(id="ap5", project_id="p6", kind="gate", title="Gate 6 → 7 · Handover → O&M", description="Acceptance, O&M manual, warranty pack checked. As-built and final account still outstanding.",
           requested_by=self.u("u_pm2"), requested_at=d(3), required_roles=["director"],
           decisions=[{"approverId": "u_dir", "role": "director", "decision": "rejected", "at": iso(d(2)), "comment": "As-built drawings not yet checked and no final account. Resubmit when gate evidence is complete."}], status="rejected", target_stage=7)

@@ -6,12 +6,12 @@ import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { Avatar, Badge, Note, RoleChips } from "../components/ui";
 
-const PROJECT_ROLES: RoleCode[] = ["pm", "lead_engineer", "field_tech"];
+const PROJECT_ROLES: RoleCode[] = ["techlead", "tech"];
 export function ProjectPeople() {
   const p = useOutletContext<Project>(); const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   const canManage = api.can(user.id, "membership.manage", p.id);
   const members = api.listMemberships(p.id);
-  const [uid, setUid] = useState("u_ft2"); const [role, setRole] = useState<RoleCode>("field_tech");
+  const [uid, setUid] = useState("u_ft2"); const [role, setRole] = useState<RoleCode>("tech");
   const globals = api.getUsers().filter((u) => u.roles.some((r) => GLOBAL_ROLES.includes(r)));
   return (
     <div className="stack" style={{ gap: 20 }}>

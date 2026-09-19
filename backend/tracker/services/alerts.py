@@ -82,14 +82,14 @@ def build() -> list[Alert]:
             out.append(Alert("document_expired", "critical", f"{label} expired {abs(days)} d ago",
                              f"{p.code} · {d.title}" + (f" · {d.issuer}" if d.issuer else ""),
                              f"/projects/{p.id}/documents", p.id, {"model": "Document", "id": d.id},
-                             f"document_expired:{d.id}", _owners(p) + _with_role(users, "admin", "director")))
+                             f"document_expired:{d.id}", _owners(p) + _with_role(users, "director")))
             continue
         for limit, severity in EXPIRY_STEPS:
             if days <= limit:
                 out.append(Alert("document_expiring", severity, f"{label} expires in {days} d",
                                  f"{p.code} · {d.title} · {d.expires_at.isoformat()}",
                                  f"/projects/{p.id}/documents", p.id, {"model": "Document", "id": d.id},
-                                 f"document_expiring:{d.id}:{limit}", _owners(p) + _with_role(users, "admin")))
+                                 f"document_expiring:{d.id}:{limit}", _owners(p) + _with_role(users, "director")))
                 break
 
     # ---- maker-checker sitting too long (§4.13 escalation) -------------------------------------------

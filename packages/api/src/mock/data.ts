@@ -15,15 +15,15 @@ const U = (id: string, name: string, roles: User["roles"]): User => ({
 });
 
 export const users: User[] = [
-  U("u_admin", "Ada Okafor", ["admin"]),
+  U("u_admin", "Ada Okafor", ["director"]),
   U("u_dir", "Tunde Bakare", ["director"]),
   U("u_fin", "Ngozi Eze", ["finance"]),
-  U("u_pm1", "Kunle Adebayo", ["pm"]),
-  U("u_pm2", "Bola Adeyemi", ["pm"]),
-  U("u_le1", "Chidi Okoro", ["lead_engineer"]),
-  U("u_le2", "Amaka Obi", ["lead_engineer"]),
-  U("u_ft1", "Segun Alabi", ["field_tech"]),
-  U("u_ft2", "Yusuf Danladi", ["field_tech"]),
+  U("u_pm1", "Kunle Adebayo", ["techlead"]),
+  U("u_pm2", "Bola Adeyemi", ["techlead"]),
+  U("u_le1", "Chidi Okoro", ["techlead"]),
+  U("u_le2", "Amaka Obi", ["techlead"]),
+  U("u_ft1", "Segun Alabi", ["tech"]),
+  U("u_ft2", "Yusuf Danladi", ["tech"]),
   U("u_sk", "Musa Ibrahim", ["store_keeper"]),
   U("u_aud", "Funke Ojo", ["auditor"]),
 ];
@@ -89,14 +89,14 @@ const M = (projectId: string, userId: string, role: ProjectMembership["role"], g
   ({ id: `m${++mid}`, projectId, userId, role, grantedBy, grantedAt: d(daysAgo) });
 
 export const memberships: ProjectMembership[] = [
-  M("p1","u_pm1","pm"), M("p1","u_le1","lead_engineer"), M("p1","u_ft1","field_tech"),
-  M("p2","u_pm1","pm"), M("p2","u_le2","lead_engineer"), M("p2","u_ft1","field_tech"), M("p2","u_ft2","field_tech"),
-  M("p3","u_pm2","pm"), M("p3","u_le1","lead_engineer"), M("p3","u_ft2","field_tech"),
-  M("p4","u_pm2","pm"), M("p4","u_le2","lead_engineer"), M("p4","u_ft1","field_tech"),
-  M("p5","u_pm1","pm"), M("p5","u_le1","lead_engineer"), M("p5","u_ft2","field_tech"),
-  M("p6","u_pm2","pm"), M("p6","u_le2","lead_engineer"), M("p6","u_ft1","field_tech"),
-  M("p7","u_pm1","pm"), M("p7","u_le2","lead_engineer"),
-  M("p8","u_pm2","pm"), M("p8","u_le1","lead_engineer"),
+  M("p1","u_pm1","techlead"), M("p1","u_le1","techlead"), M("p1","u_ft1","tech"),
+  M("p2","u_pm1","techlead"), M("p2","u_le2","techlead"), M("p2","u_ft1","tech"), M("p2","u_ft2","tech"),
+  M("p3","u_pm2","techlead"), M("p3","u_le1","techlead"), M("p3","u_ft2","tech"),
+  M("p4","u_pm2","techlead"), M("p4","u_le2","techlead"), M("p4","u_ft1","tech"),
+  M("p5","u_pm1","techlead"), M("p5","u_le1","techlead"), M("p5","u_ft2","tech"),
+  M("p6","u_pm2","techlead"), M("p6","u_le2","techlead"), M("p6","u_ft1","tech"),
+  M("p7","u_pm1","techlead"), M("p7","u_le2","techlead"),
+  M("p8","u_pm2","techlead"), M("p8","u_le1","techlead"),
 ];
 
 let did = 0;
@@ -275,8 +275,8 @@ export const approvals: Approval[] = [
   { id: "ap3", projectId: "p1", kind: "change_order", title: "CO-04 · +6 panels (roof edge row)", description: "Client requested extra row; +6 × 615W, +₦1.2M, +2 days. Below ₦2M and 10% → Finance only.",
     requestedBy: "u_pm1", requestedAt: d(1, 9), requiredRoles: ["finance"], amount: 1_200_000, decisions: [], status: "pending" },
   { id: "ap4", projectId: "p5", kind: "gate", title: "Gate 1 → 2 · Survey → Design", description: "Survey, roof assessment, structural cert, load audit, photos — all checked.",
-    requestedBy: "u_pm1", requestedAt: d(39), requiredRoles: ["lead_engineer"],
-    decisions: [{ approverId: "u_le1", role: "lead_engineer", decision: "approved", at: d(38) }], status: "approved", targetStage: 2 },
+    requestedBy: "u_pm1", requestedAt: d(39), requiredRoles: ["techlead"],
+    decisions: [{ approverId: "u_le1", role: "techlead", decision: "approved", at: d(38) }], status: "approved", targetStage: 2 },
   { id: "ap5", projectId: "p6", kind: "gate", title: "Gate 6 → 7 · Handover → O&M", description: "Acceptance, O&M manual, warranty pack checked. As-built and final account still outstanding.",
     requestedBy: "u_pm2", requestedAt: d(3), requiredRoles: ["director"],
     decisions: [{ approverId: "u_dir", role: "director", decision: "rejected", at: d(2), comment: "As-built drawings not yet checked and no final account. Resubmit when gate evidence is complete." }], status: "rejected", targetStage: 7 },
