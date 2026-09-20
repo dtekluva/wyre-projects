@@ -40,6 +40,8 @@ export interface Project extends AuditFields {
   projectType: ProjectType; systemCapacityKwp?: number;
   stage: Stage; rag: Rag; ragReason?: string;
   pmId: string; leadEngineerId: string;
+  /** delegated per site: this person may record commissioning here, whatever their role */
+  commissioningAssigneeId?: string;
   contractValue: number; approvedBudget: number; committed: number; actual: number;
   stagePlanned: Partial<Record<Stage, string>>; stageActual: Partial<Record<Stage, string>>;
   defectsLiabilityEnd?: string; retentionPercent: number;
@@ -95,7 +97,7 @@ export type EventType =
   | "document_added" | "attachment_added" | "check_passed" | "check_rejected"
   | "po_raised" | "po_approved" | "delivery" | "bill_received" | "payment"
   | "visit" | "issue_raised" | "issue_closed" | "change_order"
-  | "role_granted" | "role_revoked" | "note"
+  | "role_granted" | "role_revoked" | "commissioning_assigned" | "note"
   | "stock_movement" | "cost_item" | "retention" | "reconciliation"
   | "issue" | "commissioning" | "hse" | "warranty" | "stock_count";
 

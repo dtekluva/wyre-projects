@@ -60,6 +60,11 @@ export function FieldHome() {
       <Link to="/work/reviews" className="fkpi"><b>{checks}</b><span>awaiting my check</span></Link>
       <div className="fkpi"><b>{assigned.size}</b><span>assigned to me</span></div>
     </div>
+    {api.listProjects(user.id).filter((p) => p.commissioningAssigneeId === user.id && p.stage < 8).map((p) => (
+      <Link key={p.id} to={`/projects/${p.id}/field`} className="fnote fnote--ok" style={{ display: "block" }}>
+        <b>You're commissioning {p.code}</b><br />{p.name} — tap to record the readings.
+      </Link>
+    ))}
     <div className="fgrid"><Link to="/field/issues/new" className="ns-btn ns-btn--primary ns-btn--block">＋ New issue</Link><Link to="/field/visits/new" className="ns-btn ns-btn--secondary ns-btn--block">＋ Log a visit</Link></div>
     <h2 className="field__h2">Projects</h2>
     {[...mine].sort((a, b) => Number(assigned.has(b.id)) - Number(assigned.has(a.id))).map((p) => <Link key={p.id} to={`/field/issues?p=${p.id}`} className="frow frow--col">

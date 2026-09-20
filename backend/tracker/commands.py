@@ -21,6 +21,7 @@ COMMANDS: dict[str, Handler] = {
     # projects & people
     "createProject": lambda a, d, f: S.project(projects.create_project(a, _in(d))),
     "grantMembership": lambda a, d, f: S.membership(projects.grant_membership(a, d.get("projectId"), d.get("userId"), d.get("role"))),
+    "assignCommissioning": lambda a, d, f: S.project(projects.assign_commissioning(a, d.get("projectId"), d.get("userId"))),
     "revokeMembership": lambda a, d, f: projects.revoke_membership(a, d.get("membershipId")),
     # documents & attachments
     "addDocument": lambda a, d, f: S.document(documents.add_document(a, d.get("projectId"), _in(d), f)),

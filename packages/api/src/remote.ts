@@ -113,6 +113,7 @@ export class RemoteApi extends MockApi {
       return { name: "createPO", body: { projectId: a[1], input: { ...inp, id: po.id, items: inp.items.map((it, i) => ({ ...it, id: po.items[i]?.id })) } } }; });
     wrap("receiveGoods", (a, r) => ({ name: "receiveGoods", body: { poId: a[1], input: withId(a[2], r) } }));
     wrap("grantMembership", (a) => ({ name: "grantMembership", body: { projectId: a[1], userId: a[2], role: a[3] } }));
+    wrap("assignCommissioning", (a) => ({ name: "assignCommissioning", body: { projectId: a[1], userId: a[2] } }));
     wrap("revokeMembership", (a) => ({ name: "revokeMembership", body: { membershipId: a[1] } }));
     wrap("check", (a) => ({ name: "check", body: { kind: a[0], id: a[1], decision: a[3], comment: a[4] } }));
     wrap("requestGate", (a) => ({ name: "requestGate", body: { projectId: a[0] } }));

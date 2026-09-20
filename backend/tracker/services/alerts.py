@@ -19,7 +19,7 @@ from django.utils import timezone
 from .. import rbac
 from ..constants import DOC_TYPE_LABEL, MOVEMENT_LABEL
 from ..gates import STAGES
-from ..models import (Approval, Document, InventoryItem, Issue, Notification, Project, ProjectMembership, QbBill, User)
+from ..models import (Approval, CommissioningRecord, Document, InventoryItem, Issue, Notification, Project, ProjectMembership, QbBill, User)
 from . import base as b
 from . import approvals as approvals_svc
 from . import gates as gates_svc
@@ -91,6 +91,19 @@ def build() -> list[Alert]:
                                  f"/projects/{p.id}/documents", p.id, {"model": "Document", "id": d.id},
                                  f"document_expiring:{d.id}:{limit}", _owners(p) + _with_role(users, "director")))
                 break
+
+    # ---- commissioning delegated but not yet recorded ------------------------------------------------
+    # Derived, not fired on assignment: run(prune=True) deletes any notification it cannot re-derive, so a
+    # one-off would be swept within the hour. As a derived alert it also withdraws itself once the record
+    # is checked, which is exactly when the assignee stops needing the reminder.
+    done = set(CommissioningRecord.objects.filter(review_status="checked").values_list("project_id", flat=True))
+    for p in live:
+        if p.commissioning_assignee_id and p.id not in done:
+            out.append(Alert("commissioning_assigned", "info", "You are commissioning this site",
+                             f"{p.code} · {p.name}",
+                             f"/projects/{p.id}/field", p.id, {"model": "Project", "id": p.id},
+                             f"commissioning_assigned:{p.id}:{p.commissioning_assignee_id}",
+                             [p.commissioning_assignee_id]))
 
     # ---- maker-checker sitting too long (§4.13 escalation) -------------------------------------------
     # Roles are company-wide, so "everyone who could check this" is most of the company. Tell the people

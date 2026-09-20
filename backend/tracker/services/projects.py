@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import Optional
 
 from django.db import transaction
 
@@ -121,3 +122,26 @@ def revoke_membership(actor: User, membership_id: str) -> None:
     m.revoked_at = b.now()
     m.save(update_fields=["revoked_at"])
     b.log(m.project_id, actor, "role_revoked", f"{m.user.name} revoked {m.role}")
+
+
+@transaction.atomic
+def assign_commissioning(actor: User, project_id: str, user_id: Optional[str]) -> Project:
+    """Delegate (or clear) who records commissioning on this project. Whoever holds membership.manage
+    decides — techlead or director. Passing user_id=None clears it."""
+    b.require(actor, "membership.manage", project_id)
+    p = b.project(project_id)
+    if user_id:
+        user = b.get_user(user_id)
+        if p.commissioning_assignee_id == user.id:
+            raise ApiError(f"{user.name} is already assigned", "conflict")
+        p.commissioning_assignee = user
+        p.save(update_fields=["commissioning_assignee"])
+        b.log(project_id, actor, "commissioning_assigned", f"{user.name} assigned to commission this site")
+    else:
+        if not p.commissioning_assignee_id:
+            raise ApiError("Nobody is assigned", "conflict")
+        was = p.commissioning_assignee.name
+        p.commissioning_assignee = None
+        p.save(update_fields=["commissioning_assignee"])
+        b.log(project_id, actor, "commissioning_assigned", f"{was} unassigned from commissioning")
+    return p

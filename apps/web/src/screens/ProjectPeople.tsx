@@ -11,7 +11,7 @@ export function ProjectPeople() {
   const p = useOutletContext<Project>(); const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   const canManage = api.can(user.id, "membership.manage", p.id);
   const members = api.listMemberships(p.id);
-  const [uid, setUid] = useState("u_ft2"); const [role, setRole] = useState<RoleCode>("tech");
+  const [uid, setUid] = useState(""); const [role, setRole] = useState<RoleCode>("tech");
   const globals = api.getUsers().filter((u) => u.roles.some((r) => GLOBAL_ROLES.includes(r)));
   return (
     <div className="stack" style={{ gap: 20 }}>
@@ -26,10 +26,10 @@ export function ProjectPeople() {
       </div>
       <div className="card"><div className="card__head"><div className="card__title">Grant a project role</div></div>
         <div className="card__body">{canManage ? <form className="form" onSubmit={(e) => { e.preventDefault(); safe(() => api.grantMembership(user.id, p.id, uid, role), "Role granted — logged to chronology"); }}>
-          <label className="ns-field"><span className="ns-field__label">Person</span><select className="ns-input" value={uid} onChange={(e) => setUid(e.target.value)}>{api.getUsers().filter((u) => !u.roles.some((r) => GLOBAL_ROLES.includes(r))).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
+          <label className="ns-field"><span className="ns-field__label">Person</span><select className="ns-input" value={uid} onChange={(e) => setUid(e.target.value)}><option value="">Choose a person…</option>{api.getUsers().filter((u) => !u.roles.some((r) => GLOBAL_ROLES.includes(r))).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
           <label className="ns-field"><span className="ns-field__label">Role</span><select className="ns-input" value={role} onChange={(e) => setRole(e.target.value as RoleCode)}>{PROJECT_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></label>
-          <button className="ns-btn ns-btn--primary" type="submit">Grant</button>
-        </form> : <Note tone="warn">Only a Project Manager on this project (or Admin) can manage membership.</Note>}</div>
+          <button className="ns-btn ns-btn--primary" type="submit" disabled={!uid}>Grant</button>
+        </form> : <Note tone="warn">Only a Tech Lead or Director can manage membership.</Note>}</div>
       </div>
       <div className="card"><div className="card__head"><div className="card__title">Global roles</div><span className="sm muted">See every project without a membership</span></div>
         <div className="card__body stack" style={{ gap: 6 }}>{globals.map((u) => <div key={u.id} className="row sm"><Avatar user={u} sm /><span className="grow">{u.name}</span><RoleChips roles={u.roles} /></div>)}</div></div>

@@ -146,7 +146,13 @@ export class MockApi {
   can(userId: string, perm: Permission, projectId?: string) {
     const u = this.users.find((x) => x.id === userId);
     if (!u) return false;
-    return canFn(u, perm, projectId, this.memberships);
+    if (canFn(u, perm, projectId, this.memberships)) return true;
+    // A project may delegate one permission to one named person — mirrors rbac.DELEGATED on the server.
+    // A techlead assigns commissioning per site so the tech who did the install records their own readings.
+    if (perm === "commissioning.create" && projectId) {
+      return this.projects.some((p) => p.id === projectId && p.commissioningAssigneeId === userId);
+    }
+    return false;
   }
   /** can the user do this on ANY project they belong to (for nav / listing) */
   canAnywhere(userId: string, perm: Permission) { return this.can(userId, perm) || this.projects.some((p) => this.can(userId, perm, p.id)); }
@@ -475,6 +481,23 @@ export class MockApi {
     this.memberships.push({ id: this.id("m"), projectId, userId, role, grantedBy: actorId, grantedAt: this.now() });
     this.log(projectId, actorId, "role_granted", `${this.userName(userId)} granted ${role}`);
     this.emit();
+  }
+  /** Delegate (or clear, with userId undefined) who records commissioning on this project. */
+  assignCommissioning(actorId: string, projectId: string, userId?: string) {
+    this.require(actorId, "membership.manage", projectId);
+    const p = this.raw(projectId);
+    if (userId) {
+      if (p.commissioningAssigneeId === userId) throw new ApiError(`${this.userName(userId)} is already assigned`, "conflict");
+      p.commissioningAssigneeId = userId;
+      this.log(projectId, actorId, "commissioning_assigned", `${this.userName(userId)} assigned to commission this site`);
+    } else {
+      if (!p.commissioningAssigneeId) throw new ApiError("Nobody is assigned", "conflict");
+      const was = this.userName(p.commissioningAssigneeId);
+      p.commissioningAssigneeId = undefined;
+      this.log(projectId, actorId, "commissioning_assigned", `${was} unassigned from commissioning`);
+    }
+    this.emit();
+    return p;
   }
   revokeMembership(actorId: string, membershipId: string) {
     const m = this.memberships.find((x) => x.id === membershipId); if (!m) throw new ApiError("Not found", "not_found");

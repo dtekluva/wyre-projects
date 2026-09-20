@@ -95,9 +95,24 @@ def _has(roles: Iterable[str], perm: str) -> bool:
     return any(perm in m.get(r, set()) for r in roles)
 
 
+# Permissions a project can delegate to one named person, on that project alone.
+DELEGATED = {"commissioning.create": "commissioning_assignee_id"}
+
+
 def can(user, perm: str, project_id: Optional[str] = None) -> bool:
-    """Permission follows the role, on every project. See `roles_on` for what still constrains people."""
-    return _has(base_roles(user), perm)
+    """Permission follows the role, on every project. See `roles_on` for what still constrains people.
+
+    One exception: a project may delegate a permission to a named person (DELEGATED). A techlead assigns
+    commissioning per site, so the tech who did the install can record the readings they took. It widens
+    nothing else — the record still has to be checked by someone who is not its author.
+    """
+    if _has(base_roles(user), perm):
+        return True
+    field = DELEGATED.get(perm)
+    if field and project_id:
+        from .models import Project
+        return Project.objects.filter(pk=project_id, **{field: user.id}).exists()
+    return False
 
 
 def can_by_base_role(user, perm: str) -> bool:

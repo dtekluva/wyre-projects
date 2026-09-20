@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
 import { useOutletContext } from "react-router-dom";
-import { COMMISSIONING_TEMPLATE, HSE_TYPE_LABEL, VISIT_TYPE_LABEL, fmtDate, naira, relative,
+import { COMMISSIONING_TEMPLATE, HSE_TYPE_LABEL, ROLE_LABEL, VISIT_TYPE_LABEL, fmtDate, naira, relative,
   type HseType, type Issue, type IssueCategory, type IssueSeverity, type IssueStatus, type Project, type VisitType, type WarrantyStatus } from "@wyre/api";
 import { Thumbs } from "../components/Thumbs";
 import { VisitDetail } from "../components/VisitDetail";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
-import { Badge, Empty, Note, ReviewBadge } from "../components/ui";
+import { Avatar, Badge, Empty, Note, ReviewBadge } from "../components/ui";
 
 const SEV: Record<IssueSeverity, "danger" | "warning" | "info" | "neutral"> = { critical: "danger", high: "warning", medium: "info", low: "neutral" };
 const CATS: IssueCategory[] = ["electrical", "mechanical", "performance", "data", "safety", "client", "other"];
@@ -47,6 +47,7 @@ export function ProjectField() {
   const p = useOutletContext<Project>(); const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   const issues = api.listIssues({ projectId: p.id }); const visits = api.listVisits(p.id); const coms = api.listCommissioning(p.id); const hse = api.listHse(p.id); const wars = api.listWarranty(p.id);
   const [tab, setTab] = useState<"issues" | "visits" | "commissioning" | "hse" | "warranty">("issues");
+  const [assignee, setAssignee] = useState("");
   // forms
   const [iCat, setICat] = useState<IssueCategory>("electrical"); const [iSev, setISev] = useState<IssueSeverity>("medium"); const [iTitle, setITitle] = useState(""); const [iDesc, setIDesc] = useState(""); const [iPhoto, setIPhoto] = useState<Pick[]>([]); const [iAsset, setIAsset] = useState("");
   const [openVisit, setOpenVisit] = useState<string | null>(null);
@@ -103,13 +104,14 @@ export function ProjectField() {
     </>}
 
     {tab === "commissioning" && <>
+      <CommissioningAssignment p={p} assignee={assignee} setAssignee={setAssignee} />
       {coms.length ? coms.map((c) => <div key={c.id} className="card"><div className="card__head"><div className="card__title">Commissioning {fmtDate(c.date)} · <span style={{ textTransform: "uppercase" }}>{c.result}</span></div><div className="row"><Badge variant={Object.values(c.meter).every(Boolean) ? "success" : "danger"}>meter integrity {Object.values(c.meter).every(Boolean) ? "pass" : "fail"}</Badge><ReviewBadge status={c.reviewStatus} /></div></div>
         <div className="card__body stack" style={{ gap: 6 }}><div className="sm muted">Engineer {api.userName(c.engineerId)}{c.clientWitness ? ` · witness ${c.clientWitness.name}` : ""}</div>
         <div className="row row--wrap" style={{ gap: 10 }}><Thumbs ids={c.attachmentIds} empty="no photos" />{c.clientWitness?.signatureAttachmentId && <Thumbs ids={[c.clientWitness.signatureAttachmentId]} />}</div>{c.notes && <div>{c.notes}</div>}
           <div className="row row--wrap">{c.items.map((it) => <Badge key={it.key} variant={it.pass ? "success" : "danger"}>{it.label}{it.measuredValue ? `: ${it.measuredValue}${it.unit ? " " + it.unit : ""}` : ""}</Badge>)}</div>
           <div className="sm muted">Meter checks — ASCII serial {c.meter.serialAscii ? "✓" : "✗"} · CT ratio {c.meter.ctRatioVerified ? "✓" : "✗"} · first live reading {c.meter.firstLiveReading ? "✓" : "✗"} · historical packets {c.meter.historicalOk ? "✓" : "✗"}</div></div></div>)
         : <Empty title="No commissioning record" hint="A checked record with result pass generates the gate-5 evidence documents." />}
-      {api.can(user.id, "commissioning.create", p.id) && <div className="card"><div className="card__head"><div className="card__title">New commissioning record</div><span className="sm muted">Director or a second lead engineer checks</span></div>
+      {api.can(user.id, "commissioning.create", p.id) && <div className="card"><div className="card__head"><div className="card__title">New commissioning record</div><span className="sm muted">A tech lead or director checks it — never its author</span></div>
         <div className="card__body stack">
           <div className="form"><select className="ns-input" value={cRes} onChange={(e) => setCRes(e.target.value as typeof cRes)}><option value="pass">pass</option><option value="conditional">conditional</option><option value="fail">fail</option></select>
             <input className="ns-input" placeholder="Client witness name" value={cWitness} onChange={(e) => setCWitness(e.target.value)} /><FilePick picks={cPhoto} onChange={setCPhoto} required label="Commissioning photo" /><input className="ns-input" placeholder="Notes" value={cNotes} onChange={(e) => setCNotes(e.target.value)} /></div>
@@ -142,4 +144,51 @@ export function ProjectField() {
     </>}
     {!api.can(user.id, "project.read", p.id) && <Note tone="danger">No access.</Note>}
   </div>;
+}
+
+/**
+ * Who records commissioning on this site. A techlead delegates it per project — usually to the tech who
+ * did the install and took the readings. The form below unlocks itself once `can()` sees the assignment,
+ * so nothing here renders it; this card only decides who.
+ */
+function CommissioningAssignment({ p, assignee, setAssignee }: { p: Project; assignee: string; setAssignee: (v: string) => void }) {
+  const api = useApi(); const { user } = useAuth(); const safe = useSafe();
+  const canAssign = api.can(user.id, "membership.manage", p.id);
+  const current = p.commissioningAssigneeId ? api.userOrStub(p.commissioningAssigneeId) : undefined;
+  const mine = current?.id === user.id;
+  const candidates = api.getUsers();
+
+  if (mine) return (
+    <Note tone="success"><b>You are commissioning this site.</b> Record the readings below; a tech lead or director checks them.</Note>
+  );
+
+  if (current) return (
+    <div className="card"><div className="card__body row" style={{ gap: 12 }}>
+      <Avatar user={current} sm />
+      <div className="grow"><div>{current.name} is commissioning this site</div><div className="sm muted">Assigned per site · a tech lead or director still checks the record</div></div>
+      {canAssign && <>
+        <select className="ns-input" style={{ maxWidth: 200 }} value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+          <option value="">Reassign to…</option>
+          {candidates.filter((u) => u.id !== current.id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        <button className="ns-btn ns-btn--sm" disabled={!assignee} onClick={() => safe(() => { api.assignCommissioning(user.id, p.id, assignee); setAssignee(""); }, "Reassigned")}>Assign</button>
+        <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => safe(() => api.assignCommissioning(user.id, p.id), "Cleared")}>Clear</button>
+      </>}
+    </div></div>
+  );
+
+  if (!canAssign) return <Note tone="info">Commissioning has not been assigned for this site yet. A tech lead can assign it to anyone, including a tech.</Note>;
+
+  return (
+    <div className="card"><div className="card__head"><div className="card__title">Who commissions this site</div>
+      <span className="sm muted">Whoever you pick may record the readings — a tech lead or director still checks them</span></div>
+      <div className="card__body row" style={{ gap: 8 }}>
+        <select className="ns-input grow" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+          <option value="">Choose a person…</option>
+          {candidates.map((u) => <option key={u.id} value={u.id}>{u.name} — {u.roles.map((r) => ROLE_LABEL[r]).join(", ")}</option>)}
+        </select>
+        <button className="ns-btn ns-btn--primary" disabled={!assignee} onClick={() => safe(() => { api.assignCommissioning(user.id, p.id, assignee); setAssignee(""); }, "Assigned — logged to chronology")}>Assign</button>
+      </div>
+    </div>
+  );
 }

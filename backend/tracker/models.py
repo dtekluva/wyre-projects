@@ -186,6 +186,10 @@ class Project(Audit):
     rag_reason = models.CharField(max_length=300, blank=True, null=True)
     pm = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
     lead_engineer = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
+    # Who may record commissioning here. A techlead delegates it per site — usually to the tech who did
+    # the install and holds the meter. It grants commissioning.create on THIS project only; checking is
+    # unaffected, so the reading is still signed off by someone else.
+    commissioning_assignee = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     contract_value = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     approved_budget = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     committed = models.DecimalField(max_digits=18, decimal_places=2, default=0)

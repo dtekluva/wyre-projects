@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 
 from tracker.errors import ApiError
 from tracker.models import Approval, Asset, CostItem, Document, Issue, Project, PurchaseOrder, StockCount, StockMovement, User
+from tracker import rbac
 from tracker.services import approvals, documents, field, gates, money, projects, recon, review, stock
 from tracker.services.base import dec
 
@@ -192,6 +193,15 @@ class RulesTest(TestCase):
         self.err("invalid", field.create_commissioning, u["u_le1"], "p1", {"date": "2026-09-10", "result": "pass", "notes": "", "items": items[:-1], "meter": {}, "attachmentIds": ["a"]})
         c = field.create_commissioning(u["u_le1"], "p1", {"date": "2026-09-10", "result": "pass", "notes": "ok", "items": items, "meter": {"serialAscii": True, "ctRatioVerified": True, "firstLiveReading": True, "historicalOk": True},
                                                           "clientWitness": {"name": "Client", "signatureAttachmentId": "sig"}, "attachmentIds": ["a"]})
+        # delegation: a techlead may hand commissioning to anyone for THIS site, including a tech
+        self.err("forbidden", projects.assign_commissioning, u["u_ft1"], "p1", "u_ft1")
+        self.assertFalse(rbac.can(u["u_ft1"], "commissioning.create", "p1"))
+        projects.assign_commissioning(u["u_pm1"], "p1", "u_ft1")
+        self.assertTrue(rbac.can(u["u_ft1"], "commissioning.create", "p1"), "assigned tech may record here")
+        self.assertFalse(rbac.can(u["u_ft1"], "commissioning.create", "p2"), "but only on that project")
+        self.assertFalse(rbac.can(u["u_ft1"], "commissioning.check", "p1"), "and still cannot check one")
+        projects.assign_commissioning(u["u_pm1"], "p1", None)
+        self.assertFalse(rbac.can(u["u_ft1"], "commissioning.create", "p1"), "clearing takes it away")
         self.err("forbidden", review.check, u["u_le1"], "commissioning", c.id, "checked")  # cannot check own
         self.err("forbidden", review.check, u["u_ft1"], "commissioning", c.id, "checked")  # tech has no check perm
         review.check(u["u_dir"], "commissioning", c.id, "checked")

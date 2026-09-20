@@ -323,6 +323,7 @@ select.ns-input { min-height: 36px; }
 .fkpi b { font-size: var(--ns-size-page); line-height: var(--ns-lh-page); } .fkpi span { font-size: var(--ns-size-caption); color: var(--ns-color-text-secondary); } .fkpi--bad b { color: var(--ns-color-danger-text); }
 .fnote { border-radius: var(--ns-radius-medium); padding: 10px 12px; background: var(--ns-color-info-subtle); color: var(--ns-color-info-text); font-size: var(--ns-size-body-sm); }
 .fnote--warn { background: var(--ns-color-warning-subtle); color: var(--ns-color-warning-text); } .fnote--bad { background: var(--ns-color-danger-subtle); color: var(--ns-color-danger-text); }
+.fnote--ok { background: var(--ns-color-success-subtle); color: var(--ns-color-success-text); text-decoration: none; }
 .flabel { font-size: var(--ns-size-label); text-transform: uppercase; letter-spacing: var(--ns-tracking-label); color: var(--ns-color-text-tertiary); font-weight: var(--ns-weight-semibold); margin-top: 4px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip--lg { min-height: var(--ns-touch-min); padding: 8px 14px; font-size: var(--ns-size-body-sm); }

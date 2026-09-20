@@ -127,6 +127,14 @@ ok(isu.status === "closed" && api.money("p1").actual === p1Act1 + 5000, "checked
 const items = COMMISSIONING_TEMPLATE.map((t) => ({ key: t.key, pass: true, measuredValue: "ok" }));
 const meter = { serialAscii: true, ctRatioVerified: true, firstLiveReading: true, historicalOk: true };
 expectErr(() => api.createCommissioning("u_ft1", "p1", { date: "2026-09-09", result: "pass", notes: "", items, meter, attachmentIds: ["c1"] }), "forbidden", "field tech cannot create a commissioning record");
+// …until a techlead delegates it for that site. The grant is per project and nothing else widens.
+expectErr(() => api.assignCommissioning("u_ft1", "p1", "u_ft1"), "forbidden", "a tech cannot assign commissioning to themselves");
+api.assignCommissioning("u_pm1", "p1", "u_ft1");
+ok(api.can("u_ft1", "commissioning.create", "p1"), "assigned tech may now record commissioning on p1");
+ok(!api.can("u_ft1", "commissioning.create", "p2"), "but only on the project they were assigned to");
+ok(!api.can("u_ft1", "commissioning.check", "p1"), "and still cannot check one anywhere");
+api.assignCommissioning("u_pm1", "p1");
+ok(!api.can("u_ft1", "commissioning.create", "p1"), "clearing the assignment takes it away again");
 expectErr(() => api.createCommissioning("u_le1", "p1", { date: "2026-09-09", result: "pass", notes: "", items: items.map((i, k) => (k === 0 ? { ...i, pass: false } : i)), meter, attachmentIds: ["c1"] }), "invalid", "'pass' with a failed checklist item is rejected");
 const com = api.createCommissioning("u_le1", "p1", { date: "2026-09-09", result: "pass", notes: "n", items, meter, clientWitness: { name: "Client", signatureAttachmentId: "sig" }, attachmentIds: ["c1"] });
 // pm and lead_engineer merged into techlead (2026-09-19), so "a PM may not check this" no longer means

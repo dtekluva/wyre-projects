@@ -6,7 +6,7 @@ const LABEL: Record<EventType, string> = {
   document_added: "Document", attachment_added: "Upload", check_passed: "Check", check_rejected: "Check",
   po_raised: "PO", po_approved: "PO", delivery: "Delivery", bill_received: "Bill", payment: "Payment",
   visit: "Visit", issue_raised: "Issue", issue_closed: "Issue", change_order: "Change order",
-  role_granted: "Access", role_revoked: "Access", note: "Note",
+  role_granted: "Access", role_revoked: "Access", commissioning_assigned: "Assigned", note: "Note",
   stock_movement: "Stock", cost_item: "Budget", retention: "Retention", reconciliation: "Recon",
   issue: "Issue", commissioning: "Commissioning", hse: "HSE", warranty: "Warranty", stock_count: "Count",
 };
@@ -14,7 +14,7 @@ export function variantOf(e: ChronologyEvent) {
   if (e.eventType === "check_rejected" || e.summary.startsWith("Rejected")) return "danger";
   if (["check_passed", "stage_change", "po_approved", "retention", "reconciliation"].includes(e.eventType) || e.summary.startsWith("Approved")) return "success";
   if (["hse", "issue"].includes(e.eventType) && !e.summary.startsWith("Resolved") && !e.summary.includes("→")) return "danger";
-  if (["document_added", "attachment_added", "gate_requested", "po_raised", "delivery", "change_order", "approval_decided", "stock_movement", "cost_item", "visit", "commissioning", "warranty", "stock_count", "issue", "hse"].includes(e.eventType)) return "info";
+  if (["document_added", "attachment_added", "gate_requested", "po_raised", "delivery", "change_order", "approval_decided", "stock_movement", "cost_item", "visit", "commissioning", "commissioning_assigned", "warranty", "stock_count", "issue", "hse"].includes(e.eventType)) return "info";
   if (["note", "issue_raised", "visit"].includes(e.eventType)) return "warning";
   return "neutral";
 }
