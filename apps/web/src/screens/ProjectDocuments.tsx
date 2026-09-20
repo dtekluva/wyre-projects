@@ -2,7 +2,8 @@ import { useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
 import { FileLink } from "../components/FileLink";
 import { useOutletContext } from "react-router-dom";
-import { DOC_TYPE_LABEL, STAGES, bytes, fmtDate, relative, type Attachment, type DocType, type Document, type Project } from "@wyre/api";
+import { DOC_TYPE_LABEL, STAGES, bytes, fmtDate, relative, sectionFiles, type Attachment, type DocType, type Document, type Project } from "@wyre/api";
+import { FileGallery } from "../components/FileGallery";
 import { useApi } from "../lib/useApi";
 import { useWaitFor } from "../lib/useWaitFor";
 import { useAuth } from "../lib/auth";
@@ -88,31 +89,70 @@ function Reading({ doc }: { doc: Document }) {
   </div>;
 }
 
+const VIEW_KEY = "wyre.docs.view";
+type View = "gallery" | "list";
+const readView = (): View => { try { return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "gallery"; } catch { return "gallery"; } };
+
 export function ProjectDocuments() {
   const p = useOutletContext<Project>(); const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   const docs = api.listDocuments(p.id); const atts = api.listAttachments(p.id);
   const canDoc = api.can(user.id, "document.create", p.id); const canAtt = api.can(user.id, "attachment.create", p.id);
   const gate = api.gateStatus(p.id);
+  // Gallery is the browsing view and the default; List is the checker's view — dense, with "Read file" and
+  // rejection comments inline. Same files, same sections, same permissions; only the density changes.
+  const [view, setView] = useState<View>(readView);
+  const switchView = (v: View) => { setView(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* per-browser nicety only */ } };
   const [dt, setDt] = useState<DocType>(gate.items.find((i) => i.state !== "ok")?.docType ?? "other"); const [title, setTitle] = useState("");
   const [docFile, setDocFile] = useState<Pick[]>([]); const [picks, setPicks] = useState<Pick[]>([]); const [cap, setCap] = useState("");
   const groups = STAGES.map((s) => ({ s, docs: docs.filter((d) => stageOf(d.docType)?.stage === s.stage) })).filter((g) => g.docs.length);
   const other = docs.filter((d) => !stageOf(d.docType));
+  const sections = sectionFiles(api, { projectId: p.id }, { keep: ["uploads"] });
+
+  const addDoc = (
+    <div className="card">
+      <div className="card__head"><div className="card__title">Add a document</div><span className="sm muted">Enters the review queue as <b>pending check</b></span></div>
+      <div className="card__body">
+        {canDoc ? <form className="form" onSubmit={(e) => { e.preventDefault(); if (safe(() => { const f = docFile[0]; api.addDocument(user.id, p.id, { docType: dt, title: title.trim() || DOC_TYPE_LABEL[dt], fileName: f?.fileName, sizeBytes: f?.size, blob: f?.file }); }, "Submitted for check")) { setTitle(""); setDocFile([]); } }}>
+          <label className="ns-field"><span className="ns-field__label">Type</span>
+            <select className="ns-input" value={dt} onChange={(e) => setDt(e.target.value as DocType)}>
+              {STAGES.filter((s) => s.evidence.length).map((s) => <optgroup key={s.stage} label={`${s.stage} · ${s.name}`}>{s.evidence.map((t) => <option key={t} value={t}>{DOC_TYPE_LABEL[t]}</option>)}</optgroup>)}
+              <optgroup label="Other"><option value="contract">Contract</option><option value="other">Other</option></optgroup></select></label>
+          <label className="ns-field"><span className="ns-field__label">Title</span><input className="ns-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={DOC_TYPE_LABEL[dt]} /></label>
+          <label className="ns-field"><span className="ns-field__label">File <span className="muted">· PDF or image, max 25 MB</span></span><FilePick picks={docFile} onChange={setDocFile} required label="Choose document" hint="PDF or image, up to 25 MB" /></label>
+          <button className="ns-btn ns-btn--primary" type="submit" disabled={!docFile.length}>Submit document</button>
+        </form> : <Note tone="warn">Your role cannot add documents to this project.</Note>}
+      </div>
+    </div>
+  );
+  const upload = canAtt ? <form className="form--inline" onSubmit={(e) => { e.preventDefault(); if (!picks.length) return; if (safe(() => { for (const f of picks) api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, kind: f.file.type.startsWith("image/") ? "image" : "document", caption: cap.trim() || undefined }); }, `${picks.length} upload${picks.length > 1 ? "s" : ""} submitted — pending check`)) { setPicks([]); setCap(""); } }}>
+      <label className="ns-field grow"><span className="ns-field__label">Files <span className="muted">· images or PDF, max 25 MB each</span></span><FilePick picks={picks} onChange={setPicks} multiple required label="Choose photos or documents" hint="Images or PDF, up to 25 MB each" /></label>
+      <label className="ns-field grow"><span className="ns-field__label">Caption</span><input className="ns-input" value={cap} onChange={(e) => setCap(e.target.value)} placeholder="What does this show?" /></label>
+      <button className="ns-btn ns-btn--secondary" type="submit" disabled={!picks.length}>Upload</button>
+    </form> : <Note tone="warn">Your role cannot upload to this project.</Note>;
+
+  const bar = (
+    <div className="viewbar">
+      <div className="sm muted grow">{docs.length} document{docs.length === 1 ? "" : "s"} · {atts.length} upload{atts.length === 1 ? "" : "s"} · GPS + sha256 captured</div>
+      <div className="seg" role="tablist" aria-label="View">
+        <button type="button" role="tab" aria-selected={view === "gallery"} className={`seg__btn ${view === "gallery" ? "seg__btn--on" : ""}`} onClick={() => switchView("gallery")}>▦ Gallery</button>
+        <button type="button" role="tab" aria-selected={view === "list"} className={`seg__btn ${view === "list" ? "seg__btn--on" : ""}`} onClick={() => switchView("list")}>▤ List</button>
+      </div>
+    </div>
+  );
+
+  if (view === "gallery") return (
+    <div className="stack" style={{ gap: 20 }}>
+      {bar}
+      {addDoc}
+      <FileGallery sections={sections} storageKey="project" extras={{ uploads: upload }}
+        empty={{ title: "No files yet", hint: "Add the evidence required by the current gate, or upload photos." }} />
+    </div>
+  );
+
   return (
     <div className="stack" style={{ gap: 20 }}>
-      <div className="card">
-        <div className="card__head"><div className="card__title">Add a document</div><span className="sm muted">Enters the review queue as <b>pending check</b></span></div>
-        <div className="card__body">
-          {canDoc ? <form className="form" onSubmit={(e) => { e.preventDefault(); if (safe(() => { const f = docFile[0]; api.addDocument(user.id, p.id, { docType: dt, title: title.trim() || DOC_TYPE_LABEL[dt], fileName: f?.fileName, sizeBytes: f?.size, blob: f?.file }); }, "Submitted for check")) { setTitle(""); setDocFile([]); } }}>
-            <label className="ns-field"><span className="ns-field__label">Type</span>
-              <select className="ns-input" value={dt} onChange={(e) => setDt(e.target.value as DocType)}>
-                {STAGES.filter((s) => s.evidence.length).map((s) => <optgroup key={s.stage} label={`${s.stage} · ${s.name}`}>{s.evidence.map((t) => <option key={t} value={t}>{DOC_TYPE_LABEL[t]}</option>)}</optgroup>)}
-                <optgroup label="Other"><option value="contract">Contract</option><option value="other">Other</option></optgroup></select></label>
-            <label className="ns-field"><span className="ns-field__label">Title</span><input className="ns-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={DOC_TYPE_LABEL[dt]} /></label>
-            <label className="ns-field"><span className="ns-field__label">File <span className="muted">· PDF or image, max 25 MB</span></span><FilePick picks={docFile} onChange={setDocFile} required label="Choose document" hint="PDF or image, up to 25 MB" /></label>
-            <button className="ns-btn ns-btn--primary" type="submit" disabled={!docFile.length}>Submit document</button>
-          </form> : <Note tone="warn">Your role cannot add documents to this project.</Note>}
-        </div>
-      </div>
+      {bar}
+      {addDoc}
 
       {groups.map(({ s, docs: ds }) => <div key={s.stage} className="card">
         <div className="card__head"><div className="card__title"><span className="ns-mono muted">{s.stage}</span> {s.name}</div><span className="sm muted">{ds.length} document{ds.length > 1 ? "s" : ""}</span></div>
@@ -124,11 +164,7 @@ export function ProjectDocuments() {
       <div className="card">
         <div className="card__head"><div className="card__title">Photos & files</div><span className="sm muted">{atts.length} uploads · GPS + sha256 captured</span></div>
         <div className="card__body stack">
-          {canAtt ? <form className="form--inline" onSubmit={(e) => { e.preventDefault(); if (!picks.length) return; if (safe(() => { for (const f of picks) api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, kind: f.file.type.startsWith("image/") ? "image" : "document", caption: cap.trim() || undefined }); }, `${picks.length} upload${picks.length > 1 ? "s" : ""} submitted — pending check`)) { setPicks([]); setCap(""); } }}>
-            <label className="ns-field grow"><span className="ns-field__label">Files <span className="muted">· images or PDF, max 25 MB each</span></span><FilePick picks={picks} onChange={setPicks} multiple required label="Choose photos or documents" hint="Images or PDF, up to 25 MB each" /></label>
-            <label className="ns-field grow"><span className="ns-field__label">Caption</span><input className="ns-input" value={cap} onChange={(e) => setCap(e.target.value)} placeholder="What does this show?" /></label>
-            <button className="ns-btn ns-btn--secondary" type="submit" disabled={!picks.length}>Upload</button>
-          </form> : <Note tone="warn">Your role cannot upload to this project.</Note>}
+          {upload}
           {atts.length ? <div className="photo-grid">{atts.map((a) => <div key={a.id} className="photo">
             <PhotoTile a={a} />
             <div className="photo__cap"><div className="ellipsis" title={a.caption}>{a.caption ?? "—"}</div>

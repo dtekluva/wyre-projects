@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
-import { MOVEMENT_LABEL, fmtDate, naira, relative, type MovementType, type StockCount } from "@wyre/api";
+import { MOVEMENT_LABEL, fmtDate, naira, relative, sectionFiles, type MovementType, type StockCount } from "@wyre/api";
+import { FileGallery } from "../components/FileGallery";
 import { useApi } from "../lib/useApi";
 import { useWaitFor } from "../lib/useWaitFor";
 import { useAuth } from "../lib/auth";
@@ -108,6 +109,16 @@ export function Inventory() {
             <label className="ns-field"><span className="ns-field__label">Photo (required)</span><FilePick picks={wFile} onChange={setWFile} required label="Choose photo" /></label>
             <div className="row"><button className="ns-btn ns-btn--danger" type="submit">Write off {naira(wVal)}</button></div>
           </form> : <Note tone="warn">Only the Store Keeper can raise a write-off.</Note>}</div></div>
+      </div>
+
+      {/* Files uploaded against warehouse stock have no project, so no project gallery can show them — eleven of
+          the first thirteen uploads on production were invisible for exactly that reason. They live here. */}
+      <div className="card" style={{ marginTop: 20 }}>
+        <div className="card__head"><div className="card__title">Delivery photos & files</div><span className="sm muted">uploaded against warehouse stock · not tied to a project</span></div>
+        <div className="card__body">
+          <FileGallery sections={sectionFiles(api, "warehouse")} storageKey="warehouse"
+            empty={{ title: "No warehouse files yet", hint: "Photos attached when stock is added or written off appear here." }} />
+        </div>
       </div>
     </>
   );
