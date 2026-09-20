@@ -198,3 +198,34 @@ def read_stock_document(data: bytes, mime: str, filename: str = "") -> dict:
     return {"fields": fields, "transcript": transcript,
             "usage": {"model": msg.model, "input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
                       "cost_usd": round(u.input_tokens * PRICE_IN + u.output_tokens * PRICE_OUT, 6)}}
+
+
+DICTATION_SYSTEM = """A store keeper has just spoken aloud what arrived in the warehouse, and a phone transcribed it. Turn their words into stock lines.
+
+This is speech, so expect it to be messy: "three of the Deye six K inverters", "twelve panels, the five eighty watt JA Solar ones", corrections mid-sentence ("two, sorry, three"), and numbers written as words. Take the last thing they said when they correct themselves.
+
+Serial numbers dictated aloud are the risky part. People say "delta yankee six kay two four alpha zero zero eight one seven three nine one" or they spell it out letter by letter. Assemble what they said into a single serial with no spaces, and put it in notes that it was dictated rather than read off a label, so whoever checks this knows to compare it against the physical unit. If you cannot tell where one serial ends and the next begins, say so rather than splitting them on a guess.
+
+If they did not mention a price, leave unit_cost null — never invent one. If they did not give serials for a line, leave the list empty; the person will type them or the item may not be serialised at all."""
+
+
+def read_stock_dictation(text: str) -> dict:
+    """Same shape as read_stock_document, from spoken words instead of a page."""
+    client = _client()
+    tool = {"name": "record_delivery", "description": "Record the goods the store keeper described.",
+            "input_schema": STOCK_SCHEMA, "strict": True}
+    msg = client.messages.create(
+        model=MODEL, max_tokens=16000, system=DICTATION_SYSTEM,
+        thinking={"type": "adaptive"}, tools=[tool],
+        messages=[{"role": "user", "content": [{"type": "text", "text":
+            "What the store keeper said:\n\n" + (text or "").strip() + "\n\nCall record_delivery."}]}],
+    )
+    if msg.stop_reason == "refusal":
+        raise AiError("Claude declined to read that dictation")
+    fields = next((b.input for b in msg.content if b.type == "tool_use" and b.name == "record_delivery"), None)
+    if fields is None:
+        raise AiError("Nothing in that recording looked like a list of goods")
+    u = msg.usage
+    return {"fields": fields, "transcript": (text or "").strip(),
+            "usage": {"model": msg.model, "input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
+                      "cost_usd": round(u.input_tokens * PRICE_IN + u.output_tokens * PRICE_OUT, 6)}}

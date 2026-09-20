@@ -24,8 +24,23 @@ SOURCES = {"document": Document, "attachment": Attachment}
 
 
 @transaction.atomic
-def request_extraction(actor: User, source_kind: str, source_id: str, target: str = "document_meta") -> Extraction:
-    """Anyone who may act on the result may ask a model to read the file."""
+def request_extraction(actor: User, source_kind: str, source_id: str, target: str = "document_meta",
+                       text: str = "") -> Extraction:
+    """Anyone who may act on the result may ask a model to read the file — or the spoken words.
+
+    A dictation has no file: the phone already turned speech into text, so the transcript arrives with
+    the request and Claude only has to give it structure.
+    """
+    if source_kind == "dictation":
+        b.require(actor, "inventory.write")
+        said = (text or "").strip()
+        if len(said) < 10:
+            raise ApiError("Nothing was recorded — say what arrived and try again", "invalid")
+        if not ai.configured():
+            raise ApiError("Dictation is not switched on — no Claude API key is configured", "conflict")
+        return Extraction.objects.create(source_kind="dictation", source_id="", target="stock_lines",
+                                         status="queued", transcript=said[:200_000],
+                                         requested_by=actor, requested_at=b.now())
     model = SOURCES.get(source_kind)
     if model is None:
         raise ApiError(f"Cannot read a {source_kind}", "invalid")
@@ -53,12 +68,15 @@ def run_one(ext: Extraction) -> Extraction:
     ext.status = "running"
     ext.save(update_fields=["status"])
     try:
-        src = b.get_or_404(SOURCES[ext.source_kind], ext.source_id, "Document")
-        with src.file.open("rb") as fh:
-            data = fh.read()
-        mime = _mime_of(src.file_name)
-        reader = ai.read_stock_document if ext.target == "stock_lines" else ai.read_document
-        out = reader(data, mime, src.file_name)
+        if ext.source_kind == "dictation":
+            out = ai.read_stock_dictation(ext.transcript)
+        else:
+            src = b.get_or_404(SOURCES[ext.source_kind], ext.source_id, "Document")
+            with src.file.open("rb") as fh:
+                data = fh.read()
+            mime = _mime_of(src.file_name)
+            reader = ai.read_stock_document if ext.target == "stock_lines" else ai.read_document
+            out = reader(data, mime, src.file_name)
         ext.transcript = out["transcript"][:200_000]
         ext.fields = out["fields"]
         ext.model_name = out["usage"]["model"]

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
 import { ASSET_TYPES, MOVEMENT_LABEL, fmtDate, naira, relative, type AssetType, type MovementType, type StockCount } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
+import { listen, speechSupported } from "../lib/dictation";
 import { Badge, Empty, Kpi, Note, ReviewBadge } from "../components/ui";
 
 export function Inventory() {
@@ -189,6 +190,7 @@ function ReceiveFromNote() {
   const [picked, setPicked] = useState<Record<number, string>>({});
   const [qty, setQty] = useState<Record<number, string>>({});
   const [serials, setSerials] = useState<Record<number, string>>({});
+  const [how, setHow] = useState<"upload" | "say">("upload");
 
   // Rendering nothing for someone without the permission hides the feature entirely — they cannot tell
   // it exists, let alone what to do about it. The sibling cards say why; so does this one.
@@ -233,20 +235,26 @@ function ReceiveFromNote() {
   };
 
   return <div className="card" style={{ marginBottom: 20 }}>
-    <div className="card__head"><div className="card__title">Receive stock from a delivery note</div>
-      <span className="sm muted">read by Claude · every line still gets checked by someone else</span></div>
+    <div className="card__head"><div className="card__title">Add stock</div>
+      <span className="sm muted">upload the paperwork or just say what arrived · every line still gets checked by someone else</span></div>
     <div className="card__body stack" style={{ gap: 12 }}>
       {!ext ? <>
-        <div className="sm muted">Upload the waybill, delivery note or supplier invoice. Serial numbers are read off the page so nobody retypes them.</div>
         <div className="row" style={{ gap: 8 }}>
-          <FilePick picks={file} onChange={setFile} required label="Delivery note" />
-          <button className="ns-btn ns-btn--primary" disabled={!file.length} onClick={() => safe(() => {
-            const p0 = file[0];
-            const att = api.addEvidence(user.id, { fileName: p0.fileName, sizeBytes: p0.size, blob: p0.file, caption: "Delivery note" });
-            const e = api.requestExtraction(user.id, "attachment", att.id, "stock_lines");
-            setExtId(e.id);
-          }, "Reading the note — this takes a few seconds")}>Read it</button>
+          <button className={`ns-btn ${how === "upload" ? "ns-btn--primary" : ""}`} onClick={() => setHow("upload")}>Upload a document</button>
+          <button className={`ns-btn ${how === "say" ? "ns-btn--primary" : ""}`} onClick={() => setHow("say")}>Say what arrived</button>
         </div>
+        {how === "upload" ? <>
+          <div className="sm muted">Waybill, delivery note or supplier invoice. Serial numbers are read off the page so nobody retypes them.</div>
+          <div className="row" style={{ gap: 8 }}>
+            <FilePick picks={file} onChange={setFile} required label="Delivery note" />
+            <button className="ns-btn ns-btn--primary" disabled={!file.length} onClick={() => safe(() => {
+              const p0 = file[0];
+              const att = api.addEvidence(user.id, { fileName: p0.fileName, sizeBytes: p0.size, blob: p0.file, caption: "Delivery note" });
+              const e = api.requestExtraction(user.id, "attachment", att.id, "stock_lines");
+              setExtId(e.id);
+            }, "Reading the note — this takes a few seconds")}>Read it</button>
+          </div>
+        </> : <Dictate onDone={(text) => safe(() => { const e = api.requestExtraction(user.id, "dictation", "", "stock_lines", text); setExtId(e.id); }, "Working out what you said")} />}
       </> : ext.status === "queued" || ext.status === "running" ? <Note tone="info">Reading the note…</Note>
       : ext.status === "failed" ? <Note tone="danger">Could not read it: {ext.error}
           <button className="ns-btn ns-btn--ghost ns-btn--sm" style={{ marginLeft: 8 }} onClick={() => { setExtId(""); setFile([]); }}>Start again</button></Note>
@@ -287,4 +295,41 @@ function ReceiveFromNote() {
         </div>
       </>}
     </div></div>;
+}
+
+/**
+ * Speak the delivery instead of typing it. The phone transcribes locally and the words show as they are
+ * said, so a mangled serial is caught while the speaker still remembers what it should be. They edit the
+ * text before anything is sent — the recording is never the record.
+ */
+function Dictate({ onDone }: { onDone: (text: string) => void }) {
+  const [text, setText] = useState("");
+  const [live, setLive] = useState(false);
+  const [err, setErr] = useState("");
+  const stopRef = useRef<(() => void) | null>(null);
+  const supported = speechSupported();
+
+  const start = () => {
+    setErr(""); setLive(true);
+    stopRef.current = listen((t, final) => { setText(t); if (final) setLive(false); },
+                             (m) => { setErr(m); setLive(false); });
+  };
+  const stop = () => { stopRef.current?.(); setLive(false); };
+
+  if (!supported) return <Note tone="warn">This browser cannot transcribe speech. Chrome, Edge and Safari can — or upload the delivery note instead.</Note>;
+
+  return <div className="stack" style={{ gap: 10 }}>
+    <div className="sm muted">Say what arrived — for example: <i>"three Deye six K inverters, serials delta yankee six K two four alpha zero zero eight one seven three nine one, … and twelve JA Solar five eighty watt panels"</i>. Read serials out slowly.</div>
+    <div className="row" style={{ gap: 8 }}>
+      {live
+        ? <button className="ns-btn ns-btn--danger" onClick={stop}>■ Stop</button>
+        : <button className="ns-btn ns-btn--primary" onClick={start}>● {text ? "Record more" : "Start recording"}</button>}
+      {live && <span className="sm muted">listening…</span>}
+    </div>
+    {err && <Note tone="danger">{err}</Note>}
+    <label className="ns-field"><span className="ns-field__label">What you said — correct anything it misheard</span>
+      <textarea className="ns-input" rows={4} value={text} onChange={(e) => setText(e.target.value)}
+                placeholder="Your words appear here as you speak, and you can edit them." /></label>
+    <div><button className="ns-btn ns-btn--primary" disabled={live || text.trim().length < 10} onClick={() => onDone(text.trim())}>Turn this into stock lines</button></div>
+  </div>;
 }
