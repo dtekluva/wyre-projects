@@ -25,7 +25,7 @@ SOURCES = {"document": Document, "attachment": Attachment}
 
 @transaction.atomic
 def request_extraction(actor: User, source_kind: str, source_id: str, target: str = "document_meta",
-                       text: str = "") -> Extraction:
+                       text: str = "", id: str = "") -> Extraction:
     """Anyone who may act on the result may ask a model to read the file — or the spoken words.
 
     A dictation has no file: the phone already turned speech into text, so the transcript arrives with
@@ -38,7 +38,8 @@ def request_extraction(actor: User, source_kind: str, source_id: str, target: st
             raise ApiError("Nothing was recorded — say what arrived and try again", "invalid")
         if not ai.configured():
             raise ApiError("Dictation is not switched on — no Claude API key is configured", "conflict")
-        return Extraction.objects.create(source_kind="dictation", source_id="", target="stock_lines",
+        return Extraction.objects.create(**b.maybe_id({"id": id} if id else None, Extraction, "ext"),
+                                         source_kind="dictation", source_id="", target="stock_lines",
                                          status="queued", transcript=said[:200_000],
                                          requested_by=actor, requested_at=b.now())
     model = SOURCES.get(source_kind)
@@ -58,7 +59,8 @@ def request_extraction(actor: User, source_kind: str, source_id: str, target: st
                                         status__in=["queued", "running"]).first()
     if pending:
         raise ApiError("That document is already being read", "conflict")
-    return Extraction.objects.create(project_id=src.project_id, source_kind=source_kind, source_id=source_id,
+    return Extraction.objects.create(**b.maybe_id({"id": id} if id else None, Extraction, "ext"),
+                                     project_id=src.project_id, source_kind=source_kind, source_id=source_id,
                                      target=target, status="queued",
                                      requested_by=actor, requested_at=b.now())
 

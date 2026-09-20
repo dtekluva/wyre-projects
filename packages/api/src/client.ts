@@ -77,7 +77,7 @@ export class MockApi {
   private seq = 1000;
   private static KEY = "wyre.tracker.state.v3";
   private static PERSISTED = ["projects","memberships","documents","attachments","events","approvals","thresholds",
-    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","seq"] as const;
+    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","extractions","seq"] as const;
 
   /** Synchronous key-value storage (web: localStorage). Native apps hydrate asynchronously via serialize()/hydrate() instead. */
   private storage: { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void } | null =
@@ -898,20 +898,42 @@ export class MockApi {
   extractions: Extraction[] = [];
   listExtractions(sourceId: string) { return this.extractions.filter((e) => e.sourceId === sourceId && !["accepted", "rejected"].includes(e.status)); }
   /** The demo build has no backend to read anything, so this reports that plainly rather than faking a result. */
-  receiveStock(actorId: string, _input: unknown): never {
+  /** Set by RemoteApi. The demo build has no backend to read anything, and should say so rather than
+   *  leaving a request queued forever. */
+  protected live = false;
+
+  /** RemoteApi wraps these: it runs the local apply FIRST, then sends. Throwing here would stop the
+   *  request ever reaching the server, so each one makes a sensible local guess the snapshot corrects. */
+  receiveStock(actorId: string, _input: unknown): [] {
     this.require(actorId, "inventory.write");
-    throw new ApiError("Receiving stock from a document needs the live backend", "conflict");
+    return [];                                   // the real movements arrive with the next snapshot
   }
-  requestExtraction(actorId: string, _sourceKind: string, sourceId: string, _target?: string, _text?: string): Extraction {
-    const doc = this.documents.find((d) => d.id === sourceId);
-    this.require(actorId, "document.update", doc?.projectId);
-    throw new ApiError("Reading documents needs the live backend — this is the demo build", "conflict");
+  requestExtraction(actorId: string, sourceKind: string, sourceId: string, target = "document_meta", text = ""): Extraction {
+    if (sourceKind === "dictation") this.require(actorId, "inventory.write");
+    else if (target === "stock_lines") this.require(actorId, "inventory.write");
+    else this.require(actorId, "document.update", this.documents.find((d) => d.id === sourceId)?.projectId);
+    const e: Extraction = {
+      id: this.id("ext"), sourceKind, sourceId, target,
+      status: this.live ? "queued" : "failed",
+      transcript: text, fields: null, modelName: "", costUsd: 0,
+      error: this.live ? "" : "Reading files needs the live backend — this is the demo build",
+      requestedBy: actorId, requestedAt: this.now(),
+    };
+    this.extractions.push(e);
+    this.emit();
+    return e;
   }
-  acceptExtraction(_actorId: string, _id: string, _values?: Record<string, unknown>): never {
-    throw new ApiError("Reading documents needs the live backend", "conflict");
+  acceptExtraction(actorId: string, id: string, _values?: Record<string, unknown>) {
+    const e = this.extractions.find((x) => x.id === id); if (!e) throw new ApiError("Not found", "not_found");
+    e.status = "accepted"; e.decidedBy = actorId; e.decidedAt = this.now();
+    this.emit();
+    return this.documents.find((d) => d.id === e.sourceId);
   }
-  rejectExtraction(_actorId: string, _id: string): never {
-    throw new ApiError("Reading documents needs the live backend", "conflict");
+  rejectExtraction(actorId: string, id: string) {
+    const e = this.extractions.find((x) => x.id === id); if (!e) throw new ApiError("Not found", "not_found");
+    e.status = "rejected"; e.decidedBy = actorId; e.decidedAt = this.now();
+    this.emit();
+    return e;
   }
   addVendor(actorId: string, input: { name: string; category?: string }): Vendor {
     this.require(actorId, "catalogue.manage");

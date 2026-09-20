@@ -22,12 +22,13 @@ export class RemoteApi extends MockApi {
 
   constructor(public readonly base: string) {
     super();
+    this.live = true;
     try { const t = JSON.parse(localStorage.getItem(TOKENS) ?? "null"); if (t?.access) { this.access = t.access; this.refreshTok = t.refresh; } } catch { /* ignore */ }
     // remote mode never reads the mock's persisted demo state
     this.resetLocal();
     this.wrapMutations();
   }
-  private resetLocal() { for (const k of ["projects","memberships","documents","attachments","events","approvals","thresholds","vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts"]) (this as unknown as Record<string, unknown[]>)[k] = []; this.users = []; }
+  private resetLocal() { for (const k of ["projects","memberships","documents","attachments","events","approvals","thresholds","vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","extractions"]) (this as unknown as Record<string, unknown[]>)[k] = []; this.users = []; }
   get signedIn() { return !!this.access; }
   onError(fn: (e: RemoteError) => void) { this.errorListeners.add(fn); return () => { this.errorListeners.delete(fn); }; }
   onSync(fn: (pending: number) => void) { this.syncListeners.add(fn); return () => { this.syncListeners.delete(fn); }; }

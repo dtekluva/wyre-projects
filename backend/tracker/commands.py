@@ -36,7 +36,7 @@ COMMANDS: dict[str, Handler] = {
     "revokeMembership": lambda a, d, f: projects.revoke_membership(a, d.get("membershipId")),
     # documents & attachments
     "updateDocument": lambda a, d, f: S.document(documents.update_document(a, d.get("documentId"), _in(d))),
-    "requestExtraction": lambda a, d, f: S.extraction(extractions.request_extraction(a, d.get("sourceKind") or "document", d.get("sourceId"), d.get("target") or "document_meta", d.get("text") or "")),
+    "requestExtraction": lambda a, d, f: S.extraction(extractions.request_extraction(a, d.get("sourceKind") or "document", d.get("sourceId"), d.get("target") or "document_meta", d.get("text") or "", d.get("id") or "")),
     "acceptExtraction": lambda a, d, f: S.document(extractions.accept_extraction(a, d.get("extractionId"), d.get("values") or {})),
     "rejectExtraction": lambda a, d, f: S.extraction(extractions.reject_extraction(a, d.get("extractionId"))),
     "addDocument": lambda a, d, f: S.document(documents.add_document(a, d.get("projectId"), _in(d), f)),

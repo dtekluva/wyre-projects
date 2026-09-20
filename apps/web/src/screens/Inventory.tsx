@@ -244,16 +244,19 @@ function ReceiveFromNote() {
           <button className={`ns-btn ${how === "say" ? "ns-btn--primary" : ""}`} onClick={() => setHow("say")}>Say what arrived</button>
         </div>
         {how === "upload" ? <>
-          <div className="sm muted">Waybill, delivery note or supplier invoice. Serial numbers are read off the page so nobody retypes them.</div>
-          <div className="row" style={{ gap: 8 }}>
-            <FilePick picks={file} onChange={setFile} required label="Delivery note" />
-            <button className="ns-btn ns-btn--primary" disabled={!file.length} onClick={() => safe(() => {
-              const p0 = file[0];
+          <div className="sm muted">Waybill, delivery note, supplier invoice or a photo of one. Serial numbers are read off the page so nobody retypes them.</div>
+          {/* Choosing the file IS the action — a separate "read it" button was just a second step
+              that could only ever be pressed once, on a file already chosen. */}
+          <FilePick picks={file} onChange={(picks) => {
+            setFile(picks);
+            const p0 = picks[0];
+            if (!p0) return;
+            safe(() => {
               const att = api.addEvidence(user.id, { fileName: p0.fileName, sizeBytes: p0.size, blob: p0.file, caption: "Delivery note" });
               const e = api.requestExtraction(user.id, "attachment", att.id, "stock_lines");
               setExtId(e.id);
-            }, "Reading the note — this takes a few seconds")}>Read it</button>
-          </div>
+            }, "Reading it — this takes a few seconds");
+          }} required label="Delivery note or photo" />
         </> : <Dictate onDone={(text) => safe(() => { const e = api.requestExtraction(user.id, "dictation", "", "stock_lines", text); setExtId(e.id); }, "Working out what you said")} />}
       </> : ext.status === "queued" || ext.status === "running" ? <Note tone="info">Reading the note…</Note>
       : ext.status === "failed" ? <Note tone="danger">Could not read it: {ext.error}
