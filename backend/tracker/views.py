@@ -10,6 +10,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from . import rbac, serializers as S
 from .commands import COMMANDS
+from .services import accounts, tokens
 from .errors import ApiError
 from .services import approvals as approvals_svc, money as money_svc, recon as recon_svc, review as review_svc, stock as stock_svc
 
@@ -20,6 +21,37 @@ class HealthView(APIView):
 
     def get(self, request):
         return Response({"ok": True, "service": "wyre-tracker"})
+
+
+class PasswordResetRequestView(APIView):
+    """POST {email}. Always 200 — saying whether an address has an account is an enumeration oracle."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        accounts.request_reset(request.data.get("email") or "")
+        return Response({"ok": True})
+
+
+class LinkPreviewView(APIView):
+    """GET — who an invite or reset link belongs to, so the screen can greet them before they type."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, kind, token):
+        salt = tokens.INVITE if kind == "invite" else tokens.RESET
+        return Response(accounts.preview(token, salt))
+
+
+class SetPasswordView(APIView):
+    """POST {password} against an invite or reset link. The link is spent once the hash changes."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, kind, token):
+        salt = tokens.INVITE if kind == "invite" else tokens.RESET
+        user = accounts.set_password(token, salt, request.data.get("password") or "")
+        return Response({"ok": True, "username": user.username})
 
 
 class TokenView(TokenObtainPairView):

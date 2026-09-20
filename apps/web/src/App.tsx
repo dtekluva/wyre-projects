@@ -20,6 +20,7 @@ import { Inventory } from "./screens/Inventory";
 import { Reconciliation } from "./screens/Reconciliation";
 import { ProjectField } from "./screens/ProjectField";
 import { FieldShell } from "./components/field/FieldShell";
+import { Forgot, SetPassword } from "./screens/SetPassword";
 import { FieldSignin, FieldHome, FieldIssues, FieldIssueNew, FieldIssueDetail, FieldVisits, FieldVisitNew, FieldVan, FieldQueue } from "./screens/field/FieldScreens";
 
 export function App() {
@@ -27,6 +28,9 @@ export function App() {
     <AuthProvider><ToastProvider><FileViewerProvider>
       <RemoteBridge />
       <Routes>
+        <Route path="forgot" element={<Forgot />} />
+        <Route path="invite/:token" element={<SetPassword kind="invite" />} />
+        <Route path="reset/:token" element={<SetPassword kind="reset" />} />
         <Route path="field" element={<FieldShell />}>
           <Route index element={<FieldHome />} />
           <Route path="signin" element={<FieldSignin />} />

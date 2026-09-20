@@ -119,6 +119,7 @@ button, input, select, textarea { font: inherit; }
 .note--warn { background: var(--ns-color-warning-subtle); color: var(--ns-color-warning-text); }
 .note--danger { background: var(--ns-color-danger-subtle); color: var(--ns-color-danger-text); }
 .note--info { background: var(--ns-color-info-subtle); color: var(--ns-color-info-text); }
+.signin__link { display: block; text-align: center; color: var(--ns-color-text-secondary); font-size: var(--ns-size-body-sm); }
 .note--success { background: var(--ns-color-success-subtle); color: var(--ns-color-success-text); }
 .ns-textarea { width: 100%; min-height: 76px; padding: 8px 12px; resize: vertical; font-family: inherit; font-size: var(--ns-size-body-sm); color: var(--ns-color-text-primary);
   background: var(--ns-color-surface); border: var(--ns-border-hairline) solid var(--ns-color-border-default); border-radius: var(--ns-radius-medium); }

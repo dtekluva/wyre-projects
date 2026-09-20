@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from . import serializers as S
 from .errors import ApiError
-from .services import approvals, documents, field, gates, money, projects, recon, review, stock
+from .services import accounts, approvals, documents, field, gates, money, projects, recon, review, stock
 
 Handler = Callable[[Any, dict, Any], Any]
 
@@ -17,10 +17,18 @@ def _in(body: dict, key: str = "input") -> dict:
     return v
 
 
+def _invited(res: dict) -> dict:
+    """The UI needs to know whether the email actually left, so it can show the link instead."""
+    return {"user": S.user(res["user"]), "emailed": res["emailed"]}
+
+
 COMMANDS: dict[str, Handler] = {
     # projects & people
     "createProject": lambda a, d, f: S.project(projects.create_project(a, _in(d))),
     "grantMembership": lambda a, d, f: S.membership(projects.grant_membership(a, d.get("projectId"), d.get("userId"), d.get("role"))),
+    "inviteUser": lambda a, d, f: _invited(accounts.invite_user(a, d)),
+    "resendInvite": lambda a, d, f: _invited(accounts.resend_invite(a, d.get("userId"))),
+    "revokeInvite": lambda a, d, f: accounts.revoke_invite(a, d.get("userId")),
     "assignCommissioning": lambda a, d, f: S.project(projects.assign_commissioning(a, d.get("projectId"), d.get("userId"))),
     "revokeMembership": lambda a, d, f: projects.revoke_membership(a, d.get("membershipId")),
     # documents & attachments

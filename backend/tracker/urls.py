@@ -5,6 +5,9 @@ from . import views
 urlpatterns = [
     path("health/", views.HealthView.as_view()),
     path("auth/token/", views.TokenView.as_view()),
+    path("auth/password-reset/", views.PasswordResetRequestView.as_view()),
+    path("auth/link/<str:kind>/<str:token>/", views.LinkPreviewView.as_view()),
+    path("auth/set-password/<str:kind>/<str:token>/", views.SetPasswordView.as_view()),
     path("auth/token/refresh/", views.RefreshView.as_view()),
     path("me/", views.MeView.as_view()),
     path("snapshot/", views.SnapshotView.as_view()),

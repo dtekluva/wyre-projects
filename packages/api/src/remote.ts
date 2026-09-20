@@ -3,7 +3,7 @@
 // and then sent to the server in order. The server's snapshot replaces local state after each command; a server
 // rejection is surfaced through onError() and the local state is re-synced from the server.
 import { MockApi, ApiError } from "./client";
-import type { User } from "./types";
+import type { LinkOwner, User } from "./types";
 
 type Json = Record<string, unknown>;
 type Mutation = { name: string; body: Json; blob?: Blob; fileName?: string };
@@ -41,6 +41,26 @@ export class RemoteApi extends MockApi {
     try { localStorage.setItem(TOKENS, JSON.stringify({ access: j.access, refresh: j.refresh })); } catch { /* ignore */ }
     await this.refresh();
     return this.me!;
+  }
+  // ---- unauthenticated flows: the person has no session yet, by definition ----
+  /** Always resolves. The server will not say whether the address exists, and neither will we. */
+  async requestPasswordReset(email: string): Promise<void> {
+    await fetch(`${this.base}/auth/password-reset/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+  }
+  /** Who an invite/reset link belongs to, so the screen can greet them before they type. */
+  async linkOwner(kind: "invite" | "reset", token: string): Promise<LinkOwner> {
+    const r = await fetch(`${this.base}/auth/link/${kind}/${encodeURIComponent(token)}/`);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new ApiError(j.message ?? "That link is not valid.", "invalid");
+    return j as LinkOwner;
+  }
+  async setPasswordWithToken(kind: "invite" | "reset", token: string, password: string): Promise<string> {
+    const r = await fetch(`${this.base}/auth/set-password/${kind}/${encodeURIComponent(token)}/`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new ApiError(j.message ?? "Could not set that password.", "invalid");
+    return j.username as string;
   }
   logout() { this.access = null; this.refreshTok = null; this.me = null; try { localStorage.removeItem(TOKENS); } catch { /* ignore */ } this.resetLocal(); this.notify(); }
   private async fetchAuth(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
@@ -114,6 +134,9 @@ export class RemoteApi extends MockApi {
     wrap("receiveGoods", (a, r) => ({ name: "receiveGoods", body: { poId: a[1], input: withId(a[2], r) } }));
     wrap("grantMembership", (a) => ({ name: "grantMembership", body: { projectId: a[1], userId: a[2], role: a[3] } }));
     wrap("assignCommissioning", (a) => ({ name: "assignCommissioning", body: { projectId: a[1], userId: a[2] } }));
+    wrap("inviteUser", (a) => ({ name: "inviteUser", body: a[1] as unknown as Record<string, Json> }));
+    wrap("resendInvite", (a) => ({ name: "resendInvite", body: { userId: a[1] } }));
+    wrap("revokeInvite", (a) => ({ name: "revokeInvite", body: { userId: a[1] } }));
     wrap("revokeMembership", (a) => ({ name: "revokeMembership", body: { membershipId: a[1] } }));
     wrap("check", (a) => ({ name: "check", body: { kind: a[0], id: a[1], decision: a[3], comment: a[4] } }));
     wrap("requestGate", (a) => ({ name: "requestGate", body: { projectId: a[0] } }));

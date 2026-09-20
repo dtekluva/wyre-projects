@@ -40,7 +40,11 @@ def review(o) -> dict:
 
 
 def user(u: User) -> dict:
-    return {"id": u.id, "name": u.name or u.username, "email": u.email, "roles": u.role_codes(), "initials": u.initials, "username": u.username}
+    # "invited" = the account exists but has an unusable password, so the person has never followed
+    # their link. The admin screen uses it to offer resend/revoke.
+    return {"id": u.id, "name": u.name or u.username, "email": u.email, "roles": u.role_codes(),
+            "initials": u.initials, "username": u.username,
+            "status": "active" if u.has_usable_password() else "invited"}
 
 
 def project(p: Project, open_issues: Optional[dict] = None) -> dict:

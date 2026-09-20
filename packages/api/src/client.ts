@@ -8,7 +8,7 @@ import * as seed2 from "./mock/data2";
 import * as seed3 from "./mock/data3";
 import {
   DOC_TYPE_LABEL, COST_CATEGORY_LABEL, MOVEMENT_LABEL, PROJECT_TYPE_LABEL, type ProjectType,
-  type User, type Project, type ProjectMembership, type Document, type Attachment, type ChronologyEvent, type Approval, type Threshold,
+  type User, type InviteInput, type Project, type ProjectMembership, type Document, type Attachment, type ChronologyEvent, type Approval, type Threshold,
   type Stage, type GateStatus, type DocType, type RoleCode, type EventType, type ReviewStatus,
   type Vendor, type InventoryItem, type StockLocation, type CostItem, type PurchaseOrder, type PurchaseItem, type GoodsReceipt, type Asset,
   type StockMovement, type StockBalance, type Actual, type ChangeOrder, type Retention, type QbBill, type CostCategory, type ProjectMoney, type AssetType,
@@ -498,6 +498,34 @@ export class MockApi {
     }
     this.emit();
     return p;
+  }
+  /** Demo-mode invite: creates the user locally. The live build sends an email — see RemoteApi. */
+  inviteUser(actorId: string, input: InviteInput) {
+    this.require(actorId, "users.manage");
+    const name = input.name.trim(), email = input.email.trim().toLowerCase(), username = input.username.trim().toLowerCase();
+    if (!name) throw new ApiError("Name is required", "invalid");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new ApiError("A valid email address is required", "invalid");
+    if (!/^[a-z0-9]+(?:\.[a-z0-9]+)+$/.test(username)) throw new ApiError("Username must be firstname.lastname", "invalid");
+    if (!input.roles.length) throw new ApiError("Pick at least one role", "invalid");
+    if (this.users.some((u) => u.username === username)) throw new ApiError(`${username} is already taken`, "conflict");
+    if (this.users.some((u) => u.email.toLowerCase() === email)) throw new ApiError(`${email} already has an account`, "conflict");
+    const u: User = { id: this.id("u"), name, email, username, roles: input.roles, initials: name.split(" ").map((x: string) => x[0]).slice(0, 2).join("").toUpperCase(), status: "invited" };
+    this.users.push(u);
+    this.emit();
+    return { user: u, emailed: false };
+  }
+  resendInvite(actorId: string, userId: string) {
+    this.require(actorId, "users.manage");
+    const u = this.users.find((x) => x.id === userId); if (!u) throw new ApiError("Not found", "not_found");
+    if (u.status !== "invited") throw new ApiError(`${u.name} has already set a password`, "conflict");
+    return { user: u, emailed: false };
+  }
+  revokeInvite(actorId: string, userId: string) {
+    this.require(actorId, "users.manage");
+    const i = this.users.findIndex((x) => x.id === userId); if (i < 0) throw new ApiError("Not found", "not_found");
+    if (this.users[i].status !== "invited") throw new ApiError(`${this.users[i].name} has already signed in — deactivate the account instead`, "conflict");
+    this.users.splice(i, 1);
+    this.emit();
   }
   revokeMembership(actorId: string, membershipId: string) {
     const m = this.memberships.find((x) => x.id === membershipId); if (!m) throw new ApiError("Not found", "not_found");

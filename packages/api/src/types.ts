@@ -10,10 +10,18 @@ export const ROLE_LABEL: Record<RoleCode, string> = {
   director: "Director", techlead: "Tech Lead", tech: "Tech",
   finance: "Finance", store_keeper: "Store Keeper", auditor: "Auditor",
 };
+/** Every role, in the order the UI should offer them: broadest responsibility first. */
+export const ROLE_CODES: readonly RoleCode[] = ["director", "techlead", "tech", "finance", "store_keeper", "auditor"];
 /** Roles that apply to every project without a membership */
 export const GLOBAL_ROLES: readonly RoleCode[] = ["director", "finance", "store_keeper", "auditor"];
 
-export interface User { id: string; name: string; email: string; roles: RoleCode[]; initials: string }
+export interface User {
+  id: string; name: string; email: string; roles: RoleCode[]; initials: string; username?: string;
+  /** "invited" = account created but the person has never followed their link and set a password */
+  status?: "active" | "invited";
+}
+export interface InviteInput { name: string; email: string; username: string; roles: RoleCode[] }
+export interface LinkOwner { name: string; username: string; email: string }
 
 export interface ProjectMembership {
   id: string; projectId: string; userId: string; role: RoleCode; grantedBy: string; grantedAt: string; revokedAt?: string;

@@ -17,5 +17,6 @@ export function SignIn() {
     <label className="ns-field"><span className="ns-field__label">Password</span><input className="ns-input" type="password" autoComplete="current-password" value={p} onChange={(e) => setP(e.target.value)} required /></label>
     {err && <div className="note note--danger">{err}</div>}
     <button className="ns-btn ns-btn--primary ns-btn--block ns-btn--lg" disabled={busy || !u || !p}>{busy ? "Signing in…" : "Sign in"}</button>
+    <a className="signin__link sm" href="/forgot">Forgot your password?</a>
   </form></div>;
 }
