@@ -13,24 +13,28 @@ from django.db import transaction
 from django.utils import timezone
 
 from ..errors import ApiError
-from ..models import Document, Extraction, User
+from ..models import Attachment, Document, Extraction, User
 from . import ai
 from . import base as b
 from . import documents as docs
 
 log = logging.getLogger(__name__)
 
-SOURCES = {"document": Document}
+SOURCES = {"document": Document, "attachment": Attachment}
 
 
 @transaction.atomic
-def request_extraction(actor: User, source_kind: str, source_id: str) -> Extraction:
-    """Anyone who may edit the thing may ask a model to read it."""
+def request_extraction(actor: User, source_kind: str, source_id: str, target: str = "document_meta") -> Extraction:
+    """Anyone who may act on the result may ask a model to read the file."""
     model = SOURCES.get(source_kind)
     if model is None:
         raise ApiError(f"Cannot read a {source_kind}", "invalid")
-    src = b.get_or_404(model, source_id, "Document")
-    b.require(actor, "document.update", src.project_id)
+    if target not in ("document_meta", "stock_lines"):
+        raise ApiError(f"Cannot read a file for {target}", "invalid")
+    src = b.get_or_404(model, source_id, "Document" if source_kind == "document" else "Attachment")
+    # Reading a delivery note is a store-keeper job; reading a permit is a document job.
+    b.require(actor, "inventory.write" if target == "stock_lines" else "document.update",
+              None if target == "stock_lines" else src.project_id)
     if not ai.configured():
         raise ApiError("Document reading is not switched on — no Claude API key is configured", "conflict")
     if not src.file:
@@ -40,7 +44,7 @@ def request_extraction(actor: User, source_kind: str, source_id: str) -> Extract
     if pending:
         raise ApiError("That document is already being read", "conflict")
     return Extraction.objects.create(project_id=src.project_id, source_kind=source_kind, source_id=source_id,
-                                     target="document_meta", status="queued",
+                                     target=target, status="queued",
                                      requested_by=actor, requested_at=b.now())
 
 
@@ -53,7 +57,8 @@ def run_one(ext: Extraction) -> Extraction:
         with src.file.open("rb") as fh:
             data = fh.read()
         mime = _mime_of(src.file_name)
-        out = ai.read_document(data, mime, src.file_name)
+        reader = ai.read_stock_document if ext.target == "stock_lines" else ai.read_document
+        out = reader(data, mime, src.file_name)
         ext.transcript = out["transcript"][:200_000]
         ext.fields = out["fields"]
         ext.model_name = out["usage"]["model"]
@@ -97,6 +102,8 @@ def accept_extraction(actor: User, extraction_id: str, values: Optional[dict] = 
         raise ApiError(f"That reading is {ext.status}", "conflict")
     if ext.status == "failed":
         raise ApiError("That reading failed — nothing to accept", "conflict")
+    if ext.target != "document_meta":
+        raise ApiError("That reading is not document details — submit it from the inventory screen", "invalid")
     chosen = {**(ext.fields or {}), **(values or {})}
     doc = docs.update_document(actor, ext.source_id, {
         "title": chosen.get("title"),

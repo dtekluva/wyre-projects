@@ -167,6 +167,17 @@ def return_stock(actor: User, input: dict) -> StockMovement:
 def post_movement_effects(m: StockMovement, actor: User) -> None:
     """On check of an issue / return / transfer: assets move, project actual posts (issue = cost, return = credit)."""
     at = b.now(); it = m.item
+    if m.movement_type == "receipt":
+        # Direct receipt (no PO). The PO path builds its own assets in post_goods_receipt and arrives
+        # already checked, so it never reaches here — this branch is only the without-a-PO route.
+        for s_ in (m.serials or []):
+            Asset.objects.get_or_create(
+                serial=s_,
+                defaults=dict(inventory_item=it, asset_type=it.category if it.category in ASSET_TYPES else "other",
+                              make=it.make or "", model=it.model or it.name, unit_cost=m.unit_cost,
+                              status="in_stock", location=m.location_to, created_at=at, created_by=m.created_by,
+                              updated_at=at, updated_by=actor))
+        return
     if m.movement_type == "issue":
         p = m.project
         for s in (m.serials or []):
@@ -363,3 +374,64 @@ def add_item(actor: User, input: dict) -> InventoryItem:
         reorder_level=reorder_level, reorder_qty=reorder_qty, default_vendor=vendor, is_active=True,
         make=b.clean(input.get("make")) or None, model=b.clean(input.get("model")) or None,
         warranty_months=int(months) if months else None)
+
+
+@transaction.atomic
+def receive_stock(actor: User, input: dict) -> list[StockMovement]:
+    """Take stock in without a purchase order — an opening balance, a donation, a transfer from another
+    company, or goods that arrived against paperwork raised outside the system.
+
+    Stock that appears from nowhere is exactly the movement worth controlling, so this is deliberately
+    stricter than the PO path rather than looser: evidence is required, a reason is required, and every
+    line lands as PENDING for somebody else to check. The PO route can auto-check because an approval
+    already happened upstream; here nothing has been approved by anyone.
+    """
+    b.require(actor, "inventory.write")
+    loc = b.location(input.get("locationId"))
+    reason = b.clean(input.get("reason"))
+    if not reason:
+        raise ApiError("Say where this stock came from — a delivery note number, or 'opening balance'", "invalid")
+    attachment_ids = [a for a in (input.get("attachmentIds") or []) if a]
+    if not attachment_ids:
+        raise ApiError("Attach the delivery note or count sheet — stock cannot appear without paperwork", "invalid")
+
+    raw = [l for l in (input.get("lines") or []) if l and l.get("itemId")]
+    if not raw:
+        raise ApiError("Add at least one line", "invalid")
+
+    at = b.now()
+    out: list[StockMovement] = []
+    seen_serials: set[str] = set()
+    for line in raw:
+        it = b.item(line.get("itemId"))
+        qty = b.dec(line.get("qty"))
+        if not qty > 0:
+            raise ApiError(f"{it.name}: quantity must be positive", "invalid")
+        unit_cost = b.dec(line.get("unitCost"))
+        if unit_cost < 0:
+            raise ApiError(f"{it.name}: unit cost cannot be negative", "invalid")
+
+        serials = [x.strip() for x in (line.get("serials") or []) if x and x.strip()]
+        if it.is_serialised:
+            # Incoming serials are NEW, so validate_serials() is the wrong check — that one asserts they
+            # are already in stock. What matters here is one per unit, and never a duplicate.
+            if len(serials) != int(qty):
+                raise ApiError(f"{it.name} is serialised — {int(qty)} serial number{'s' if qty != 1 else ''} required (got {len(serials)})", "invalid")
+            if len(set(serials)) != len(serials):
+                raise ApiError(f"{it.name}: the same serial appears twice", "invalid")
+            clash = seen_serials.intersection(serials)
+            if clash:
+                raise ApiError(f"Serial {sorted(clash)[0]} appears on more than one line", "invalid")
+            seen_serials.update(serials)
+            existing = Asset.objects.filter(serial__in=serials).values_list("serial", flat=True).first()
+            if existing:
+                raise ApiError(f"Serial {existing} is already in the asset register", "conflict")
+        elif serials:
+            raise ApiError(f"{it.name} is not serialised — remove the serial numbers", "invalid")
+
+        m = _pending_movement(actor, at, None, item=it, movement_type="receipt", qty=qty, location_to=loc,
+                              unit_cost=unit_cost, total_cost=b.round2(qty * unit_cost), serials=serials or None,
+                              attachment_ids=attachment_ids,
+                              source_ref={"model": "DirectReceipt", "label": reason})
+        out.append(m)
+    return out

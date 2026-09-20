@@ -36,7 +36,7 @@ COMMANDS: dict[str, Handler] = {
     "revokeMembership": lambda a, d, f: projects.revoke_membership(a, d.get("membershipId")),
     # documents & attachments
     "updateDocument": lambda a, d, f: S.document(documents.update_document(a, d.get("documentId"), _in(d))),
-    "requestExtraction": lambda a, d, f: S.extraction(extractions.request_extraction(a, d.get("sourceKind") or "document", d.get("sourceId"))),
+    "requestExtraction": lambda a, d, f: S.extraction(extractions.request_extraction(a, d.get("sourceKind") or "document", d.get("sourceId"), d.get("target") or "document_meta")),
     "acceptExtraction": lambda a, d, f: S.document(extractions.accept_extraction(a, d.get("extractionId"), d.get("values") or {})),
     "rejectExtraction": lambda a, d, f: S.extraction(extractions.reject_extraction(a, d.get("extractionId"))),
     "addDocument": lambda a, d, f: S.document(documents.add_document(a, d.get("projectId"), _in(d), f)),
@@ -58,6 +58,7 @@ COMMANDS: dict[str, Handler] = {
     "writeOff": lambda a, d, f: S.movement(stock.write_off(a, _in(d))),
     "addVendor": lambda a, d, f: S.vendor(stock.add_vendor(a, _in(d))),
     "addItem": lambda a, d, f: S.item(stock.add_item(a, _in(d))),
+    "receiveStock": lambda a, d, f: [S.movement(m) for m in stock.receive_stock(a, _in(d))],
     "addLocation": lambda a, d, f: S.location(stock.add_location(a, _in(d))),
     "transferStock": lambda a, d, f: S.movement(stock.transfer_stock(a, _in(d))),
     "startCount": lambda a, d, f: S.stock_count(stock.start_count(a, d.get("locationId"), d)),

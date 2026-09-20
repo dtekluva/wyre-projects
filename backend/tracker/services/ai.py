@@ -130,3 +130,71 @@ def read_document(data: bytes, mime: str, filename: str = "") -> dict:
             "cost_usd": round(u.input_tokens * PRICE_IN + u.output_tokens * PRICE_OUT, 6),
         },
     }
+
+
+# ---- delivery notes / stock lists -> lines you can receive ------------------------------------------
+
+STOCK_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["reference", "supplier", "dated", "lines", "confidence", "notes"],
+    "properties": {
+        "reference": {"type": ["string", "null"], "description": "Delivery note / waybill / invoice number as printed"},
+        "supplier": {"type": ["string", "null"], "description": "Who supplied the goods"},
+        "dated": {"type": ["string", "null"], "description": "Date on the document as YYYY-MM-DD, or null"},
+        "lines": {
+            "type": "array",
+            "description": "One entry per line of goods. Skip totals, VAT, delivery charges and anything that is not a physical item.",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["description", "qty", "unit", "unit_cost", "serials"],
+                "properties": {
+                    "description": {"type": "string", "description": "The item as written on the page, verbatim"},
+                    "qty": {"type": "number", "description": "Quantity delivered"},
+                    "unit": {"type": ["string", "null"], "description": "pcs, m, kg, rolls — null if not stated"},
+                    "unit_cost": {"type": ["number", "null"], "description": "Price per unit if printed, else null. Never divide a total to invent one."},
+                    "serials": {"type": "array", "items": {"type": "string"},
+                                "description": "Serial numbers printed for THIS line, verbatim. Empty if none."},
+                },
+            },
+        },
+        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+        "notes": {"type": ["string", "null"], "description": "Anything a human should check — unreadable digits, a serial you are unsure of, quantities that do not add up"},
+    },
+}
+
+STOCK_SYSTEM = """You read delivery notes, waybills and supplier invoices for a solar engineering company, so their store keeper does not have to retype them.
+
+Report only what is printed. One entry per line of goods; skip subtotals, VAT, delivery charges and anything that is not a physical item.
+
+Serial numbers are the point of this. They are long, they are often handwritten, and a store keeper typing twenty of them off a page is where errors come from. Copy each one character by character against the line it belongs to. Do not normalise them, do not correct what looks like a typo, do not expand a range like "1001-1005" into five numbers unless the page itself lists them separately. If a character is genuinely unreadable, say which serial and which position in notes rather than guessing — a wrong serial follows a physical unit around for its whole warranty life."""
+
+
+def read_stock_document(data: bytes, mime: str, filename: str = "") -> dict:
+    """Same shape as read_document: {'fields', 'transcript', 'usage'}."""
+    client = _client()
+    tool = {"name": "record_delivery", "description": "Record the goods listed on this document.",
+            "input_schema": STOCK_SCHEMA, "strict": True}
+    msg = client.messages.create(
+        model=MODEL, max_tokens=16000, system=STOCK_SYSTEM,
+        thinking={"type": "adaptive"}, tools=[tool],
+        messages=[{"role": "user", "content": [
+            _source_block(data, mime),
+            {"type": "text", "text": (
+                f"File name: {filename or 'unknown'}\n\n"
+                "First transcribe every line of this document verbatim, including every serial number. "
+                "Then call record_delivery."
+            )},
+        ]}],
+    )
+    if msg.stop_reason == "refusal":
+        raise AiError(f"Claude declined to read this document ({getattr(msg.stop_details, 'category', 'unknown')})")
+    transcript = "\n".join(b.text for b in msg.content if b.type == "text").strip()
+    fields = next((b.input for b in msg.content if b.type == "tool_use" and b.name == "record_delivery"), None)
+    if fields is None:
+        raise AiError("Claude read the document but returned no lines")
+    u = msg.usage
+    return {"fields": fields, "transcript": transcript,
+            "usage": {"model": msg.model, "input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
+                      "cost_usd": round(u.input_tokens * PRICE_IN + u.output_tokens * PRICE_OUT, 6)}}
