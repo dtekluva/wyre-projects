@@ -90,6 +90,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-/api/v1}
+        VITE_BUILD: ${VITE_BUILD:-unknown}
     image: wyre-tracker-web:latest
     restart: unless-stopped
     logging: *logging

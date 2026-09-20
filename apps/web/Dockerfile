@@ -16,6 +16,9 @@ COPY . .
 # Relative by default: the app and the API sit behind one nginx, so there is one origin and no CORS.
 ARG VITE_API_URL=/api/v1
 ENV VITE_API_URL=$VITE_API_URL
+# so "which build are you running?" has an answer in the console and on <html data-build>
+ARG VITE_BUILD=unknown
+ENV VITE_BUILD=$VITE_BUILD
 RUN npm run build
 
 FROM nginx:1.27-alpine
