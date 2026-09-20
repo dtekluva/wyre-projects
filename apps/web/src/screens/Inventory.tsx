@@ -112,10 +112,11 @@ function Catalogue() {
   const [lvl, setLvl] = useState("0"); const [rq, setRq] = useState("0"); const [vend, setVend] = useState("");
   const [vName, setVName] = useState(""); const [vCat, setVCat] = useState("");
 
-  if (!may) return null;
-
   const head = <div className="card__head"><div className="card__title">Catalogue</div>
     <span className="sm muted">{api.items.length} item{api.items.length === 1 ? "" : "s"} · {api.vendors.length} vendor{api.vendors.length === 1 ? "" : "s"}</span></div>;
+
+  if (!may) return <div className="card" style={{ marginBottom: 20 }}>{head}
+    <div className="card__body"><Note tone="warn">Only a Director, Tech Lead or Store Keeper can change the catalogue.</Note></div></div>;
 
   if (!tab) return <div className="card" style={{ marginBottom: 20 }}>{head}
     <div className="card__body row" style={{ gap: 8 }}>
@@ -188,7 +189,15 @@ function ReceiveFromNote() {
   const [picked, setPicked] = useState<Record<number, string>>({});
   const [qty, setQty] = useState<Record<number, string>>({});
   const [serials, setSerials] = useState<Record<number, string>>({});
-  if (!may) return null;
+
+  // Rendering nothing for someone without the permission hides the feature entirely — they cannot tell
+  // it exists, let alone what to do about it. The sibling cards say why; so does this one.
+  if (!may) return <div className="card" style={{ marginBottom: 20 }}>
+    <div className="card__head"><div className="card__title">Receive stock from a delivery note</div>
+      <span className="sm muted">read by Claude · every line still gets checked</span></div>
+    <div className="card__body"><Note tone="warn">Only a Store Keeper can take stock in.
+      Roles stack, so a Director can add <b>Store Keeper</b> to their own account under Users &amp; roles and do it themselves.</Note></div>
+  </div>;
 
   const ext = (api.extractions ?? []).find((e) => e.id === extId);
   const f = (ext?.fields ?? {}) as unknown as { reference?: string; supplier?: string; dated?: string; lines?: ReadLine[]; notes?: string; confidence?: string };
