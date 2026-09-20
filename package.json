@@ -13,7 +13,8 @@
     "build": "npm run tokens && npm run build -w @wyre/web",
     "typecheck": "npm run typecheck -w @wyre/web",
     "test:api": "esbuild packages/api/src/index.ts --bundle --platform=node --format=esm --outfile=packages/api/dist/api.mjs --log-level=warning && node packages/api/test/flow.test.mjs",
-    "test": "npm run typecheck && npm run test:api"
+    "test": "npm run typecheck && npm run test:api && npm run test:wired",
+    "test:wired": "node packages/api/test/wired.test.mjs"
   },
   "engines": {
     "node": ">=18"
