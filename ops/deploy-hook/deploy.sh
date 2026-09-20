@@ -22,7 +22,7 @@ up()     { echo "[$(t)] restarting"; $COMPOSE up -d api scheduler web 2>&1 | gre
 health() {
   echo "[$(t)] health check"
   for i in $(seq 1 40); do
-    code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/v1/snapshot/ || true)
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: ${HEALTH_HOST:-tracker.wyreng.com}" http://127.0.0.1:8080/api/v1/snapshot/ || true)
     if [ "$code" = "401" ]; then echo "[$(t)] api up (401 as expected)"; return 0; fi
     sleep 3
   done
