@@ -609,6 +609,23 @@ export class MockApi {
   // Phase 2 — money
   // ======================================================================
   listCostItems(projectId: string) { return this.costItems.filter((c) => c.projectId === projectId); }
+  /** Correct a budget line. A checked one goes back for checking — only checked lines count toward
+   *  planned spend, so a changed number must not inherit the old one's sign-off. */
+  updateCostItem(actorId: string, costItemId: string, input: { label?: string; category?: CostCategory; plannedAmount?: number }) {
+    const c = this.costItems.find((x) => x.id === costItemId);
+    if (!c) throw new ApiError("Budget line not found", "not_found");
+    this.require(actorId, "cost.create", c.projectId);
+    const changed: string[] = [];
+    if (input.label !== undefined) { const l = input.label.trim(); if (!l) throw new ApiError("Label is required", "invalid"); if (l !== c.label) { c.label = l; changed.push("label"); } }
+    if (input.category !== undefined && input.category !== c.category) { c.category = input.category; changed.push("category"); }
+    if (input.plannedAmount !== undefined) { const a = Number(input.plannedAmount); if (!(a > 0)) throw new ApiError("Amount must be greater than zero", "invalid"); if (a !== c.plannedAmount) { c.plannedAmount = a; changed.push("amount"); } }
+    if (!changed.length) throw new ApiError("Nothing to change", "invalid");
+    const at = this.now();
+    c.updatedAt = at; c.updatedBy = actorId;
+    if (c.reviewStatus === "checked") { c.reviewStatus = "pending"; c.submittedBy = actorId; c.submittedAt = at; c.reviewVersion = (c.reviewVersion ?? 1) + 1; c.checkedBy = undefined; c.checkedAt = undefined; c.checkComment = undefined; }
+    this.emit();
+    return c;
+  }
   addCostItem(actorId: string, projectId: string, input: { category: CostCategory; label: string; plannedAmount: number }): CostItem {
     this.require(actorId, "cost.create", projectId);
     if (!(input.plannedAmount > 0) || !input.label.trim()) throw new ApiError("Label and a positive amount are required", "invalid");

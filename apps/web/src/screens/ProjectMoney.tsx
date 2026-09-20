@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
 import { Link, useOutletContext } from "react-router-dom";
-import { COST_CATEGORY_LABEL, ROLE_LABEL, fmtDate, naira, pct, relative, type CostCategory, type Project, type PurchaseOrder } from "@wyre/api";
+import { type CostItem, COST_CATEGORY_LABEL, ROLE_LABEL, fmtDate, naira, pct, relative, type CostCategory, type Project, type PurchaseOrder } from "@wyre/api";
 import { Thumbs } from "../components/Thumbs";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
@@ -89,8 +89,8 @@ export function ProjectMoney() {
           {m.planned === 0 && <Empty title="No checked budget lines yet" />}</div></div>
 
       <div className="card"><div className="card__head"><div className="card__title">Budget lines</div><span className="sm muted">{cost.length} lines · Finance checks</span></div>
-        <div className="table--wrap"><table className="table ledger"><thead><tr><th>Line</th><th>Category</th><th className="num">Planned</th><th>Status</th></tr></thead>
-          <tbody>{cost.map((c) => <tr key={c.id}><td>{c.label}<div className="sm muted">by {api.userName(c.submittedBy)} {relative(c.submittedAt)}</div></td><td>{COST_CATEGORY_LABEL[c.category]}</td><td className="num ns-mono">{naira(c.plannedAmount)}</td><td><ReviewBadge status={c.reviewStatus} /></td></tr>)}</tbody></table></div>
+        <div className="table--wrap"><table className="table ledger table--entry"><thead><tr><th>Line</th><th>Category</th><th className="num">Planned</th><th>Status</th><th></th></tr></thead>
+          <tbody>{cost.map((c) => <BudgetLine key={c.id} c={c} projectId={p.id} />)}</tbody></table></div>
         {api.can(user.id, "cost.create", p.id) && <div className="card__foot"><form className="form grow" onSubmit={(e) => { e.preventDefault(); if (safe(() => { api.addCostItem(user.id, p.id, { category: ciCat, label: ciLabel, plannedAmount: Number(ciAmt) }); }, "Budget line submitted for Finance check")) { setCiLabel(""); setCiAmt(""); } }}>
           <select className="ns-input" value={ciCat} onChange={(e) => setCiCat(e.target.value as CostCategory)}>{CATS.map((c) => <option key={c} value={c}>{COST_CATEGORY_LABEL[c]}</option>)}</select>
           <input className="ns-input" placeholder="Label" value={ciLabel} onChange={(e) => setCiLabel(e.target.value)} /><input className="ns-input" type="number" placeholder="Planned ₦" value={ciAmt} onChange={(e) => setCiAmt(e.target.value)} />
@@ -144,4 +144,44 @@ export function ProjectMoney() {
       </div>
     </div>
   );
+}
+
+
+/**
+ * A budget line, editable in place. Only CHECKED lines count toward planned spend, so saving a change
+ * to one that has been checked sends it back for checking — the row says so, rather than letting the
+ * number quietly stop counting.
+ */
+function BudgetLine({ c, projectId }: { c: CostItem; projectId: string }) {
+  const api = useApi(); const { user } = useAuth(); const safe = useSafe();
+  const may = api.can(user.id, "cost.create", projectId);
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(c.label);
+  const [cat, setCat] = useState<CostCategory>(c.category);
+  const [amt, setAmt] = useState(String(c.plannedAmount));
+
+  if (!editing) return <tr>
+    <td>{c.label}<div className="sm muted">by {api.userName(c.submittedBy)} {relative(c.submittedAt)}</div></td>
+    <td>{COST_CATEGORY_LABEL[c.category]}</td>
+    <td className="num ns-mono">{naira(c.plannedAmount)}</td>
+    <td><ReviewBadge status={c.reviewStatus} /></td>
+    <td className="num">{may && <button className="ns-btn ns-btn--ghost ns-btn--sm"
+      onClick={() => { setLabel(c.label); setCat(c.category); setAmt(String(c.plannedAmount)); setEditing(true); }}>Edit</button>}</td>
+  </tr>;
+
+  const save = () => {
+    if (safe(() => api.updateCostItem(user.id, c.id, { label, category: cat, plannedAmount: Number(amt) }),
+             c.reviewStatus === "checked" ? "Updated — back to pending check" : "Updated")) setEditing(false);
+  };
+  return <tr>
+    <td><input className="ns-input" value={label} onChange={(e) => setLabel(e.target.value)} />
+      {c.reviewStatus === "checked" && <div className="sm muted">saving sends this back for checking</div>}</td>
+    <td><select className="ns-input" value={cat} onChange={(e) => setCat(e.target.value as CostCategory)}>
+      {CATS.map((x) => <option key={x} value={x}>{COST_CATEGORY_LABEL[x]}</option>)}</select></td>
+    <td className="num"><input className="ns-input" type="number" min="0" value={amt} onChange={(e) => setAmt(e.target.value)} /></td>
+    <td className="cell-mid"><ReviewBadge status={c.reviewStatus} /></td>
+    <td className="num"><span className="row" style={{ gap: 6 }}>
+      <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={save}>Save</button>
+      <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setEditing(false)}>Cancel</button></span></td>
+  </tr>;
 }

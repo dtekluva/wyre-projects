@@ -35,6 +35,53 @@ def add_cost_item(actor: User, project_id: str, input: dict) -> CostItem:
     return c
 
 
+def update_cost_item(actor: User, cost_item_id: str, input: dict) -> CostItem:
+    """Correct a budget line.
+
+    Only checked lines count toward planned spend (see money()), so changing one that has already
+    been checked sends it back for checking: somebody verified a number, and their sign-off cannot
+    carry over to a different one. While it is pending it drops out of the planned total, which is
+    the honest answer — the budget shows what has actually been agreed.
+    """
+    c = b.get_or_404(CostItem, cost_item_id, "Budget line")
+    b.require(actor, "cost.create", c.project_id)
+
+    changed: list[str] = []
+    before = b.dec(c.planned_amount)
+    if "label" in input and input["label"] is not None:
+        label = b.clean(input["label"])
+        if not label:
+            raise ApiError("Label is required", "invalid")
+        if label != c.label:
+            c.label = label; changed.append("label")
+    if "category" in input and input["category"]:
+        if input["category"] not in COST_CATEGORY_LABEL:
+            raise ApiError("Unknown cost category", "invalid")
+        if input["category"] != c.category:
+            c.category = input["category"]; changed.append("category")
+    if "plannedAmount" in input and input["plannedAmount"] is not None:
+        amount = b.round2(b.dec(input["plannedAmount"]))
+        if not amount > 0:
+            raise ApiError("Amount must be greater than zero", "invalid")
+        if amount != before:
+            c.planned_amount = amount; changed.append("amount")
+
+    if not changed:
+        raise ApiError("Nothing to change", "invalid")
+
+    at = b.now()
+    c.updated_at, c.updated_by = at, actor
+    if c.review_status == "checked":
+        b.new_review(c, actor, at, version=(c.review_version or 1) + 1)
+    c.save()
+    money_note = f" {b.fmt(before)} → {b.fmt(c.planned_amount)}" if "amount" in changed else ""
+    b.log(c.project_id, actor, "cost_item",
+          f'Budget line "{c.label}" {", ".join(changed)} updated{money_note}'
+          + (" (back to pending check)" if c.review_status == "pending" else ""),
+          None, {"model": "CostItem", "id": c.id})
+    return c
+
+
 def po_remaining(pi: PurchaseItem) -> Decimal:
     pending = Decimal("0")
     for g in GoodsReceipt.objects.filter(po_id=pi.po_id, review_status="pending"):

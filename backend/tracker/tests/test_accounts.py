@@ -439,3 +439,55 @@ class GateWithoutCompleteEvidenceTest(TestCase):
         ap = gates.request_gate(self.lead, self.p.id)
         self.assertIn("All gate-0 evidence checked", ap.description)
         self.assertNotIn("outstanding", ap.description)
+
+
+class EditBudgetLineTest(TestCase):
+    """Budget lines are editable. Only checked lines count toward planned spend, so editing a checked
+    one must send it back for checking rather than letting the new number inherit the old sign-off."""
+
+    def setUp(self):
+        from django.utils import timezone
+        from tracker.models import Project
+        seed_rbac()
+        def mk(uid, role):
+            u = User.objects.create(id=uid, username=uid, name=uid, email=f"{uid}@wyreng.com")
+            u.set_password("x" * 12); u.save(); u.roles.set(Role.objects.filter(code=role)); return u
+        self.lead = mk("u_bl", "techlead"); self.fin = mk("u_bf", "finance"); self.tech = mk("u_bt", "tech")
+        now = timezone.now()
+        self.p = Project.objects.create(id="p_b", code="WYR-2026-904", name="Budget", client_name="C",
+            branch_name="B", location="L", project_type="solar_battery", stage=0, rag="green",
+            pm=self.lead, lead_engineer=self.lead, contract_value=10_000_000, approved_budget=8_000_000,
+            retention_percent=5, created_by=self.lead, updated_by=self.lead, created_at=now, updated_at=now)
+        from tracker.services import money
+        self.c = money.add_cost_item(self.lead, self.p.id, {"category": "equipment", "label": "Panels", "plannedAmount": 1_000_000})
+
+    def test_editing_a_checked_line_sends_it_back(self):
+        from tracker.services import money, review
+        review.check(self.fin, "cost_item", self.c.id, "checked")
+        self.assertEqual(money.money(self.p.id)["planned"], 1_000_000)
+
+        money.update_cost_item(self.lead, self.c.id, {"plannedAmount": 2_500_000})
+        self.c.refresh_from_db()
+        self.assertEqual(self.c.review_status, "pending", "a changed number needs checking again")
+        self.assertEqual(self.c.review_version, 2)
+        # with no checked line left, planned falls back to the project's approved budget
+        self.assertEqual(money.money(self.p.id)["planned"], 8_000_000)
+
+        review.check(self.fin, "cost_item", self.c.id, "checked")
+        self.assertEqual(money.money(self.p.id)["planned"], 2_500_000)
+
+    def test_validation_and_permission(self):
+        from tracker.services import money
+        for bad in ({"label": "  "}, {"plannedAmount": 0}, {"plannedAmount": -5}, {"category": "sandwich"}, {}):
+            with self.assertRaises(ApiError):
+                money.update_cost_item(self.lead, self.c.id, bad)
+        with self.assertRaises(ApiError):
+            money.update_cost_item(self.tech, self.c.id, {"label": "nope"})
+
+    def test_the_change_is_recorded(self):
+        from tracker.models import ChronologyEvent
+        from tracker.services import money
+        money.update_cost_item(self.lead, self.c.id, {"plannedAmount": 1_750_000})
+        ev = ChronologyEvent.objects.filter(project=self.p, event_type="cost_item").order_by("-occurred_at").first()
+        self.assertIn("amount updated", ev.summary)
+        self.assertIn("1,750,000", ev.summary, "the chronology shows what it became")

@@ -48,6 +48,7 @@ COMMANDS: dict[str, Handler] = {
     "decide": lambda a, d, f: S.approval(approvals.decide(a, d.get("approvalId"), d.get("decision"), d.get("comment"))),
     # money
     "addCostItem": lambda a, d, f: S.cost_item(money.add_cost_item(a, d.get("projectId"), _in(d))),
+    "updateCostItem": lambda a, d, f: S.cost_item(money.update_cost_item(a, d.get("costItemId"), _in(d))),
     "createPO": lambda a, d, f: S.purchase_order(money.create_po(a, d.get("projectId"), _in(d))),
     "receiveGoods": lambda a, d, f: S.goods_receipt(money.receive_goods(a, d.get("poId"), _in(d))),
     "raiseChangeOrder": lambda a, d, f: S.change_order(money.raise_change_order(a, d.get("projectId"), _in(d))),
