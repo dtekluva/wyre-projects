@@ -146,7 +146,7 @@ export class RemoteApi extends MockApi {
     wrap("requestGate", (a) => ({ name: "requestGate", body: { projectId: a[0] } }));
     wrap("decide", (a) => ({ name: "decide", body: { approvalId: a[0], decision: a[2], comment: a[3] } }));
     wrap("requestRetentionRelease", (a) => ({ name: "requestRetentionRelease", body: { projectId: a[1] } }));
-    for (const n of ["issueStock", "returnStock", "writeOff", "addLocation", "transferStock"]) wrap(n, (a, r) => ({ name: n, body: { input: withId(a[1], r) } }));
+    for (const n of ["issueStock", "returnStock", "writeOff", "addLocation", "transferStock", "addVendor", "addItem", "receiveStock"]) wrap(n, (a, r) => ({ name: n, body: { input: withId(a[1], r) } }));
     wrap("matchBill", (a) => ({ name: "matchBill", body: { billId: a[1], poId: a[2] } }));
     wrap("unmatchBill", (a) => ({ name: "unmatchBill", body: { billId: a[1] } }));
     wrap("startCount", (a, r) => ({ name: "startCount", body: { locationId: a[1], id: id(r) } }));
@@ -156,10 +156,7 @@ export class RemoteApi extends MockApi {
     wrap("resolveIssue", (a) => ({ name: "resolveIssue", body: { issueId: a[1], input: a[2] } }));
     wrap("addVisitPhotos", (a) => ({ name: "addVisitPhotos", body: { visitId: a[1], input: a[2] } }));
     wrap("updateWarrantyClaim", (a) => ({ name: "updateWarrantyClaim", body: { claimId: a[1], input: a[2] } }));
-    wrap("addVendor", (a, r) => ({ name: "addVendor", body: withId(a[1], r) }));
-    wrap("addItem", (a, r) => ({ name: "addItem", body: withId(a[1], r) }));
-    wrap("receiveStock", (a) => ({ name: "receiveStock", body: a[1] as unknown as Record<string, Json> }));
-    wrap("updateDocument", (a) => ({ name: "updateDocument", body: { documentId: a[1], ...(a[2] as object) } as Record<string, Json> }));
+    wrap("updateDocument", (a) => ({ name: "updateDocument", body: { documentId: a[1], input: a[2] as unknown as Json } }));
     wrap("requestExtraction", (a, r) => ({ name: "requestExtraction", body: { id: id(r), sourceKind: a[1], sourceId: a[2], target: a[3] ?? "document_meta", text: a[4] ?? "" } }));
     wrap("acceptExtraction", (a) => ({ name: "acceptExtraction", body: { extractionId: a[1], values: (a[2] ?? {}) as unknown as Json } }));
     wrap("rejectExtraction", (a) => ({ name: "rejectExtraction", body: { extractionId: a[1] } }));
