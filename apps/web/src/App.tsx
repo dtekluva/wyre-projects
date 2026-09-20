@@ -19,13 +19,14 @@ import { ProjectAssets } from "./screens/ProjectAssets";
 import { Inventory } from "./screens/Inventory";
 import { Reconciliation } from "./screens/Reconciliation";
 import { ProjectField } from "./screens/ProjectField";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FieldShell } from "./components/field/FieldShell";
 import { Forgot, SetPassword } from "./screens/SetPassword";
 import { FieldSignin, FieldHome, FieldIssues, FieldIssueNew, FieldIssueDetail, FieldVisits, FieldVisitNew, FieldVan, FieldQueue } from "./screens/field/FieldScreens";
 
 export function App() {
   return (
-    <AuthProvider><ToastProvider><FileViewerProvider>
+    <ErrorBoundary><AuthProvider><ToastProvider><FileViewerProvider>
       <RemoteBridge />
       <Routes>
         <Route path="forgot" element={<Forgot />} />
@@ -63,6 +64,6 @@ export function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
-    </FileViewerProvider></ToastProvider></AuthProvider>
+    </FileViewerProvider></ToastProvider></AuthProvider></ErrorBoundary>
   );
 }

@@ -42,10 +42,16 @@ export function Inventory() {
       <ReceiveFromNote />
       <div className="card table--wrap"><div className="card__head"><div className="card__title">Stock on hand</div><span className="sm muted">click a row to filter the ledger</span></div>
         <table className="table"><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th className="num">On hand</th><th className="num">Unit cost</th><th className="num">Value</th><th className="num">Reorder at</th><th></th></tr></thead>
-          <tbody>{api.items.map((it) => { const b = bal.find((x) => x.itemId === it.id)!; const av = api.available(it.id); return <tr key={it.id} onClick={() => setFocus(focus === it.id ? "" : it.id)} style={{ cursor: "pointer", background: focus === it.id ? "var(--ns-color-surface-selected)" : undefined }}>
+          <tbody>{api.items.map((it) => { 
+            // An item exists the moment stock is submitted, but its movement is still PENDING, so it has
+            // no balance row yet. The old `!` assertion crashed the entire page on that first submit —
+            // TypeScript believed it, the browser did not.
+            const b = bal.find((x) => x.itemId === it.id)
+              ?? { itemId: it.id, locationId: mainLoc ?? "", qtyOnHand: 0, wacUnitCost: 0, value: 0, belowReorder: false };
+           const av = api.available(it.id); return <tr key={it.id} onClick={() => setFocus(focus === it.id ? "" : it.id)} style={{ cursor: "pointer", background: focus === it.id ? "var(--ns-color-surface-selected)" : undefined }}>
             <td className="ns-mono sm">{it.sku}</td><td>{it.name}{it.isSerialised && <span className="sm muted"> · serialised</span>}</td><td className="sm">{it.category}</td>
             <td className="num ns-mono">{b.qtyOnHand} {it.unit}{av !== b.qtyOnHand && <div className="sm muted">{av} free</div>}</td><td className="num ns-mono">{naira(b.wacUnitCost)}</td><td className="num ns-mono">{naira(b.value)}</td><td className="num ns-mono muted">{it.reorderLevel}</td>
-            <td>{b.belowReorder ? <Badge variant="danger">reorder {it.reorderQty}</Badge> : b.qtyOnHand <= it.reorderLevel * 1.5 ? <Badge variant="warning">low</Badge> : null}</td></tr>; })}</tbody></table></div>
+            <td>{b.qtyOnHand === 0 && av === 0 ? <Badge variant="neutral">awaiting check</Badge> : b.belowReorder ? <Badge variant="danger">reorder {it.reorderQty}</Badge> : b.qtyOnHand <= it.reorderLevel * 1.5 ? <Badge variant="warning">low</Badge> : null}</td></tr>; })}</tbody></table></div>
 
       <div className="workspace" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 20 }}>
         <div className="card"><div className="card__head"><div className="card__title">Locations</div><span className="sm muted">{locs.length}</span></div>
@@ -152,7 +158,11 @@ function ReceiveFromNote() {
       attachmentIds: ext?.sourceId ? [ext.sourceId] : ["typed"],
       lines: payload,
     }), "Submitted — each line is pending a check");
-    if (ok) { if (ext) api.rejectExtraction(user.id, ext.id); reset(); }
+    if (!ok) return;
+    // Best-effort tidy-up: the snapshot that comes back from receiveStock may already have moved this
+    // row on, and a failure here must not take the page down after the stock has been accepted.
+    if (ext) { try { api.rejectExtraction(user.id, ext.id); } catch { /* already gone */ } }
+    reset();
   };
 
   return <div className="card" style={{ marginBottom: 20 }}>
