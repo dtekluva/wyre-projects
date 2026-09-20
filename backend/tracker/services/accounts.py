@@ -104,14 +104,14 @@ def _send_invite(user: User, actor: User) -> bool:
     return _send(
         user, f"{actor.name} has invited you to Wyre Tracker",
         preheader=f"Set your password and sign in as {user.username}.",
-        heading="You have an account",
+        heading="You have been invited",
         greeting=f"Hi {user.name.split(' ')[0]},",
         body_html=(f"<b>{escape(actor.name)}</b> has set up a Wyre Tracker account for you. It is where "
                    f"Wyre runs its projects — site visits, documents, approvals and the evidence behind them. "
                    f"Choose a password and you are in."),
         text_body=(f"{actor.name} has set up a Wyre Tracker account for you. Choose a password and you are in."),
         rows=[("Username", user.username), ("Your roles", roles), ("Invited by", actor.name)],
-        action="Choose your password",
+        action="Accept invite",
         url=_link("invite", tokens.make(user, tokens.INVITE)),
         note="This link works once and expires in 7 days. If it has run out, ask whoever invited you to send another.",
         footer="You are receiving this because a Wyre Tracker administrator created an account for this address.")
