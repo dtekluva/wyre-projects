@@ -20,7 +20,11 @@ from . import mailer, tokens
 
 log = logging.getLogger(__name__)
 
-USERNAME_RE = re.compile(r"^[a-z0-9]+(?:\.[a-z0-9]+)+$")   # firstname.lastname
+# Deliberately permissive (2026-09-20): firstname.lastname was a convention, not a requirement, and it
+# excluded single-word handles, initials and anything with a hyphen. Still an identifier, though — it has
+# to survive a URL, a login box and a sort, so no spaces, no @, and it starts and ends alphanumeric.
+USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,38}[a-z0-9]$")
+USERNAME_RULE = "Username can use letters, numbers, dots, dashes and underscores (2-40 characters)"
 
 
 def _link(path: str, token: str) -> str:
@@ -61,7 +65,7 @@ def invite_user(actor: User, input: dict) -> dict:
     if "@" not in email or "." not in email.split("@")[-1]:
         raise ApiError("A valid email address is required", "invalid")
     if not USERNAME_RE.match(username):
-        raise ApiError("Username must be firstname.lastname", "invalid")
+        raise ApiError(USERNAME_RULE, "invalid")
     if not role_codes:
         raise ApiError("Pick at least one role", "invalid")
     known = set(Role.objects.values_list("code", flat=True))

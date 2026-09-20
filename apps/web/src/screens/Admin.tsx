@@ -34,7 +34,7 @@ function InviteUser() {
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [username, setUsername] = useState("");
   const [roles, setRoles] = useState<RoleCode[]>([]); const [open, setOpen] = useState(false);
   const toggle = (r: RoleCode) => setRoles((cur) => cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r]);
-  // firstname.lastname, offered but overridable
+  // firstname.lastname is offered as a convenience, not a rule — anything identifier-shaped is fine
   const suggest = (n: string) => n.trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 2).join(".").replace(/[^a-z0-9.]/g, "");
 
   if (!open) return <div className="card"><div className="card__body row">
@@ -51,7 +51,8 @@ function InviteUser() {
         <label className="ns-field"><span className="ns-field__label">Work email</span>
           <input className="ns-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
         <label className="ns-field"><span className="ns-field__label">Username</span>
-          <input className="ns-input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="firstname.lastname" /></label>
+          <input className="ns-input" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="e.g. ada.obi, ada, a.obi" />
+          <span className="sm muted">Letters, numbers, dots, dashes, underscores.</span></label>
       </div>
       <div><div className="ns-field__label">Roles</div>
         <div className="row row--wrap" style={{ gap: 6, marginTop: 6 }}>

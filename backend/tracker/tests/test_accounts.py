@@ -53,7 +53,10 @@ class AccountsTest(TestCase):
         with mock.patch.object(accounts.mailer, "configured", return_value=False):
             self.err("invalid", self.invite, name="")
             self.err("invalid", self.invite, email="nope")
-            self.err("invalid", self.invite, username="NoDot")
+            self.err("invalid", self.invite, username="a b")        # no spaces
+            self.err("invalid", self.invite, username="x")           # too short
+            self.err("invalid", self.invite, username=".leading")    # must start alphanumeric
+            self.err("invalid", self.invite, username="a" * 41)      # too long
             self.err("invalid", self.invite, roles=[])
             self.err("invalid", self.invite, roles=["wizard"])
             self.invite()
@@ -104,6 +107,14 @@ class AccountsTest(TestCase):
             accounts.set_password(tokens.make(u, tokens.INVITE), tokens.INVITE, "now i have one")
             self.err("conflict", accounts.resend_invite, self.boss, u.id)
             self.err("conflict", accounts.revoke_invite, self.boss, u.id)
+
+    def test_single_word_and_hyphenated_usernames_are_fine(self):
+        """The firstname.lastname rule was a convention; these were all wrongly refused before."""
+        with mock.patch.object(accounts.mailer, "configured", return_value=False):
+            for i, name in enumerate(["ada", "a.obi", "ada-obi", "ada_obi", "ada.o.obi", "tech01"]):
+                u = accounts.invite_user(self.boss, {"name": f"P{i}", "email": f"p{i}@wyreng.com",
+                                                     "username": name, "roles": ["tech"]})["user"]
+                self.assertEqual(u.username, name)
 
     def test_revoke_deletes_a_pending_invite(self):
         with mock.patch.object(accounts.mailer, "configured", return_value=False):

@@ -505,7 +505,8 @@ export class MockApi {
     const name = input.name.trim(), email = input.email.trim().toLowerCase(), username = input.username.trim().toLowerCase();
     if (!name) throw new ApiError("Name is required", "invalid");
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new ApiError("A valid email address is required", "invalid");
-    if (!/^[a-z0-9]+(?:\.[a-z0-9]+)+$/.test(username)) throw new ApiError("Username must be firstname.lastname", "invalid");
+    // mirrors USERNAME_RE in backend/tracker/services/accounts.py
+    if (!/^[a-z0-9][a-z0-9._-]{0,38}[a-z0-9]$/.test(username)) throw new ApiError("Username can use letters, numbers, dots, dashes and underscores (2-40 characters)", "invalid");
     if (!input.roles.length) throw new ApiError("Pick at least one role", "invalid");
     if (this.users.some((u) => u.username === username)) throw new ApiError(`${username} is already taken`, "conflict");
     if (this.users.some((u) => u.email.toLowerCase() === email)) throw new ApiError(`${email} already has an account`, "conflict");
