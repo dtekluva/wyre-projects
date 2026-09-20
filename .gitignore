@@ -24,3 +24,7 @@ backend/.env.docker
 !.env.prod.example
 apps/web/tsconfig.tsbuildinfo
 *.tsbuildinfo
+
+# deploy hook state on the production box
+.deployed
+backend/ci.sqlite3

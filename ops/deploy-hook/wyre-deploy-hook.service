@@ -1,0 +1,15 @@
+[Unit]
+Description=Wyre Tracker deploy webhook (GitHub Actions → this box)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/wyre-deploy-hook.env
+ExecStart=/usr/bin/python3 /opt/wyre-tracker/ops/deploy-hook/hook.py
+WorkingDirectory=/opt/wyre-tracker
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
