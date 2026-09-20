@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
 import { ASSET_TYPES, MOVEMENT_LABEL, fmtDate, naira, relative, type AssetType, type MovementType, type StockCount } from "@wyre/api";
 import { useApi } from "../lib/useApi";
+import { useWaitFor } from "../lib/useWaitFor";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { listen, speechSupported } from "../lib/dictation";
@@ -202,6 +203,7 @@ function ReceiveFromNote() {
   </div>;
 
   const ext = (api.extractions ?? []).find((e) => e.id === extId);
+  useWaitFor(!!ext && (ext.status === "queued" || ext.status === "running"));
   const f = (ext?.fields ?? {}) as unknown as { reference?: string; supplier?: string; dated?: string; lines?: ReadLine[]; notes?: string; confidence?: string };
   const lines = f.lines ?? [];
 
@@ -258,7 +260,7 @@ function ReceiveFromNote() {
             }, "Reading it — this takes a few seconds");
           }} required label="Delivery note or photo" />
         </> : <Dictate onDone={(text) => safe(() => { const e = api.requestExtraction(user.id, "dictation", "", "stock_lines", text); setExtId(e.id); }, "Working out what you said")} />}
-      </> : ext.status === "queued" || ext.status === "running" ? <Note tone="info">Reading the note…</Note>
+      </> : ext.status === "queued" || ext.status === "running" ? <Note tone="info">Reading it… this usually takes under a minute.</Note>
       : ext.status === "failed" ? <Note tone="danger">Could not read it: {ext.error}
           <button className="ns-btn ns-btn--ghost ns-btn--sm" style={{ marginLeft: 8 }} onClick={() => { setExtId(""); setFile([]); }}>Start again</button></Note>
       : <>

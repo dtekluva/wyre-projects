@@ -4,6 +4,7 @@ import { FileLink } from "../components/FileLink";
 import { useOutletContext } from "react-router-dom";
 import { DOC_TYPE_LABEL, STAGES, bytes, fmtDate, relative, type Attachment, type DocType, type Document, type Project } from "@wyre/api";
 import { useApi } from "../lib/useApi";
+import { useWaitFor } from "../lib/useWaitFor";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { Badge, Empty, Note, ReviewBadge } from "../components/ui";
@@ -53,6 +54,7 @@ function Reading({ doc }: { doc: Document }) {
   const [open, setOpen] = useState(false);
   const may = api.can(user.id, "document.update", doc.projectId);
   const ext = (api.extractions ?? []).find((e) => e.sourceId === doc.id && !["accepted", "rejected"].includes(e.status));
+  useWaitFor(!!ext && (ext.status === "queued" || ext.status === "running"));
   if (!may) return null;
 
   if (!ext) return <button className="ns-btn ns-btn--ghost ns-btn--sm" title="Read this file and suggest its details"
