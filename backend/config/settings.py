@@ -175,6 +175,11 @@ if not DEBUG:
 
 # Same-origin deployments (app and API behind one nginx) send no Origin header worth checking, so this
 # list stays empty there; it exists for the split-origin dev setup.
+# --- Reading documents with Claude (spec §9). Unset the key and the feature is inert: extractions are
+# refused with a clear message rather than silently doing nothing.
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-5").strip()
+
 CORS_ALLOWED_ORIGINS = [o for o in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",") if o]
 CORS_ALLOW_CREDENTIALS = False
 if DEBUG:

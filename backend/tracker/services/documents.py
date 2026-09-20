@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from datetime import datetime, time, timezone as dt_timezone
 import secrets
 from typing import Optional
 
@@ -45,6 +46,56 @@ def add_document(actor: User, project_id: str, input: dict, upload=None) -> Docu
         doc.file.save(upload.name, upload, save=False)
     doc.save()
     b.log(project_id, actor, "document_added", f'{DOC_TYPE_LABEL[doc_type]} — "{title}" submitted (pending check)', None, {"model": "Document", "id": doc.id})
+    return doc
+
+
+def update_document(actor: User, document_id: str, input: dict) -> Document:
+    """Correct a document's metadata. The file itself is never touched — originals are immutable (§9);
+    a new file means a new version via add_document.
+
+    Editing a document that has already been checked sends it back for checking (§4.13): somebody
+    verified the old values, and their sign-off cannot carry over to values they never saw.
+    """
+    doc = b.get_or_404(Document, document_id, "Document")
+    b.require(actor, "document.update", doc.project_id)
+
+    changed: list[str] = []
+    if "docType" in input and input["docType"]:
+        if input["docType"] not in DOC_TYPE_LABEL:
+            raise ApiError("Unknown document type", "invalid")
+        if input["docType"] != doc.doc_type:
+            doc.doc_type = input["docType"]; changed.append("type")
+    if "title" in input and input["title"] is not None:
+        title = b.clean(input["title"])
+        if not title:
+            raise ApiError("Title is required", "invalid")
+        if title != doc.title:
+            doc.title = title; changed.append("title")
+    if "issuer" in input:
+        issuer = b.clean(input.get("issuer")) or None
+        if issuer != doc.issuer:
+            doc.issuer = issuer; changed.append("issuer")
+    if "issuedAt" in input and input["issuedAt"]:
+        issued = b.to_date(input["issuedAt"], "Issue date")
+        if issued and (doc.issued_at is None or doc.issued_at.date() != issued):
+            doc.issued_at = datetime.combine(issued, time.min, tzinfo=dt_timezone.utc); changed.append("issued")
+    if "expiresAt" in input:
+        expires = b.to_date(input.get("expiresAt"), "Expiry") if input.get("expiresAt") else None
+        if expires != doc.expires_at:
+            doc.expires_at = expires; changed.append("expiry")
+
+    if not changed:
+        raise ApiError("Nothing to change", "invalid")
+
+    at = b.now()
+    doc.updated_at, doc.updated_by = at, actor
+    if doc.review_status == "checked":
+        b.new_review(doc, actor, at, version=(doc.review_version or 1) + 1)
+    doc.save()
+    b.log(doc.project_id, actor, "document_added",
+          f'{DOC_TYPE_LABEL[doc.doc_type]} — "{doc.title}" {", ".join(changed)} updated'
+          + (" (back to pending check)" if doc.review_status == "pending" else ""),
+          None, {"model": "Document", "id": doc.id})
     return doc
 
 

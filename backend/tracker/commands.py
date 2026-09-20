@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from . import serializers as S
 from .errors import ApiError
-from .services import accounts, approvals, documents, field, gates, money, projects, recon, review, stock
+from .services import accounts, approvals, extractions, documents, field, gates, money, projects, recon, review, stock
 
 Handler = Callable[[Any, dict, Any], Any]
 
@@ -35,6 +35,10 @@ COMMANDS: dict[str, Handler] = {
     "assignCommissioning": lambda a, d, f: S.project(projects.assign_commissioning(a, d.get("projectId"), d.get("userId"))),
     "revokeMembership": lambda a, d, f: projects.revoke_membership(a, d.get("membershipId")),
     # documents & attachments
+    "updateDocument": lambda a, d, f: S.document(documents.update_document(a, d.get("documentId"), _in(d))),
+    "requestExtraction": lambda a, d, f: S.extraction(extractions.request_extraction(a, d.get("sourceKind") or "document", d.get("sourceId"))),
+    "acceptExtraction": lambda a, d, f: S.document(extractions.accept_extraction(a, d.get("extractionId"), d.get("values") or {})),
+    "rejectExtraction": lambda a, d, f: S.extraction(extractions.reject_extraction(a, d.get("extractionId"))),
     "addDocument": lambda a, d, f: S.document(documents.add_document(a, d.get("projectId"), _in(d), f)),
     "addAttachment": lambda a, d, f: S.attachment(documents.add_attachment(a, d.get("projectId"), _in(d), f)),
     "addEvidence": lambda a, d, f: S.attachment(documents.add_evidence(a, _in(d), f)),

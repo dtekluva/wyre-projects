@@ -57,6 +57,9 @@ class Command(BaseCommand):
             if now >= next_reconcile:
                 self.safely("run_alerts")
                 next_reconcile = now + timedelta(minutes=interval)
+            # Cheap when the queue is empty (one indexed count), so it rides the same tick as everything
+            # else rather than earning its own timer.
+            self.safely("run_extractions")
             if now >= next_digest:
                 args_ = ["--send"] if digest_on else []
                 if digest_to:

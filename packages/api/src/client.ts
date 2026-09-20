@@ -8,7 +8,7 @@ import * as seed2 from "./mock/data2";
 import * as seed3 from "./mock/data3";
 import {
   DOC_TYPE_LABEL, COST_CATEGORY_LABEL, MOVEMENT_LABEL, PROJECT_TYPE_LABEL, type ProjectType,
-  type User, type InviteInput, ASSET_TYPES, type Project, type ProjectMembership, type Document, type Attachment, type ChronologyEvent, type Approval, type Threshold,
+  type User, type InviteInput, type Extraction, ASSET_TYPES, type Project, type ProjectMembership, type Document, type Attachment, type ChronologyEvent, type Approval, type Threshold,
   type Stage, type GateStatus, type DocType, type RoleCode, type EventType, type ReviewStatus,
   type Vendor, type InventoryItem, type StockLocation, type CostItem, type PurchaseOrder, type PurchaseItem, type GoodsReceipt, type Asset,
   type StockMovement, type StockBalance, type Actual, type ChangeOrder, type Retention, type QbBill, type CostCategory, type ProjectMoney, type AssetType,
@@ -894,6 +894,20 @@ export class MockApi {
   mainLocationId(): string | undefined {
     const live = this.locations.filter((l) => l.isActive !== false);
     return (live.find((l) => l.type === "warehouse") ?? live[0])?.id;
+  }
+  extractions: Extraction[] = [];
+  listExtractions(sourceId: string) { return this.extractions.filter((e) => e.sourceId === sourceId && !["accepted", "rejected"].includes(e.status)); }
+  /** The demo build has no backend to read anything, so this reports that plainly rather than faking a result. */
+  requestExtraction(actorId: string, _sourceKind: string, sourceId: string): Extraction {
+    const doc = this.documents.find((d) => d.id === sourceId);
+    this.require(actorId, "document.update", doc?.projectId);
+    throw new ApiError("Reading documents needs the live backend — this is the demo build", "conflict");
+  }
+  acceptExtraction(_actorId: string, _id: string, _values?: Record<string, unknown>): never {
+    throw new ApiError("Reading documents needs the live backend", "conflict");
+  }
+  rejectExtraction(_actorId: string, _id: string): never {
+    throw new ApiError("Reading documents needs the live backend", "conflict");
   }
   addVendor(actorId: string, input: { name: string; category?: string }): Vendor {
     this.require(actorId, "catalogue.manage");

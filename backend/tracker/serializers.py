@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from . import rbac
-from .models import (Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
+from .models import (Extraction, Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
                      InventoryItem, Issue, Project, ProjectMembership, PurchaseOrder, QbBill, Retention, SiteVisit, StockCount, StockLocation, StockMovement,
                      Threshold, User, Vendor, WarrantyClaim)
 from .services.base import iso
@@ -87,6 +87,14 @@ def threshold(t: Threshold) -> dict:
     except ValueError:
         v = t.value
     return {"key": t.key, "label": t.label, "value": v, "unit": t.unit or None, "effectiveFrom": d8(t.effective_from), "updatedBy": t.updated_by_id}
+
+
+def extraction(e) -> dict:
+    return {"id": e.id, "projectId": e.project_id, "sourceKind": e.source_kind, "sourceId": e.source_id,
+            "target": e.target, "status": e.status, "transcript": e.transcript or "", "fields": e.fields,
+            "modelName": e.model_name, "costUsd": float(e.cost_usd or 0), "error": e.error or "",
+            "requestedBy": e.requested_by_id, "requestedAt": iso(e.requested_at),
+            "finishedAt": iso(e.finished_at), "decidedBy": e.decided_by_id, "decidedAt": iso(e.decided_at)}
 
 
 def vendor(v: Vendor) -> dict:
@@ -238,6 +246,8 @@ def snapshot(u: User) -> dict:
         "approvals": [approval(a) for a in Approval.objects.all().order_by("-requested_at")] if sees_approvals else [],
         "thresholds": [threshold(t) for t in Threshold.objects.all().order_by("key")],
         "vendors": [vendor(v) for v in Vendor.objects.all().order_by("name")],
+        # only unresolved readings: an accepted one has become the document's own fields
+        "extractions": [extraction(e) for e in scoped(Extraction.objects.exclude(status__in=["accepted", "rejected"])).order_by("-requested_at")[:200]],
         "locations": [location(l) for l in StockLocation.objects.all().order_by("id")],
         "items": [item(i) for i in InventoryItem.objects.all().order_by("id")] if sees_stock else [],
         "costItems": [cost_item(c) for c in CostItem.objects.all().order_by("created_at")] if sees_money else [],

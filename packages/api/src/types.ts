@@ -20,6 +20,15 @@ export interface User {
   /** "invited" = account created but the person has never followed their link and set a password */
   status?: "active" | "invited" | "disabled";
 }
+export type ExtractionStatus = "queued" | "running" | "done" | "failed" | "accepted" | "rejected";
+/** What a model read from a file. A proposal — never a record until a person accepts it. */
+export interface Extraction {
+  id: string; projectId?: string; sourceKind: string; sourceId: string; target: string;
+  status: ExtractionStatus; transcript: string; fields: Record<string, string | null> | null;
+  modelName: string; costUsd: number; error: string;
+  requestedBy: string; requestedAt: string; finishedAt?: string; decidedBy?: string; decidedAt?: string;
+}
+
 export interface InviteInput { name: string; email: string; username: string; roles: RoleCode[] }
 export interface LinkOwner { name: string; username: string; email: string }
 

@@ -25,6 +25,7 @@ function DocRow({ d }: { d: Document }) {
       </div>
       {expiring && d.reviewStatus === "checked" && <Badge variant="warning">expires soon</Badge>}
       <ReviewBadge status={d.reviewStatus} />
+      <Reading doc={d} />
     </div>
   );
 }
@@ -40,6 +41,49 @@ function PhotoTile({ a }: { a: Attachment }) {
         : <span className="photo__ph">{a.kind === "image" ? "📷" : "📄"} {a.fileName}</span>}
     </FileLink>
   );
+}
+
+/**
+ * Ask Claude to read the file, then show what it proposes beside it. Nothing is saved until someone
+ * accepts — and accepting goes through the ordinary update, so an already-checked document drops back
+ * to pending, because the person who checked it never saw these values.
+ */
+function Reading({ doc }: { doc: Document }) {
+  const api = useApi(); const { user } = useAuth(); const safe = useSafe();
+  const [open, setOpen] = useState(false);
+  const may = api.can(user.id, "document.update", doc.projectId);
+  const ext = (api.extractions ?? []).find((e) => e.sourceId === doc.id && !["accepted", "rejected"].includes(e.status));
+  if (!may) return null;
+
+  if (!ext) return <button className="ns-btn ns-btn--ghost ns-btn--sm" title="Read this file and suggest its details"
+    onClick={() => safe(() => api.requestExtraction(user.id, "document", doc.id), "Reading — the result appears here shortly")}>Read file</button>;
+
+  if (ext.status === "queued" || ext.status === "running") return <Badge variant="info">reading…</Badge>;
+  if (ext.status === "failed") return <span className="row sm" style={{ gap: 6 }}><Badge variant="danger">could not read</Badge>
+    <span className="muted" title={ext.error}>{ext.error.slice(0, 60)}</span>
+    <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => safe(() => api.rejectExtraction(user.id, ext.id), "Dismissed")}>Dismiss</button></span>;
+
+  const f = ext.fields ?? {};
+  const rows: [string, string | null | undefined][] = [["Title", f.title], ["Type", f.doc_type], ["Issuer", f.issuer],
+    ["Issued", f.issued_at], ["Expires", f.expires_at], ["Reference", f.reference]];
+  const low = f.confidence === "low";
+
+  return <div className="stack" style={{ gap: 6, flexBasis: "100%", marginTop: 8 }}>
+    <div className={`note ${low ? "note--warn" : "note--info"}`}>
+      <div className="row" style={{ gap: 8 }}><b className="grow">Claude read this file</b>
+        <span className="sm muted">{ext.modelName} · ${ext.costUsd.toFixed(4)} · confidence {String(f.confidence ?? "—")}</span></div>
+      {f.notes && <div className="sm" style={{ marginTop: 4 }}>{f.notes}</div>}
+      <table className="table sm" style={{ marginTop: 8 }}><tbody>{rows.map(([k, v]) => <tr key={k}>
+        <td style={{ width: 90 }} className="muted">{k}</td><td>{v || <span className="muted">— not on the page —</span>}</td></tr>)}</tbody></table>
+      <div className="row" style={{ gap: 8, marginTop: 10 }}>
+        <button className="ns-btn ns-btn--primary ns-btn--sm"
+          onClick={() => safe(() => api.acceptExtraction(user.id, ext.id), "Applied — back to pending check")}>Use these</button>
+        <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => safe(() => api.rejectExtraction(user.id, ext.id), "Discarded")}>Discard</button>
+        <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setOpen(!open)}>{open ? "Hide" : "Show"} what it read</button>
+      </div>
+      {open && <pre className="sm" style={{ whiteSpace: "pre-wrap", maxHeight: 260, overflow: "auto", marginTop: 8 }}>{ext.transcript || "(nothing)"}</pre>}
+    </div>
+  </div>;
 }
 
 export function ProjectDocuments() {

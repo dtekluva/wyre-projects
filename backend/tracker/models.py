@@ -43,6 +43,10 @@ def id_doc():
 def id_ev():
     return _nid("ev")
 
+
+def id_ext():
+    return _nid("ext")
+
 def id_grn():
     return _nid("grn")
 
@@ -212,6 +216,35 @@ class ProjectMembership(models.Model):
     granted_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
     granted_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
+
+
+class Extraction(models.Model):
+    """What a model read from a file, and what it proposes. Never a record in its own right — accepting
+    one calls the same service a human typing the form would call (§4.13 still applies)."""
+    STATUS = [("queued", "Queued"), ("running", "Running"), ("done", "Done"), ("failed", "Failed"),
+              ("accepted", "Accepted"), ("rejected", "Rejected")]
+
+    id = models.CharField(primary_key=True, max_length=40, default=id_ext)
+    project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.CASCADE, related_name="extractions")
+    source_kind = models.CharField(max_length=12)          # "document" | "attachment"
+    source_id = models.CharField(max_length=40)
+    target = models.CharField(max_length=24, default="document_meta")
+    status = models.CharField(max_length=10, choices=STATUS, default="queued", db_index=True)
+    transcript = models.TextField(blank=True)              # what the model saw, for a checker to compare against
+    fields = models.JSONField(null=True, blank=True)       # the proposal
+    model_name = models.CharField(max_length=60, blank=True)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    cost_usd = models.DecimalField(max_digits=10, decimal_places=6, default=0)
+    error = models.TextField(blank=True)
+    requested_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
+    requested_at = models.DateTimeField()
+    finished_at = models.DateTimeField(null=True, blank=True)
+    decided_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["status", "requested_at"])]
 
 
 class ChronologyEvent(models.Model):
