@@ -148,7 +148,7 @@ STOCK_SCHEMA = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["description", "qty", "unit", "unit_cost", "serials"],
+                "required": ["description", "qty", "unit", "unit_cost", "serials", "matches_existing"],
                 "properties": {
                     "description": {"type": "string", "description": "The item as written on the page, verbatim"},
                     "qty": {"type": "number", "description": "Quantity delivered"},
@@ -156,6 +156,8 @@ STOCK_SCHEMA = {
                     "unit_cost": {"type": ["number", "null"], "description": "Price per unit if printed, else null. Never divide a total to invent one."},
                     "serials": {"type": "array", "items": {"type": "string"},
                                 "description": "Serial numbers printed for THIS line, verbatim. Empty if none."},
+                    "matches_existing": {"type": ["string", "null"],
+                                         "description": "If this is the same physical product as something already in stock, the EXISTING name exactly as given in the known list. Null if it is new, or if you are not sure."},
                 },
             },
         },
@@ -171,13 +173,37 @@ Report only what is printed. One entry per line of goods; skip subtotals, VAT, d
 Serial numbers are the point of this. They are long, they are often handwritten, and a store keeper typing twenty of them off a page is where errors come from. Copy each one character by character against the line it belongs to. Do not normalise them, do not correct what looks like a typo, do not expand a range like "1001-1005" into five numbers unless the page itself lists them separately. If a character is genuinely unreadable, say which serial and which position in notes rather than guessing — a wrong serial follows a physical unit around for its whole warranty life."""
 
 
-def read_stock_document(data: bytes, mime: str, filename: str = "") -> dict:
+def _known_block(known: list[str]) -> str:
+    """What is already in stock, so the model can recognise a second delivery of the same thing.
+
+    Matching on the string alone is not enough — "Deye SUN-6K inverter" and "Deye 6K inverter" are the
+    same product written two ways, and would otherwise become two piles that each look half empty.
+    """
+    if not known:
+        return ("\n\nNothing is in stock yet, so every line is new: leave matches_existing null.")
+    listed = "\n".join(f"- {n}" for n in known[:400])
+    return f"""
+
+ALREADY IN STOCK — match against this list:
+{listed}
+
+For each line, if it is the SAME physical product as one of those, put that existing name in
+matches_existing, copied exactly. This is how a second delivery adds to the same pile instead of starting
+a new one, so a misspelling, an abbreviation or a different word order should still match.
+
+Be strict about what "same" means. A different rating, capacity or model number is a DIFFERENT product:
+a 6 kVA inverter is not a 20 kVA inverter, a 580 W panel is not a 550 W panel, and 4 mm cable is not 6 mm
+cable — even where the rest of the name is identical. When the words differ in a way that could be a
+different product, leave matches_existing null and let a person decide. A wrongly merged pile is much
+harder to notice and unpick than one duplicate name."""
+
+def read_stock_document(data: bytes, mime: str, filename: str = "", known: list[str] | None = None) -> dict:
     """Same shape as read_document: {'fields', 'transcript', 'usage'}."""
     client = _client()
     tool = {"name": "record_delivery", "description": "Record the goods listed on this document.",
             "input_schema": STOCK_SCHEMA, "strict": True}
     msg = client.messages.create(
-        model=MODEL, max_tokens=16000, system=STOCK_SYSTEM,
+        model=MODEL, max_tokens=16000, system=STOCK_SYSTEM + _known_block(known or []),
         thinking={"type": "adaptive"}, tools=[tool],
         messages=[{"role": "user", "content": [
             _source_block(data, mime),
@@ -209,13 +235,13 @@ Serial numbers dictated aloud are the risky part. People say "delta yankee six k
 If they did not mention a price, leave unit_cost null — never invent one. If they did not give serials for a line, leave the list empty; the person will type them or the item may not be serialised at all."""
 
 
-def read_stock_dictation(text: str) -> dict:
+def read_stock_dictation(text: str, known: list[str] | None = None) -> dict:
     """Same shape as read_stock_document, from spoken words instead of a page."""
     client = _client()
     tool = {"name": "record_delivery", "description": "Record the goods the store keeper described.",
             "input_schema": STOCK_SCHEMA, "strict": True}
     msg = client.messages.create(
-        model=MODEL, max_tokens=16000, system=DICTATION_SYSTEM,
+        model=MODEL, max_tokens=16000, system=DICTATION_SYSTEM + _known_block(known or []),
         thinking={"type": "adaptive"}, tools=[tool],
         messages=[{"role": "user", "content": [{"type": "text", "text":
             "What the store keeper said:\n\n" + (text or "").strip() + "\n\nCall record_delivery."}]}],

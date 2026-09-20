@@ -13,7 +13,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from ..errors import ApiError
-from ..models import Attachment, Document, Extraction, User
+from ..models import Attachment, Document, Extraction, InventoryItem, User
 from . import ai
 from . import base as b
 from . import documents as docs
@@ -70,15 +70,16 @@ def run_one(ext: Extraction) -> Extraction:
     ext.status = "running"
     ext.save(update_fields=["status"])
     try:
+        known = list(InventoryItem.objects.filter(is_active=True).order_by("name").values_list("name", flat=True))
         if ext.source_kind == "dictation":
-            out = ai.read_stock_dictation(ext.transcript)
+            out = ai.read_stock_dictation(ext.transcript, known)
         else:
             src = b.get_or_404(SOURCES[ext.source_kind], ext.source_id, "Document")
             with src.file.open("rb") as fh:
                 data = fh.read()
             mime = _mime_of(src.file_name)
-            reader = ai.read_stock_document if ext.target == "stock_lines" else ai.read_document
-            out = reader(data, mime, src.file_name)
+            out = (ai.read_stock_document(data, mime, src.file_name, known) if ext.target == "stock_lines"
+                   else ai.read_document(data, mime, src.file_name))
         ext.transcript = out["transcript"][:200_000]
         ext.fields = out["fields"]
         ext.model_name = out["usage"]["model"]

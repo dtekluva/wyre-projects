@@ -100,7 +100,7 @@ export function Inventory() {
   );
 }
 
-type ReadLine = { description: string; qty: number; unit: string | null; unit_cost: number | null; serials: string[] };
+type ReadLine = { description: string; qty: number; unit: string | null; unit_cost: number | null; serials: string[]; matches_existing?: string | null };
 
 /**
  * Add stock: upload the paperwork, say it, or type it.
@@ -195,14 +195,19 @@ function ReceiveFromNote() {
         <div className="table--wrap"><table className="table"><thead><tr>
           <th>What it is</th><th className="num">Qty</th><th>Unit</th><th>Serial numbers</th></tr></thead>
           <tbody>{lines.map((l, i) => {
-            const name = names[i] ?? l.description;
+            // The model is told what is already in stock and returns the existing name when a line is
+            // the same product written differently, so a second delivery lands on the same pile.
+            const name = names[i] ?? l.matches_existing ?? l.description;
             const ser = (serials[i] ?? l.serials.join("\n")).split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
             const n = Number(qty[i] ?? l.qty) || 0;
             const known = api.items.find((x) => x.name.trim().toLowerCase() === name.trim().toLowerCase());
             return <tr key={i}>
               <td style={{ minWidth: 240 }}>
                 <input className="ns-input" value={name} placeholder="e.g. Deye inverter 20kVA" onChange={(e) => setNames({ ...names, [i]: e.target.value })} />
-                <div className="sm muted">{!name.trim() ? "name it" : known ? `adds to your existing ${known.name}` : "new — tracked from now on"}
+                <div className="sm muted">{!name.trim() ? "name it"
+                  : known ? `adds to your existing ${known.name}`
+                  : "new — tracked from now on"}
+                  {l.matches_existing && l.matches_existing !== l.description ? ` · page said "${l.description}"` : ""}
                   {l.unit_cost ? ` · ${naira(l.unit_cost)} each` : ""}</div></td>
               <td className="num" style={{ width: 90 }}><input className="ns-input" type="number" min="0" value={qty[i] ?? String(l.qty)} onChange={(e) => setQty({ ...qty, [i]: e.target.value })} /></td>
               <td className="sm" style={{ width: 70 }}>{l.unit || "pcs"}</td>
