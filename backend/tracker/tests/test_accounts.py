@@ -202,3 +202,54 @@ class AlertsWithoutInventoryTest(TestCase):
         alerts.build()          # used to raise ApiError("No warehouse location configured")
         res = alerts.run(prune=False)
         self.assertIsInstance(res, dict)
+
+
+class StockWithoutACatalogueTest(TestCase):
+    """Nobody registers an item first. A name arrives, it starts being tracked, and the same name
+    later adds to the same pile."""
+
+    def setUp(self):
+        seed_rbac()
+        self.keeper = User.objects.create(id="u_k", username="k", name="K", email="k@wyreng.com")
+        self.keeper.set_password("x" * 12); self.keeper.save()
+        self.keeper.roles.set(Role.objects.filter(code="store_keeper"))
+        self.checker = User.objects.create(id="u_c", username="c", name="C", email="c@wyreng.com")
+        self.checker.set_password("x" * 12); self.checker.save()
+        self.checker.roles.set(Role.objects.filter(code="finance"))
+        from tracker.services import stock
+        self.loc = stock.add_location(self.keeper, {"name": "Ikeja", "type": "warehouse"})
+
+    def receive(self, name, qty, serials=None, unit=""):
+        from tracker.services import stock
+        return stock.receive_stock(self.keeper, {"locationId": self.loc.id, "reason": "note", "attachmentIds": ["a"],
+                                                 "lines": [{"name": name, "qty": qty, "unitCost": 100,
+                                                            "unit": unit, "serials": serials or []}]})
+
+    def test_first_mention_creates_it_and_later_ones_add_up(self):
+        from tracker.models import InventoryItem
+        from tracker.services import review, stock
+        for m in self.receive("Deye inverter 20kVA", 2):
+            review.check(self.checker, "stock_movement", m.id, "checked")
+        it = InventoryItem.objects.get()
+        self.assertEqual(it.name, "Deye inverter 20kVA")
+        self.assertEqual(it.category, "inverter", "category derived from the name")
+        self.assertEqual(stock.available(it.id, self.loc.id), 2)
+
+        # same thing, written differently — must not become a second item
+        for m in self.receive("deye   INVERTER 20kva", 3):
+            review.check(self.checker, "stock_movement", m.id, "checked")
+        self.assertEqual(InventoryItem.objects.count(), 1, "casing and spacing must not split the pile")
+        self.assertEqual(stock.available(it.id, self.loc.id), 5)
+
+    def test_serials_turn_tracking_on_when_they_first_appear(self):
+        from tracker.models import InventoryItem
+        self.receive("Pylontech US5000", 1)
+        it = InventoryItem.objects.get()
+        self.assertFalse(it.is_serialised)
+        self.receive("Pylontech US5000", 1, serials=["PYL-0001"])
+        it.refresh_from_db()
+        self.assertTrue(it.is_serialised, "a delivery that carries serials starts tracking them")
+
+    def test_a_line_still_needs_a_name(self):
+        with self.assertRaises(ApiError):
+            self.receive("   ", 1)

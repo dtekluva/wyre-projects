@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
-import { ASSET_TYPES, MOVEMENT_LABEL, fmtDate, naira, relative, type AssetType, type MovementType, type StockCount } from "@wyre/api";
+import { MOVEMENT_LABEL, fmtDate, naira, relative, type MovementType, type StockCount } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useWaitFor } from "../lib/useWaitFor";
 import { useAuth } from "../lib/auth";
@@ -39,7 +39,6 @@ export function Inventory() {
         {Object.entries(sv.byCategory).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([c, v]) => <Kpi key={c} label={`Value · ${c}`} value={naira(v, true)} />)}
       </div>
 
-      <Catalogue />
       <ReceiveFromNote />
       <div className="card table--wrap"><div className="card__head"><div className="card__title">Stock on hand</div><span className="sm muted">click a row to filter the ledger</span></div>
         <table className="table"><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th className="num">On hand</th><th className="num">Unit cost</th><th className="num">Value</th><th className="num">Reorder at</th><th></th></tr></thead>
@@ -101,85 +100,14 @@ export function Inventory() {
   );
 }
 
-/**
- * Items and vendors — the reference data everything else depends on. A PO needs a vendor, and stock only
- * enters the ledger against an item, so on an empty database this card is the first thing anyone uses.
- */
-function Catalogue() {
-  const api = useApi(); const { user } = useAuth(); const safe = useSafe();
-  const may = api.can(user.id, "catalogue.manage");
-  const [tab, setTab] = useState<"" | "item" | "vendor">("");
-  const [sku, setSku] = useState(""); const [name, setName] = useState(""); const [cat, setCat] = useState<AssetType>("panel");
-  const [unit, setUnit] = useState("pcs"); const [ser, setSer] = useState(false);
-  const [lvl, setLvl] = useState("0"); const [rq, setRq] = useState("0"); const [vend, setVend] = useState("");
-  const [vName, setVName] = useState(""); const [vCat, setVCat] = useState("");
-
-  const head = <div className="card__head"><div className="card__title">Catalogue</div>
-    <span className="sm muted">{api.items.length} item{api.items.length === 1 ? "" : "s"} · {api.vendors.length} vendor{api.vendors.length === 1 ? "" : "s"}</span></div>;
-
-  if (!may) return <div className="card" style={{ marginBottom: 20 }}>{head}
-    <div className="card__body"><Note tone="warn">Only a Director, Tech Lead or Store Keeper can change the catalogue.</Note></div></div>;
-
-  if (!tab) return <div className="card" style={{ marginBottom: 20 }}>{head}
-    <div className="card__body row" style={{ gap: 8 }}>
-      <div className="grow sm muted">{api.items.length || api.vendors.length
-        ? "Add the things you buy and the people you buy them from."
-        : "Nothing here yet. A purchase order needs a vendor, and stock only enters the ledger against an item — so start here."}</div>
-      <button className="ns-btn ns-btn--primary" onClick={() => setTab("item")}>＋ New item</button>
-      <button className="ns-btn" onClick={() => setTab("vendor")}>＋ New vendor</button>
-    </div></div>;
-
-  return <div className="card" style={{ marginBottom: 20 }}>{head}
-    <div className="card__body stack" style={{ gap: 12 }}>
-      {tab === "item" ? <>
-        <div className="form">
-          <label className="ns-field"><span className="ns-field__label">SKU</span>
-            <input className="ns-input" value={sku} onChange={(e) => setSku(e.target.value.toUpperCase())} placeholder="INV-5KW" /></label>
-          <label className="ns-field"><span className="ns-field__label">Name</span>
-            <input className="ns-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="5 kW hybrid inverter" /></label>
-          <label className="ns-field"><span className="ns-field__label">Category</span>
-            <select className="ns-input" value={cat} onChange={(e) => setCat(e.target.value as AssetType)}>{ASSET_TYPES.map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
-          <label className="ns-field"><span className="ns-field__label">Unit</span>
-            <input className="ns-input" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="pcs" /></label>
-          <label className="ns-field"><span className="ns-field__label">Reorder at</span>
-            <input className="ns-input" type="number" min="0" value={lvl} onChange={(e) => setLvl(e.target.value)} /></label>
-          <label className="ns-field"><span className="ns-field__label">Reorder qty</span>
-            <input className="ns-input" type="number" min="0" value={rq} onChange={(e) => setRq(e.target.value)} /></label>
-          <label className="ns-field"><span className="ns-field__label">Default vendor</span>
-            <select className="ns-input" value={vend} onChange={(e) => setVend(e.target.value)}>
-              <option value="">— none —</option>{api.vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
-        </div>
-        <label className="row sm" style={{ gap: 8 }}>
-          <input type="checkbox" checked={ser} onChange={(e) => setSer(e.target.checked)} />
-          <span>Track individual serial numbers — required for anything that carries a warranty</span></label>
-        <div className="row" style={{ gap: 8 }}>
-          <button className="ns-btn ns-btn--primary" disabled={!sku.trim() || !name.trim()}
-            onClick={() => { if (safe(() => api.addItem(user.id, { sku, name, category: cat, unit, isSerialised: ser, reorderLevel: Number(lvl) || 0, reorderQty: Number(rq) || 0, defaultVendorId: vend || undefined }), `${name} added to the catalogue`)) { setSku(""); setName(""); setLvl("0"); setRq("0"); setSer(false); setTab(""); } }}>Add item</button>
-          <button className="ns-btn ns-btn--ghost" onClick={() => setTab("")}>Cancel</button>
-        </div>
-      </> : <>
-        <div className="form">
-          <label className="ns-field"><span className="ns-field__label">Vendor name</span>
-            <input className="ns-input" value={vName} onChange={(e) => setVName(e.target.value)} placeholder="Dixsen Energy" /></label>
-          <label className="ns-field"><span className="ns-field__label">What they supply</span>
-            <input className="ns-input" value={vCat} onChange={(e) => setVCat(e.target.value)} placeholder="Inverters & batteries" /></label>
-        </div>
-        <div className="row" style={{ gap: 8 }}>
-          <button className="ns-btn ns-btn--primary" disabled={!vName.trim()}
-            onClick={() => { if (safe(() => api.addVendor(user.id, { name: vName, category: vCat || undefined }), `${vName} added`)) { setVName(""); setVCat(""); setTab(""); } }}>Add vendor</button>
-          <button className="ns-btn ns-btn--ghost" onClick={() => setTab("")}>Cancel</button>
-        </div>
-      </>}
-    </div></div>;
-}
-
 type ReadLine = { description: string; qty: number; unit: string | null; unit_cost: number | null; serials: string[] };
 
 /**
- * Upload a delivery note, let Claude read it, then map each line to a catalogue item and submit.
+ * Add stock: upload the paperwork, say it, or type it.
  *
- * The mapping step is the point. An extracted description is the supplier's words, not your SKU, so a
- * person picks the item — the model never decides what a line *is*, only what the page *says*.
+ * There is no catalogue to keep. A line carries a NAME — the first time a name arrives the server starts
+ * tracking it, and every later delivery of the same name adds to the same pile. Nobody registers anything
+ * in advance, which is the whole point: the item list is a record of what has come through the door.
  */
 function ReceiveFromNote() {
   const api = useApi(); const { user } = useAuth(); const safe = useSafe();
@@ -188,119 +116,105 @@ function ReceiveFromNote() {
   const [file, setFile] = useState<Pick[]>([]);
   const [extId, setExtId] = useState("");
   const [loc, setLoc] = useState(mainLoc ?? "");
-  const [picked, setPicked] = useState<Record<number, string>>({});
+  const [how, setHow] = useState<"upload" | "say" | "type">("upload");
+  const [names, setNames] = useState<Record<number, string>>({});
   const [qty, setQty] = useState<Record<number, string>>({});
   const [serials, setSerials] = useState<Record<number, string>>({});
-  const [how, setHow] = useState<"upload" | "say">("upload");
+  const [typed, setTyped] = useState<ReadLine[]>([]);
 
-  // Rendering nothing for someone without the permission hides the feature entirely — they cannot tell
-  // it exists, let alone what to do about it. The sibling cards say why; so does this one.
-  if (!may) return <div className="card" style={{ marginBottom: 20 }}>
-    <div className="card__head"><div className="card__title">Receive stock from a delivery note</div>
-      <span className="sm muted">read by Claude · every line still gets checked</span></div>
-    <div className="card__body"><Note tone="warn">Only a Store Keeper can take stock in.
-      Roles stack, so a Director can add <b>Store Keeper</b> to their own account under Users &amp; roles and do it themselves.</Note></div>
-  </div>;
-
-  // Resume on its own: the id lives in component state, so a refresh (or a different device) would
-  // otherwise abandon a reading that has already been paid for and finished.
   const all = api.extractions ?? [];
   const ext = all.find((e) => e.id === extId)
     ?? all.find((e) => e.target === "stock_lines" && !["accepted", "rejected"].includes(e.status));
   useWaitFor(!!ext && (ext.status === "queued" || ext.status === "running"));
+
+  if (!may) return <div className="card" style={{ marginBottom: 20 }}>
+    <div className="card__head"><div className="card__title">Add stock</div></div>
+    <div className="card__body"><Note tone="warn">Only a Store Keeper can take stock in.
+      Roles stack, so a Director can add <b>Store Keeper</b> to their own account under Users &amp; roles.</Note></div>
+  </div>;
+
   const f = (ext?.fields ?? {}) as unknown as { reference?: string; supplier?: string; dated?: string; lines?: ReadLine[]; notes?: string; confidence?: string };
-  const lines = f.lines ?? [];
+  const lines: ReadLine[] = typed.length ? typed : (f.lines ?? []);
+  const reviewing = typed.length > 0 || (ext?.status === "done");
 
-  // Offer a best guess by word overlap, but never silently apply it — the select starts on the guess
-  // and the store keeper confirms or changes it.
-  const guess = (desc: string) => {
-    const words = desc.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
-    let best = ""; let score = 0;
-    for (const it of api.items) {
-      const hay = `${it.sku} ${it.name} ${it.make ?? ""} ${it.model ?? ""}`.toLowerCase();
-      const n = words.filter((w) => hay.includes(w)).length;
-      if (n > score) { score = n; best = it.id; }
-    }
-    return score >= 1 ? best : "";
-  };
-
-  const itemFor = (i: number, l: ReadLine) => picked[i] ?? guess(l.description);
+  const reset = () => { setExtId(""); setFile([]); setNames({}); setQty({}); setSerials({}); setTyped([]); };
 
   const submit = () => {
     const payload = lines.map((l, i) => {
-      const itemId = itemFor(i, l); if (!itemId) return null;
-      const it = api.item(itemId);
+      const name = (names[i] ?? l.description).trim(); if (!name) return null;
       const ser = (serials[i] ?? l.serials.join("\n")).split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
-      return { itemId, qty: Number(qty[i] ?? l.qty) || 0, unitCost: l.unit_cost ?? 0, serials: it.isSerialised ? ser : [] };
+      return { name, unit: l.unit ?? "", qty: Number(qty[i] ?? l.qty) || 0, unitCost: l.unit_cost ?? 0, serials: ser };
     }).filter(Boolean);
-    if (!payload.length) return safe(() => { throw new Error("Match at least one line to a catalogue item"); }, "");
-    if (safe(() => api.receiveStock(user.id, {
-      locationId: loc, reason: f.reference ? `Delivery note ${f.reference}` : "Received from document",
-      attachmentIds: [ext!.sourceId], lines: payload,
-    }), "Submitted — each line is pending a check")) { setExtId(""); setFile([]); setPicked({}); setQty({}); setSerials({}); }
+    if (!payload.length) return safe(() => { throw new Error("Give at least one line a name"); }, "");
+    const ok = safe(() => api.receiveStock(user.id, {
+      locationId: loc,
+      reason: f.reference ? `Delivery note ${f.reference}` : typed.length ? "Entered by hand" : "Received from document",
+      attachmentIds: ext?.sourceId ? [ext.sourceId] : ["typed"],
+      lines: payload,
+    }), "Submitted — each line is pending a check");
+    if (ok) { if (ext) api.rejectExtraction(user.id, ext.id); reset(); }
   };
 
   return <div className="card" style={{ marginBottom: 20 }}>
     <div className="card__head"><div className="card__title">Add stock</div>
-      <span className="sm muted">upload the paperwork or just say what arrived · every line still gets checked by someone else</span></div>
+      <span className="sm muted">upload the paperwork, say it, or type it · every line still gets checked by someone else</span></div>
     <div className="card__body stack" style={{ gap: 12 }}>
-      {!ext ? <>
+      {!reviewing && !ext ? <>
         <div className="row" style={{ gap: 8 }}>
           <button className={`ns-btn ${how === "upload" ? "ns-btn--primary" : ""}`} onClick={() => setHow("upload")}>Upload a document</button>
           <button className={`ns-btn ${how === "say" ? "ns-btn--primary" : ""}`} onClick={() => setHow("say")}>Say what arrived</button>
+          <button className={`ns-btn ${how === "type" ? "ns-btn--primary" : ""}`} onClick={() => { setHow("type"); setTyped([{ description: "", qty: 1, unit: "pcs", unit_cost: null, serials: [] }]); }}>Type it in</button>
         </div>
         {how === "upload" ? <>
           <div className="sm muted">Waybill, delivery note, supplier invoice or a photo of one. Serial numbers are read off the page so nobody retypes them.</div>
-          {/* Choosing the file IS the action — a separate "read it" button was just a second step
-              that could only ever be pressed once, on a file already chosen. */}
           <FilePick picks={file} onChange={(picks) => {
             setFile(picks);
-            const p0 = picks[0];
-            if (!p0) return;
+            const p0 = picks[0]; if (!p0) return;
             safe(() => {
               const att = api.addEvidence(user.id, { fileName: p0.fileName, sizeBytes: p0.size, blob: p0.file, caption: "Delivery note" });
-              const e = api.requestExtraction(user.id, "attachment", att.id, "stock_lines");
-              setExtId(e.id);
-            }, "Reading it — this takes a few seconds");
+              setExtId(api.requestExtraction(user.id, "attachment", att.id, "stock_lines").id);
+            }, "Reading it — this usually takes under a minute");
           }} required label="Delivery note or photo" />
-        </> : <Dictate onDone={(text) => safe(() => { const e = api.requestExtraction(user.id, "dictation", "", "stock_lines", text); setExtId(e.id); }, "Working out what you said")} />}
-      </> : ext.status === "queued" || ext.status === "running" ? <Note tone="info">Reading it… this usually takes under a minute.</Note>
-      : ext.status === "failed" ? <Note tone="danger">Could not read it: {ext.error}
-          <button className="ns-btn ns-btn--ghost ns-btn--sm" style={{ marginLeft: 8 }} onClick={() => { setExtId(""); setFile([]); }}>Start again</button></Note>
+        </> : how === "say" ? <Dictate onDone={(text) => safe(() => { setExtId(api.requestExtraction(user.id, "dictation", "", "stock_lines", text).id); }, "Working out what you said")} />
+        : null}
+      </> : ext && (ext.status === "queued" || ext.status === "running") ? <Note tone="info">Reading it… this usually takes under a minute.</Note>
+      : ext && ext.status === "failed" ? <Note tone="danger">Could not read it: {ext.error}
+          <button className="ns-btn ns-btn--ghost ns-btn--sm" style={{ marginLeft: 8 }} onClick={() => { safe(() => api.rejectExtraction(user.id, ext.id), "Discarded"); reset(); }}>Start again</button></Note>
       : <>
-        <div className="row sm" style={{ gap: 12 }}>
-          <span><b>{f.reference || "no reference"}</b></span>
+        {ext && <div className="row sm" style={{ gap: 12 }}>
+          <span><b>{f.reference || "from your recording"}</b></span>
           {f.supplier && <span className="muted">{f.supplier}</span>}
           {f.dated && <span className="muted">{fmtDate(f.dated)}</span>}
           <Badge variant={f.confidence === "high" ? "success" : f.confidence === "low" ? "danger" : "warning"}>confidence {f.confidence}</Badge>
-          <span className="grow" />
-          <span className="muted">${ext.costUsd.toFixed(4)}</span>
-        </div>
+          <span className="grow" /><span className="muted">${ext.costUsd.toFixed(4)}</span>
+        </div>}
         {f.notes && <Note tone="warn">{f.notes}</Note>}
         <label className="ns-field" style={{ maxWidth: 280 }}><span className="ns-field__label">Into which location</span>
           <select className="ns-input" value={loc} onChange={(e) => setLoc(e.target.value)}>
             {locs.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
         <div className="table--wrap"><table className="table"><thead><tr>
-          <th>On the page</th><th>Catalogue item</th><th className="num">Qty</th><th>Serials</th></tr></thead>
+          <th>What it is</th><th className="num">Qty</th><th>Unit</th><th>Serial numbers</th></tr></thead>
           <tbody>{lines.map((l, i) => {
-            const id = itemFor(i, l); const it = id ? api.item(id) : undefined;
-            const need = it?.isSerialised ? Number(qty[i] ?? l.qty) || 0 : 0;
-            const have = (serials[i] ?? l.serials.join("\n")).split(/[\n,]/).map((x) => x.trim()).filter(Boolean).length;
+            const name = names[i] ?? l.description;
+            const ser = (serials[i] ?? l.serials.join("\n")).split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
+            const n = Number(qty[i] ?? l.qty) || 0;
+            const known = api.items.find((x) => x.name.trim().toLowerCase() === name.trim().toLowerCase());
             return <tr key={i}>
-              <td><div>{l.description}</div><div className="sm muted">{l.qty}{l.unit ? ` ${l.unit}` : ""}{l.unit_cost ? ` @ ${naira(l.unit_cost)}` : " · no price on the page"}</div></td>
-              <td><select className="ns-input" value={id} onChange={(e) => setPicked({ ...picked, [i]: e.target.value })}>
-                <option value="">— skip this line —</option>
-                {api.items.map((x) => <option key={x.id} value={x.id}>{x.sku} · {x.name}</option>)}</select>
-                {!id && <div className="sm muted">no match — add it to the catalogue first</div>}</td>
+              <td style={{ minWidth: 240 }}>
+                <input className="ns-input" value={name} placeholder="e.g. Deye inverter 20kVA" onChange={(e) => setNames({ ...names, [i]: e.target.value })} />
+                <div className="sm muted">{!name.trim() ? "name it" : known ? `adds to your existing ${known.name}` : "new — tracked from now on"}
+                  {l.unit_cost ? ` · ${naira(l.unit_cost)} each` : ""}</div></td>
               <td className="num" style={{ width: 90 }}><input className="ns-input" type="number" min="0" value={qty[i] ?? String(l.qty)} onChange={(e) => setQty({ ...qty, [i]: e.target.value })} /></td>
-              <td style={{ minWidth: 200 }}>{it?.isSerialised
-                ? <><textarea className="ns-input" rows={Math.max(2, l.serials.length)} value={serials[i] ?? l.serials.join("\n")} onChange={(e) => setSerials({ ...serials, [i]: e.target.value })} />
-                    <div className={`sm ${have === need ? "muted" : "note--danger"}`}>{have} of {need} needed</div></>
-                : <span className="sm muted">not serialised</span>}</td>
+              <td className="sm" style={{ width: 70 }}>{l.unit || "pcs"}</td>
+              <td style={{ minWidth: 200 }}>
+                <textarea className="ns-input" rows={Math.max(1, l.serials.length)} placeholder="one per line, if any"
+                          value={serials[i] ?? l.serials.join("\n")} onChange={(e) => setSerials({ ...serials, [i]: e.target.value })} />
+                {ser.length > 0 && ser.length !== n && <div className="sm note--danger">{ser.length} serial{ser.length === 1 ? "" : "s"} for {n}</div>}</td>
             </tr>; })}</tbody></table></div>
         <div className="row" style={{ gap: 8 }}>
+          {typed.length > 0 && <button className="ns-btn ns-btn--ghost" onClick={() => setTyped([...typed, { description: "", qty: 1, unit: "pcs", unit_cost: null, serials: [] }])}>＋ Another line</button>}
           <button className="ns-btn ns-btn--primary" onClick={submit}>Submit for check</button>
-          <button className="ns-btn ns-btn--ghost" onClick={() => safe(() => { api.rejectExtraction(user.id, ext.id); setExtId(""); setFile([]); }, "Discarded")}>Discard</button>
+          <button className="ns-btn ns-btn--ghost" onClick={() => { if (ext) safe(() => api.rejectExtraction(user.id, ext.id), "Discarded"); reset(); }}>Discard</button>
         </div>
       </>}
     </div></div>;

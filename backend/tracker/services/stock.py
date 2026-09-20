@@ -1,6 +1,7 @@
 """Phase 2/3 — stock ledger with weighted-average cost, no negative stock, serialised assets, locations, transfers, counts (spec §4.15)."""
 from __future__ import annotations
 
+import re
 import calendar
 from datetime import date
 from decimal import Decimal
@@ -376,6 +377,54 @@ def add_item(actor: User, input: dict) -> InventoryItem:
         warranty_months=int(months) if months else None)
 
 
+# Names people actually write, mapped to the categories the asset register understands. Anything else
+# lands in "other" — a wrong guess here costs nothing, an unnecessary form costs somebody's afternoon.
+_CATEGORY_HINTS = [
+    ("inverter", "inverter"), ("battery", "battery"), ("panel", "panel"), ("module", "panel"),
+    ("meter", "meter"), ("cable", "cable"), ("wire", "cable"), ("ats", "ats"), ("changeover", "ats"),
+    ("ct ", "ct"), ("rail", "mounting"), ("mount", "mounting"), ("bracket", "mounting"),
+]
+
+
+def normalise(name: str) -> str:
+    """'Deye Inverter  20KVA' and 'deye inverter 20kva' are the same thing."""
+    return " ".join((name or "").split()).lower()
+
+
+def find_or_create_item(name: str, unit: str = "", serialised: bool = False) -> InventoryItem:
+    """Stock is of *something*, but nobody should have to register that something first.
+
+    The first time a name arrives it becomes an item; every later delivery of the same name adds to it.
+    SKU and category are derived rather than asked for — they exist because the ledger and the asset
+    register need them, not because anybody wants to type them.
+    """
+    clean = " ".join((name or "").split())
+    if not clean:
+        raise ApiError("Every line needs a name", "invalid")
+    key = normalise(clean)
+    for it in InventoryItem.objects.all():
+        if normalise(it.name) == key:
+            changed = []
+            if serialised and not it.is_serialised:
+                # a later delivery arrived with serials — start tracking them from now on
+                it.is_serialised = True; changed.append("is_serialised")
+            if unit and it.unit != unit:
+                it.unit = unit; changed.append("unit")
+            if changed:
+                it.save(update_fields=changed)
+            return it
+
+    base = re.sub(r"[^a-z0-9]+", "-", key).strip("-")[:28].upper() or "ITEM"
+    sku, n = base, 1
+    while InventoryItem.objects.filter(sku=sku).exists():
+        n += 1
+        sku = f"{base[:24]}-{n}"
+    low = f" {key} "
+    category = next((c for word, c in _CATEGORY_HINTS if word in low), "other")
+    return InventoryItem.objects.create(sku=sku, name=clean, category=category, unit=unit or "pcs",
+                                        is_serialised=serialised, is_active=True)
+
+
 @transaction.atomic
 def receive_stock(actor: User, input: dict) -> list[StockMovement]:
     """Take stock in without a purchase order — an opening balance, a donation, a transfer from another
@@ -395,7 +444,7 @@ def receive_stock(actor: User, input: dict) -> list[StockMovement]:
     if not attachment_ids:
         raise ApiError("Attach the delivery note or count sheet — stock cannot appear without paperwork", "invalid")
 
-    raw = [l for l in (input.get("lines") or []) if l and l.get("itemId")]
+    raw = [l for l in (input.get("lines") or []) if l and (l.get("itemId") or l.get("name"))]
     if not raw:
         raise ApiError("Add at least one line", "invalid")
 
@@ -403,7 +452,9 @@ def receive_stock(actor: User, input: dict) -> list[StockMovement]:
     out: list[StockMovement] = []
     seen_serials: set[str] = set()
     for line in raw:
-        it = b.item(line.get("itemId"))
+        serials_in = [x.strip() for x in (line.get("serials") or []) if x and x.strip()]
+        it = (b.item(line["itemId"]) if line.get("itemId")
+              else find_or_create_item(line.get("name"), b.clean(line.get("unit")), bool(serials_in)))
         qty = b.dec(line.get("qty"))
         if not qty > 0:
             raise ApiError(f"{it.name}: quantity must be positive", "invalid")
@@ -411,7 +462,7 @@ def receive_stock(actor: User, input: dict) -> list[StockMovement]:
         if unit_cost < 0:
             raise ApiError(f"{it.name}: unit cost cannot be negative", "invalid")
 
-        serials = [x.strip() for x in (line.get("serials") or []) if x and x.strip()]
+        serials = serials_in
         if it.is_serialised:
             # Incoming serials are NEW, so validate_serials() is the wrong check — that one asserts they
             # are already in stock. What matters here is one per unit, and never a duplicate.
