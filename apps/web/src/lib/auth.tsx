@@ -25,7 +25,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout: () => { if (!remote) return; remote.logout(); setStatus("out"); },
   }), [id, status]);  // eslint-disable-line react-hooks/exhaustive-deps
   if (remote && status === "loading") return <Splash />;
-  if (remote && status === "out") return <Ctx.Provider value={value}><SignIn /></Ctx.Provider>;
+  // An invite or reset link is followed by somebody who, by definition, has no session. These paths
+  // must reach the router instead of being replaced by the sign-in card — otherwise every invite email
+  // dead-ends on a login form the recipient cannot get past.
+  const openPath = /^\/(invite|reset)\//.test(location.pathname) || /^\/forgot\/?$/.test(location.pathname);
+  if (remote && status === "out" && !openPath) return <Ctx.Provider value={value}><SignIn /></Ctx.Provider>;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 export function useAuth() { const v = useContext(Ctx); if (!v) throw new Error("AuthProvider missing"); return v; }
