@@ -432,7 +432,12 @@ export class MockApi {
       this.applyApprovalOutcome(a, actorId, false);
       this.log(a.projectId, actorId, "approval_decided", `Rejected: ${a.title}`, note, ref);
     } else {
-      const done = a.requiredRoles.every((r) => a.decisions.some((d) => d.role === r && d.decision === "approved"));
+      // requiredRoles is AND wherever money is attached — a PO over the director threshold genuinely
+    // needs Finance AND a Director. A gate lists the roles trusted to move a project on, and any ONE
+    // of them signing is enough. Mirrors approvals.decide on the server.
+    const done = a.kind === "gate"
+      ? a.decisions.some((d) => d.decision === "approved")
+      : a.requiredRoles.every((r) => a.decisions.some((d) => d.role === r && d.decision === "approved"));
       if (done) {
         a.status = "approved";
         this.applyApprovalOutcome(a, actorId, true);

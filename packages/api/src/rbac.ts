@@ -26,7 +26,7 @@ const R = (...p: Permission[]) => p;
 export const MATRIX: Record<RoleCode, Permission[]> = {
   // Approver and administrator — the old `admin` folded in here. Approves and checks; does not raise POs or
   // cost items, so a director cannot manufacture the thing they then approve.
-  director: R("project.create","project.read","project.update","gate.approve","chronology.read",
+  director: R("project.create","project.read","project.update","gate.request","gate.approve","chronology.read",
               "document.create","document.read","document.update","document.check",
               "attachment.create","attachment.read","po.read","po.approve","writeoff.approve",
               "stockcount.approve","commissioning.check","approval.read","membership.manage","users.manage",
@@ -49,7 +49,7 @@ export const MATRIX: Record<RoleCode, Permission[]> = {
           "attachment.create","attachment.read","goods_receipt.create",
           "inventory.read","inventory.request","asset.read","asset.write",
           "visit.create","issue.create","issue.update","hse.create","dashboard.read"),
-  finance: R("stockcount.approve","warranty.check","project.read","gate.approve","chronology.read","document.read","attachment.read","po.read","po.approve","writeoff.approve",
+  finance: R("stockcount.approve","warranty.check","project.read","gate.request","gate.approve","chronology.read","document.read","attachment.read","po.read","po.approve","writeoff.approve",
              "approval.read","thresholds.read","money.read","money.write","cost.create","cost.check","goods_receipt.check","inventory.read",
              "inventory.check","retention.request","asset.read","recon.read","recon.write","dashboard.read"),
   store_keeper: R("stockcount.create","project.read","chronology.read","attachment.create","attachment.read","po.read","goods_receipt.create",

@@ -10,7 +10,7 @@ MATRIX: dict[str, list[str]] = {
     # Approver, and the administrator: `admin` folded in here on 2026-09-19, so this is the only role that
     # manages users and thresholds. It approves and checks; it does not raise POs or cost items, so a
     # director cannot manufacture the thing they then approve.
-    "director": ["project.create", "project.read", "project.update", "gate.approve", "chronology.read",
+    "director": ["project.create", "project.read", "project.update", "gate.request", "gate.approve", "chronology.read",
                  "document.create", "document.read", "document.update", "document.check",
                  "attachment.create", "attachment.read", "po.read", "po.approve", "writeoff.approve",
                  "stockcount.approve", "commissioning.check", "approval.read", "membership.manage", "users.manage",
@@ -33,7 +33,7 @@ MATRIX: dict[str, list[str]] = {
              "attachment.create", "attachment.read", "goods_receipt.create",
              "inventory.read", "inventory.request", "asset.read", "asset.write",
              "visit.create", "issue.create", "issue.update", "hse.create", "dashboard.read"],
-    "finance": ["stockcount.approve", "warranty.check", "project.read", "gate.approve", "chronology.read", "document.read", "attachment.read",
+    "finance": ["stockcount.approve", "warranty.check", "project.read", "gate.request", "gate.approve", "chronology.read", "document.read", "attachment.read",
                 "po.read", "po.approve", "writeoff.approve", "approval.read", "thresholds.read", "money.read", "money.write", "cost.create",
                 "cost.check", "goods_receipt.check", "inventory.read", "inventory.check", "retention.request", "asset.read", "recon.read",
                 "recon.write", "dashboard.read"],

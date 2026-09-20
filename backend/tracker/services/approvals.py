@@ -63,7 +63,12 @@ def decide(actor: User, approval_id: str, decision: str, comment: Optional[str] 
         apply_outcome(a, actor, False)
         b.log(a.project_id, actor, "approval_decided", f"Rejected: {a.title}", note, ref)
         return a
-    done = all(any(d["role"] == r and d["decision"] == "approved" for d in a.decisions) for r in a.required_roles)
+    # required_roles is AND for anything with money attached: a PO over the director threshold
+    # genuinely needs Finance AND a Director. A gate is a different thing — it lists the roles
+    # trusted to move a project on, and any ONE of them signing is enough (user decision,
+    # 2026-09-20). Listing three roles under AND would have demanded three signatures.
+    done = (any(d["decision"] == "approved" for d in a.decisions) if a.kind == "gate"
+            else all(any(d["role"] == r and d["decision"] == "approved" for d in a.decisions) for r in a.required_roles))
     if done:
         a.status = "approved"; a.save()
         apply_outcome(a, actor, True)

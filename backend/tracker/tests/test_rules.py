@@ -129,10 +129,13 @@ class RulesTest(TestCase):
         # techlead holds gate.request (it absorbed pm), so u_le2 may request here; a tech still may not
         self.err("forbidden", gates.request_gate, u["u_ft1"], "p7")
         ap = gates.request_gate(u["u_pm1"], "p7")
-        self.assertEqual(ap.required_roles, ["director"])
+        # a gate now lists the three roles trusted to move a project on, and any ONE of them is enough
+        self.assertEqual(sorted(ap.required_roles), ["director", "finance", "techlead"])
         self.err("conflict", gates.request_gate, u["u_pm1"], "p7")
-        self.err("forbidden", approvals.decide, u["u_fin"], ap.id, "approved")
-        approvals.decide(u["u_dir"], ap.id, "approved")
+        # Finance may now sign a gate off — it used to be refused — and one signature is the whole
+        # requirement, so the project moves on without waiting for the other two.
+        self.err("forbidden", approvals.decide, u["u_ft1"], ap.id, "approved")   # a tech still cannot
+        approvals.decide(u["u_fin"], ap.id, "approved")
         p = Project.objects.get(pk="p7"); self.assertEqual(p.stage, 1); self.assertIn("1", p.stage_actual)
         self.assertTrue(any(i["kind"] == "document" for i in review.review_queue(u["u_le1"])))
         self.assertEqual(review.review_queue(u["u_ft1"]), [], "field tech has no check permissions")

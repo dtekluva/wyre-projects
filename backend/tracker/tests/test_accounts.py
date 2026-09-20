@@ -322,3 +322,66 @@ class SelfReviewTest(TestCase):
         self.assertTrue(rbac.may_self_review(self.keeper))
         self.assertFalse(rbac.may_self_review(self.tech))
         self.assertFalse(rbac.may_self_review(self.lead))
+
+
+class GateApprovalTest(TestCase):
+    """Director, Tech Lead and Finance may each request a gate and each sign one off, and ONE
+    signature is enough (user decision, 2026-09-20). Money approvals still need every listed role."""
+
+    def setUp(self):
+        from django.utils import timezone
+        from tracker.models import Project
+        seed_rbac()
+        def mk(uid, *roles):
+            u = User.objects.create(id=uid, username=uid, name=uid, email=f"{uid}@wyreng.com")
+            u.set_password("x" * 12); u.save(); u.roles.set(Role.objects.filter(code__in=roles)); return u
+        self.dir = mk("u_d", "director"); self.lead = mk("u_l", "techlead")
+        self.fin = mk("u_f", "finance"); self.tech = mk("u_t", "tech")
+        now = timezone.now()
+        self.p = Project.objects.create(id="p_g", code="WYR-2026-902", name="Gate test", client_name="C",
+            branch_name="B", location="L", project_type="solar_battery", stage=0, rag="green",
+            pm=self.lead, lead_engineer=self.lead, contract_value=1, approved_budget=1, retention_percent=5,
+            created_by=self.lead, updated_by=self.lead, created_at=now, updated_at=now)
+
+    def _evidence_ready(self):
+        """Gate 0 needs proposal, sizing and roi_model, all checked."""
+        from django.utils import timezone
+        from tracker.models import Document
+        now = timezone.now()
+        for dt in ("proposal", "sizing", "roi_model"):
+            Document.objects.create(project=self.p, doc_type=dt, title=dt, status="approved", file_name=f"{dt}.pdf",
+                                    review_status="checked", submitted_by=self.lead, submitted_at=now,
+                                    checked_by=self.dir, checked_at=now, review_version=1,
+                                    created_by=self.lead, updated_by=self.lead, created_at=now, updated_at=now)
+
+    def test_each_of_the_three_may_request(self):
+        from tracker import rbac
+        for u in (self.dir, self.lead, self.fin):
+            self.assertTrue(rbac.can(u, "gate.request", self.p.id), f"{u.username} cannot request")
+        self.assertFalse(rbac.can(self.tech, "gate.request", self.p.id), "a tech must not")
+
+    def test_one_signature_moves_the_gate(self):
+        from tracker.services import approvals, gates
+        self._evidence_ready()
+        ap = gates.request_gate(self.lead, self.p.id)
+        self.assertEqual(sorted(ap.required_roles), ["director", "finance", "techlead"])
+        approvals.decide(self.fin, ap.id, "approved")      # Finance alone
+        ap.refresh_from_db(); self.p.refresh_from_db()
+        self.assertEqual(ap.status, "approved", "one of the three is enough")
+        self.assertEqual(self.p.stage, 1, "and the project moves on")
+
+    def test_money_still_needs_every_listed_role(self):
+        """The change must not leak into approvals where two signatures are the whole point."""
+        from tracker.models import Approval
+        from tracker.services import approvals
+        from django.utils import timezone
+        ap = Approval.objects.create(project=self.p, kind="po", title="Big PO", description="",
+                                     requested_by=self.lead, requested_at=timezone.now(),
+                                     required_roles=["finance", "director"], decisions=[], status="pending",
+                                     amount=9_000_000)
+        approvals.decide(self.fin, ap.id, "approved")
+        ap.refresh_from_db()
+        self.assertEqual(ap.status, "pending", "Finance alone must not clear a PO needing a Director too")
+        approvals.decide(self.dir, ap.id, "approved")
+        ap.refresh_from_db()
+        self.assertEqual(ap.status, "approved")
