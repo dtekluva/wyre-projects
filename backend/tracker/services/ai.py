@@ -31,7 +31,9 @@ DOC_SCHEMA = {
     "required": ["title", "doc_type", "issuer", "issued_at", "expires_at", "reference", "confidence", "notes"],
     "properties": {
         "title": {"type": ["string", "null"], "description": "Short human title for this document, e.g. 'Public liability insurance — Leadway'"},
-        "doc_type": {"type": ["string", "null"], "enum": [*DOC_TYPE_LABEL.keys(), None],
+        # A nullable enum has to be anyOf under strict mode — type:["string","null"] with null in the
+        # enum list is rejected ("Enum value 'proposal' does not match declared type").
+        "doc_type": {"anyOf": [{"type": "string", "enum": list(DOC_TYPE_LABEL.keys())}, {"type": "null"}],
                      "description": "Which kind of evidence this is, from the fixed list"},
         "issuer": {"type": ["string", "null"], "description": "Organisation that issued it, exactly as printed"},
         "issued_at": {"type": ["string", "null"], "description": "Date of issue as YYYY-MM-DD, or null if not printed"},
