@@ -82,7 +82,7 @@ export function VisitDetail({ visit, onClose }: { visit: SiteVisit; onClose: () 
             {canAdd && <div className="stack" style={{ gap: 6, marginTop: 4 }}>
               <FilePick picks={extra} onChange={setExtra} multiple captions label="Add more photos" captionPlaceholder="Label this photo…" />
               {extra.length > 0 && <div className="row">
-                <button className="ns-btn ns-btn--secondary ns-btn--sm" onClick={() => {
+                <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => {
                   if (safe(() => {
                     const ids = extra.map((f) => api.addAttachment(user.id, v.projectId, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: f.caption?.trim() || `${VISIT_TYPE_LABEL[v.visitType]} — site photo` }).id);
                     api.addVisitPhotos(user.id, v.id, { attachmentIds: ids });

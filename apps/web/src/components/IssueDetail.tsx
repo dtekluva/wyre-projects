@@ -76,7 +76,7 @@ export function IssueDetail({ issue, onClose }: { issue: Issue; onClose: () => v
             {canUpdate && <div className="stack" style={{ gap: 6, marginTop: 4 }}>
               <FilePick picks={extra} onChange={setExtra} multiple captions label="Add photos or files" captionPlaceholder="What does this show?" />
               {extra.length > 0 && <div className="row row--wrap">
-                <button className="ns-btn ns-btn--secondary ns-btn--sm" onClick={() => {
+                <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => {
                   if (safe(() => {
                     const ids = extra.map((f) => api.addAttachment(user.id, i.projectId, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, kind: f.file.type.startsWith("image/") ? "image" : "document", caption: f.caption?.trim() || `${i.title} — ${f.fileName}` }).id);
                     api.addIssuePhotos(user.id, i.id, { attachmentIds: ids });

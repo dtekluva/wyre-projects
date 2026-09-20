@@ -125,7 +125,7 @@ export function FieldIssueDetail() {
     {api.can(user.id, "issue.update", i.projectId) && <div className="stack" style={{ gap: 6 }}>
       <label className="flabel">Add photos or files — any stage</label>
       <CameraInput shots={more} onChange={setMore} captions label="Add photo" />
-      {more.length > 0 && <button className="ns-btn ns-btn--secondary ns-btn--block" onClick={() => {
+      {more.length > 0 && <button className="ns-btn ns-btn--primary ns-btn--block" onClick={() => {
         submit(`${more.length} file${more.length > 1 ? "s" : ""} added — ${i.title}`, { kind: "add_issue_photos", actorId: user.id, issueId: i.id, projectId: i.projectId,
           photos: more.map((s) => ({ fileName: s.fileName, caption: s.caption?.trim() || `${i.title} — ${s.fileName}`, blob: s.file })) });
         setMore([]);
