@@ -184,3 +184,21 @@ class ManageUsersTest(TestCase):
         e = self.err("conflict", accounts.delete_user, self.boss, "u_t")
         self.assertIn("Deactivate", e.message)
         self.assertTrue(User.objects.filter(pk="u_t").exists())
+
+
+class AlertsWithoutInventoryTest(TestCase):
+    """A new install has no warehouse. That must not stop every other alert from being raised."""
+
+    def setUp(self):
+        seed_rbac()
+        self.boss = User.objects.create(id="u_a", username="a.boss", name="A Boss", email="a@wyreng.com")
+        self.boss.set_password("x" * 12); self.boss.save()
+        self.boss.roles.set(Role.objects.filter(code="director"))
+
+    def test_build_survives_with_no_warehouse(self):
+        from tracker.models import StockLocation
+        from tracker.services import alerts
+        self.assertFalse(StockLocation.objects.exists(), "precondition: a fresh install has no locations")
+        alerts.build()          # used to raise ApiError("No warehouse location configured")
+        res = alerts.run(prune=False)
+        self.assertIsInstance(res, dict)

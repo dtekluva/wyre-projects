@@ -19,7 +19,7 @@ from django.utils import timezone
 from .. import rbac
 from ..constants import DOC_TYPE_LABEL, MOVEMENT_LABEL
 from ..gates import STAGES
-from ..models import (Approval, CommissioningRecord, Document, InventoryItem, Issue, Notification, Project, ProjectMembership, QbBill, User)
+from ..models import (Approval, CommissioningRecord, Document, InventoryItem, Issue, Notification, Project, ProjectMembership, QbBill, StockLocation, User)
 from . import base as b
 from . import approvals as approvals_svc
 from . import gates as gates_svc
@@ -175,9 +175,14 @@ def build() -> list[Alert]:
                              f"/projects/{p.id}/money", p.id, {"model": "Project", "id": p.id}, f"budget_warn:{p.id}", who))
 
     # ---- stock below reorder level ------------------------------------------------------------------------
-    balances = stock_svc.balances()
+    # No warehouse configured is an ordinary state on a new install, not an error. It used to raise here
+    # and take the WHOLE alert run with it — expiry, overdue checks, budget, everything — so a company
+    # that had not set up inventory yet silently got no alerts at all.
+    wh_loc = StockLocation.objects.filter(pk="loc_wh").first() or \
+        StockLocation.objects.filter(type="warehouse", is_active=True).order_by("id").first()
+    balances = stock_svc.balances() if wh_loc else []
     items = {i.id: i for i in InventoryItem.objects.filter(is_active=True)}
-    wh = b.default_warehouse().id
+    wh = wh_loc.id if wh_loc else None
     for bal in balances:
         it = items.get(bal["itemId"])
         if not it or bal["locationId"] != wh or not bal["belowReorder"]:
