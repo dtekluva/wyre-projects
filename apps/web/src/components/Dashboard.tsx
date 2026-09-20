@@ -27,7 +27,7 @@ export function Dashboard({ projects }: { projects: Project[] }) {
   const breached = projects.flatMap((p) => api.listIssues({ projectId: p.id, openOnly: true })).filter((i) => api.issueSla(i).breached);
   const slipping = live.filter((p) => { const planned = p.stagePlanned[p.stage]; return planned && planned < today; })
     .map((p) => ({ p, slip: daysBetween(p.stagePlanned[p.stage]!, today) })).sort((a, b) => b.slip - a.slip);
-  const belowReorder = seesStock ? api.balances().filter((b) => b.belowReorder && b.qtyOnHand <= 0 === false && b.locationId === "loc_wh").length : 0;
+  const belowReorder = seesStock ? api.balances().filter((b) => b.belowReorder && b.qtyOnHand <= 0 === false && b.locationId === api.mainLocationId()).length : 0;
   const unmatched = seesRecon ? api.listQbBills().filter((b) => b.confidence !== "matched").length : 0;
 
   const attention = [

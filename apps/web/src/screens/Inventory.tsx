@@ -9,7 +9,8 @@ import { Badge, Empty, Kpi, Note, ReviewBadge } from "../components/ui";
 export function Inventory() {
   const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   if (!api.can(user.id, "inventory.read") && !api.canAnywhere(user.id, "inventory.read")) return <Note tone="danger">Your role cannot view inventory.</Note>;
-  const bal = api.balances().filter((b) => b.locationId === "loc_wh"); const sv = api.stockValue();
+  const mainLoc = api.mainLocationId();
+  const bal = api.balances().filter((b) => b.locationId === mainLoc); const sv = api.stockValue();
   const [focus, setFocus] = useState<string>(""); const [type, setType] = useState<"" | MovementType>("");
   const mv = api.listMovements({ itemId: focus || undefined, type: type || undefined }).slice(0, 60);
   const pending = api.listMovements({ status: "pending" }).length; const below = bal.filter((b) => b.belowReorder).length;
@@ -19,15 +20,15 @@ export function Inventory() {
   const dirThr = api.thresholdNum("writeoff.director_threshold", 500_000);
   // phase 3 — locations, transfers, counts
   const locs = api.listLocations(); const counts = api.listCounts(); const canCount = api.can(user.id, "stockcount.create");
-  const [tFrom, setTFrom] = useState("loc_wh"); const [tTo, setTTo] = useState(locs.find((l) => l.id !== "loc_wh")?.id ?? ""); const [tItem, setTItem] = useState(api.items[0]?.id ?? ""); const [tQty, setTQty] = useState("1"); const [tSel, setTSel] = useState<string[]>([]);
+  const [tFrom, setTFrom] = useState(mainLoc ?? ""); const [tTo, setTTo] = useState(locs.find((l) => l.id !== mainLoc)?.id ?? ""); const [tItem, setTItem] = useState(api.items[0]?.id ?? ""); const [tQty, setTQty] = useState("1"); const [tSel, setTSel] = useState<string[]>([]);
   const [lName, setLName] = useState(""); const [lType, setLType] = useState<"vehicle" | "site" | "warehouse">("vehicle"); const [lCust, setLCust] = useState("");
-  const [countLoc, setCountLoc] = useState("loc_wh"); const [entry, setEntry] = useState<Record<string, { qty: string; note: string }>>({});
+  const [countLoc, setCountLoc] = useState(mainLoc ?? ""); const [entry, setEntry] = useState<Record<string, { qty: string; note: string }>>({});
   const ti = tItem ? api.item(tItem) : undefined;
   const openCount = counts.find((c) => c.status === "open");
   const lineVal = (c: StockCount, itemId: string) => entry[itemId] ?? { qty: String(c.lines.find((l) => l.itemId === itemId)?.countedQty ?? ""), note: c.lines.find((l) => l.itemId === itemId)?.note ?? "" };
   return (
     <>
-      <div className="page-head"><div><h1 className="page-title">Inventory</h1><div className="page-sub">{api.locationName("loc_wh")} · weighted-average cost · ledger-backed</div></div></div>
+      <div className="page-head"><div><h1 className="page-title">Inventory</h1><div className="page-sub">{mainLoc ? api.locationName(mainLoc) : "no location yet"} · weighted-average cost · ledger-backed</div></div></div>
       <div className="kpis">
         <Kpi label="Stock value" value={naira(sv.total, true)} sub={`${api.items.length} catalogue items`} />
         <Kpi label="Below reorder" value={below} sub="items at or under level" tone={below ? "warn" : undefined} />

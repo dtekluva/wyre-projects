@@ -889,6 +889,12 @@ export class MockApi {
   // Phase 3 — locations, transfers, stock counts
   // ======================================================================
   listLocations() { return this.locations.filter((l) => l.isActive); }
+  /** The main warehouse. Mirrors base.default_warehouse() on the server: screens must not assume the
+   *  demo id "loc_wh", which does not exist on a real database. */
+  mainLocationId(): string | undefined {
+    const live = this.locations.filter((l) => l.isActive !== false);
+    return (live.find((l) => l.type === "warehouse") ?? live[0])?.id;
+  }
   addVendor(actorId: string, input: { name: string; category?: string }): Vendor {
     this.require(actorId, "catalogue.manage");
     const name = input.name.trim();
