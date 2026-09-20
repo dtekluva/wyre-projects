@@ -202,7 +202,11 @@ function ReceiveFromNote() {
       Roles stack, so a Director can add <b>Store Keeper</b> to their own account under Users &amp; roles and do it themselves.</Note></div>
   </div>;
 
-  const ext = (api.extractions ?? []).find((e) => e.id === extId);
+  // Resume on its own: the id lives in component state, so a refresh (or a different device) would
+  // otherwise abandon a reading that has already been paid for and finished.
+  const all = api.extractions ?? [];
+  const ext = all.find((e) => e.id === extId)
+    ?? all.find((e) => e.target === "stock_lines" && !["accepted", "rejected"].includes(e.status));
   useWaitFor(!!ext && (ext.status === "queued" || ext.status === "running"));
   const f = (ext?.fields ?? {}) as unknown as { reference?: string; supplier?: string; dated?: string; lines?: ReadLine[]; notes?: string; confidence?: string };
   const lines = f.lines ?? [];
