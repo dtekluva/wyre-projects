@@ -32,11 +32,20 @@ def request_gate(actor: User, project_id: str) -> Approval:
         raise ApiError("Project is closed", "conflict")
     if g["pendingApproval"]:
         raise ApiError("A gate approval is already pending", "conflict")
-    if not g["ready"]:
-        raise ApiError("Gate evidence is not complete — every item must be checked", "invalid")
+    # The checklist no longer blocks (user decision, 2026-09-20). A missing item is now something the
+    # approver is told about and signs off anyway, rather than a hard stop — so the description spells
+    # out exactly what is not there. The chronology keeps that sentence, which is the point: a gate
+    # passed with evidence outstanding should be visible later, not silently identical to a clean one.
+    outstanding = [i["label"] for i in g["items"] if i["state"] != "ok"]
     nxt = STAGES[g["nextStage"]]
+    detail = (f"All gate-{g['stage']} evidence checked: {', '.join(i['label'] for i in g['items'])}."
+              if not outstanding else
+              f"Requested with {len(outstanding)} of {len(g['items'])} evidence items outstanding: "
+              f"{', '.join(outstanding)}.")
     ap = Approval.objects.create(project_id=project_id, kind="gate", title=f"Gate {g['stage']} → {g['nextStage']} · {STAGES[g['stage']]['short']} → {nxt['short']}",
-                                 description=f"All gate-{g['stage']} evidence checked: {', '.join(i['label'] for i in g['items'])}.",
+                                 description=detail,
                                  requested_by=actor, requested_at=b.now(), required_roles=g["approverRoles"], decisions=[], status="pending", target_stage=g["nextStage"])
-    b.log(project_id, actor, "gate_requested", f"{ap.title} — approval requested", None, {"model": "Approval", "id": ap.id})
+    b.log(project_id, actor, "gate_requested",
+          f"{ap.title} — approval requested" + (f" ({len(outstanding)} evidence item{'s' if len(outstanding) != 1 else ''} outstanding)" if outstanding else ""),
+          detail, {"model": "Approval", "id": ap.id})
     return ap

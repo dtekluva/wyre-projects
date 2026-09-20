@@ -385,3 +385,57 @@ class GateApprovalTest(TestCase):
         approvals.decide(self.dir, ap.id, "approved")
         ap.refresh_from_db()
         self.assertEqual(ap.status, "approved")
+
+
+class GateWithoutCompleteEvidenceTest(TestCase):
+    """The checklist informs, it no longer blocks (user decision, 2026-09-20). What is missing has to
+    survive into the approval and the chronology, or a gate passed with gaps looks identical later to
+    one passed clean."""
+
+    def setUp(self):
+        from django.utils import timezone
+        from tracker.models import Project
+        seed_rbac()
+        self.lead = User.objects.create(id="u_gl", username="gl", name="GL", email="gl@wyreng.com")
+        self.lead.set_password("x" * 12); self.lead.save()
+        self.lead.roles.set(Role.objects.filter(code="techlead"))
+        self.dir = User.objects.create(id="u_gd", username="gd", name="GD", email="gd@wyreng.com")
+        self.dir.set_password("x" * 12); self.dir.save()
+        self.dir.roles.set(Role.objects.filter(code="director"))
+        now = timezone.now()
+        self.p = Project.objects.create(id="p_ng", code="WYR-2026-903", name="No evidence", client_name="C",
+            branch_name="B", location="L", project_type="solar_battery", stage=0, rag="green",
+            pm=self.lead, lead_engineer=self.lead, contract_value=1, approved_budget=1, retention_percent=5,
+            created_by=self.lead, updated_by=self.lead, created_at=now, updated_at=now)
+
+    def test_a_gate_moves_with_nothing_attached(self):
+        from tracker.models import ChronologyEvent
+        from tracker.services import approvals, gates
+        g = gates.gate_status(self.p.id)
+        self.assertFalse(g["ready"], "precondition: no evidence at all")
+
+        ap = gates.request_gate(self.lead, self.p.id)          # used to raise
+        self.assertIn("outstanding", ap.description)
+        for label in ("Signed proposal", "Sizing document", "ROI model"):
+            self.assertIn(label, ap.description, "the approver is told exactly what is missing")
+
+        ev = ChronologyEvent.objects.filter(project=self.p, event_type="gate_requested").first()
+        self.assertIn("3 evidence items outstanding", ev.summary, "and it stays in the chronology")
+
+        approvals.decide(self.dir, ap.id, "approved")
+        self.p.refresh_from_db()
+        self.assertEqual(self.p.stage, 1)
+
+    def test_a_clean_gate_still_reads_as_clean(self):
+        from django.utils import timezone
+        from tracker.models import Document
+        from tracker.services import gates
+        now = timezone.now()
+        for dt in ("proposal", "sizing", "roi_model"):
+            Document.objects.create(project=self.p, doc_type=dt, title=dt, status="approved", file_name=f"{dt}.pdf",
+                                    review_status="checked", submitted_by=self.lead, submitted_at=now,
+                                    checked_by=self.dir, checked_at=now, review_version=1,
+                                    created_by=self.lead, updated_by=self.lead, created_at=now, updated_at=now)
+        ap = gates.request_gate(self.lead, self.p.id)
+        self.assertIn("All gate-0 evidence checked", ap.description)
+        self.assertNotIn("outstanding", ap.description)

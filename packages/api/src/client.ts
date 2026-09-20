@@ -391,11 +391,15 @@ export class MockApi {
     const g = this.gateStatus(projectId);
     if (g.terminal) throw new ApiError("Project is closed", "conflict");
     if (g.pendingApproval) throw new ApiError("A gate approval is already pending", "conflict");
-    if (!g.ready) throw new ApiError("Gate evidence is not complete — every item must be checked", "invalid");
+    // The checklist informs, it no longer blocks. What is missing goes into the description so the
+    // approver signs off knowingly, and so a gate passed with gaps reads differently later.
     const next = STAGES[g.nextStage!];
+    const outstanding = g.items.filter((i) => i.state !== "ok").map((i) => i.label);
     const ap: Approval = {
       id: this.id("ap"), projectId, kind: "gate", title: `Gate ${g.stage} → ${g.nextStage} · ${STAGES[g.stage].short} → ${next.short}`,
-      description: `All gate-${g.stage} evidence checked: ${g.items.map((i) => i.label).join(", ")}.`,
+      description: outstanding.length
+        ? `Requested with ${outstanding.length} of ${g.items.length} evidence items outstanding: ${outstanding.join(", ")}.`
+        : `All gate-${g.stage} evidence checked: ${g.items.map((i) => i.label).join(", ")}.`,
       requestedBy: actorId, requestedAt: this.now(), requiredRoles: g.approverRoles, decisions: [], status: "pending", targetStage: g.nextStage,
     };
     this.approvals.push(ap);

@@ -121,7 +121,9 @@ class RulesTest(TestCase):
         self.err("forbidden", review.check, u["u_ft1"], "document", doc.id, "checked")
         self.err("invalid", review.check, u["u_le2"], "document", doc.id, "rejected")
         g = gates.gate_status("p7"); self.assertFalse(g["ready"])
-        self.err("invalid", gates.request_gate, u["u_pm1"], "p7")
+        # Incomplete evidence no longer blocks the request (2026-09-20) — the checklist still reports
+        # what is outstanding, and the approver decides. Coverage for that lives in
+        # test_accounts.GateWithoutCompleteEvidenceTest; here we finish the evidence and carry on.
         review.check(u["u_le2"], "document", doc.id, "checked")
         sizing = Document.objects.get(project_id="p7", doc_type="sizing")
         review.check(u["u_dir"], "document", sizing.id, "checked")  # Director checks globally; u_le1 is not on p7

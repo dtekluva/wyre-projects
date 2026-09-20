@@ -38,9 +38,12 @@ export function GateCard({ projectId }: { projectId: string }) {
         <div className="sm muted">Approver{g.approverRoles.length > 1 ? "s" : ""}: <b>{roles}</b></div>
         {g.pendingApproval
           ? <Badge variant="warning"><span className="ns-badge__dot" />Awaiting {roles} · requested by {api.userName(g.pendingApproval.requestedBy)}</Badge>
-          : <button className="ns-btn ns-btn--primary ns-btn--sm" disabled={!g.ready || !canRequest}
-              title={!canRequest ? "Only a Project Manager on this project can request a gate" : !g.ready ? "Every evidence item must be checked first" : "Send to approvers"}
-              onClick={() => safe(() => { api.requestGate(projectId, user.id); }, "Gate approval requested")}>Request gate approval</button>}
+          : <button className={`ns-btn ns-btn--sm ${g.ready ? "ns-btn--primary" : ""}`} disabled={!canRequest}
+              title={!canRequest ? "Only a Director, Tech Lead or Finance can request a gate"
+                : g.ready ? "Send to approvers" : "Outstanding evidence is listed for the approver — they decide"}
+              onClick={() => safe(() => { api.requestGate(projectId, user.id); },
+                g.ready ? "Gate approval requested" : "Requested — the approver will see what is outstanding")}>
+              {g.ready ? "Request gate approval" : "Request anyway"}</button>}
       </div>
     </div>
   );
