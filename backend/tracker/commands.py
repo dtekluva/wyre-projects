@@ -52,6 +52,8 @@ COMMANDS: dict[str, Handler] = {
     "issueStock": lambda a, d, f: S.movement(stock.issue_stock(a, _in(d))),
     "returnStock": lambda a, d, f: S.movement(stock.return_stock(a, _in(d))),
     "writeOff": lambda a, d, f: S.movement(stock.write_off(a, _in(d))),
+    "addVendor": lambda a, d, f: S.vendor(stock.add_vendor(a, _in(d))),
+    "addItem": lambda a, d, f: S.item(stock.add_item(a, _in(d))),
     "addLocation": lambda a, d, f: S.location(stock.add_location(a, _in(d))),
     "transferStock": lambda a, d, f: S.movement(stock.transfer_stock(a, _in(d))),
     "startCount": lambda a, d, f: S.stock_count(stock.start_count(a, d.get("locationId"), d)),

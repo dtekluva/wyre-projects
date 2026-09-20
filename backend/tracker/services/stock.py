@@ -10,7 +10,8 @@ from django.db import transaction
 
 from .. import rbac
 from ..errors import ApiError
-from ..models import Actual, Approval, Asset, InventoryItem, StockCount, StockLocation, StockMovement, User
+from ..constants import ASSET_TYPES
+from ..models import Actual, Approval, Asset, InventoryItem, StockCount, StockLocation, StockMovement, User, Vendor
 from . import base as b
 
 
@@ -318,3 +319,47 @@ def submit_count(actor: User, count_id: str) -> Approval:
                                  requested_by=actor, requested_at=at, required_roles=["finance"], decisions=[], status="pending", amount=sc.variance_value)
     sc.approval = ap; sc.status = "submitted"; b.stamp(sc, actor, at); sc.save()
     return ap
+
+
+# ---- reference data: the item catalogue and the vendor list ------------------------------------------
+# Without these a fresh database cannot raise a single PO, so nothing can be received and nothing can
+# enter the stock ledger. They were only ever created by seed_demo.
+
+def add_vendor(actor: User, input: dict) -> Vendor:
+    b.require(actor, "catalogue.manage")
+    name = b.clean(input.get("name"))
+    if not name:
+        raise ApiError("Vendor name is required", "invalid")
+    if Vendor.objects.filter(name__iexact=name).exists():
+        raise ApiError(f"{name} is already on the vendor list", "conflict")
+    return Vendor.objects.create(**b.maybe_id(input, Vendor, "v"), name=name,
+                                 category=b.clean(input.get("category")) or None)
+
+
+def add_item(actor: User, input: dict) -> InventoryItem:
+    b.require(actor, "catalogue.manage")
+    sku = b.clean(input.get("sku")).upper()
+    name = b.clean(input.get("name"))
+    category = b.clean(input.get("category"))
+    if not sku:
+        raise ApiError("SKU is required", "invalid")
+    if not name:
+        raise ApiError("Item name is required", "invalid")
+    if category not in ASSET_TYPES:
+        raise ApiError(f"Category must be one of: {', '.join(ASSET_TYPES)}", "invalid")
+    if InventoryItem.objects.filter(sku__iexact=sku).exists():
+        raise ApiError(f"SKU {sku} is already in use", "conflict")
+    reorder_level = b.dec(input.get("reorderLevel"))
+    reorder_qty = b.dec(input.get("reorderQty"))
+    if reorder_level < 0 or reorder_qty < 0:
+        raise ApiError("Reorder figures cannot be negative", "invalid")
+    vendor = None
+    if input.get("defaultVendorId"):
+        vendor = b.get_or_404(Vendor, input["defaultVendorId"], "Vendor")
+    months = input.get("warrantyMonths")
+    return InventoryItem.objects.create(
+        **b.maybe_id(input, InventoryItem, "it"), sku=sku, name=name, category=category,
+        unit=b.clean(input.get("unit")) or "pcs", is_serialised=bool(input.get("isSerialised")),
+        reorder_level=reorder_level, reorder_qty=reorder_qty, default_vendor=vendor, is_active=True,
+        make=b.clean(input.get("make")) or None, model=b.clean(input.get("model")) or None,
+        warranty_months=int(months) if months else None)

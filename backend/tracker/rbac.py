@@ -15,7 +15,7 @@ MATRIX: dict[str, list[str]] = {
                  "attachment.create", "attachment.read", "po.read", "po.approve", "writeoff.approve",
                  "stockcount.approve", "commissioning.check", "approval.read", "membership.manage", "users.manage",
                  "thresholds.read", "thresholds.manage", "money.read", "inventory.read", "asset.read",
-                 "recon.read", "dashboard.read"],
+                 "recon.read", "dashboard.read", "catalogue.manage"],
     # Checker and project owner — the old pm and lead_engineer, merged. It holds both gate.request and
     # gate.approve, which is safe because segregation of duties is enforced per *person*
     # (approvals.py and review.py refuse your own request or your own submission), not per role.
@@ -27,7 +27,7 @@ MATRIX: dict[str, list[str]] = {
                  "inventory.read", "inventory.request", "inventory.check", "asset.read", "asset.write",
                  "visit.create", "visit.check", "issue.create", "issue.update", "issue.check",
                  "commissioning.create", "commissioning.check", "hse.create", "hse.check",
-                 "warranty.create", "warranty.check", "dashboard.read"],
+                 "warranty.create", "warranty.check", "dashboard.read", "catalogue.manage"],
     # Field capture — the old field_tech, renamed. Creates, never checks.
     "tech": ["project.read", "chronology.read", "document.create", "document.read",
              "attachment.create", "attachment.read", "goods_receipt.create",
@@ -38,7 +38,7 @@ MATRIX: dict[str, list[str]] = {
                 "cost.check", "goods_receipt.check", "inventory.read", "inventory.check", "retention.request", "asset.read", "recon.read",
                 "recon.write", "dashboard.read"],
     "store_keeper": ["stockcount.create", "project.read", "chronology.read", "attachment.create", "attachment.read", "po.read",
-                     "goods_receipt.create", "inventory.read", "inventory.write", "asset.read", "asset.write", "thresholds.read", "dashboard.read"],
+                     "goods_receipt.create", "inventory.read", "inventory.write", "asset.read", "asset.write", "thresholds.read", "dashboard.read", "catalogue.manage"],
     "auditor": ["project.read", "chronology.read", "document.read", "attachment.read", "po.read", "approval.read", "thresholds.read",
                 "money.read", "inventory.read", "asset.read", "recon.read", "dashboard.read"],
 }

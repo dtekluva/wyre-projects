@@ -8,7 +8,7 @@ import * as seed2 from "./mock/data2";
 import * as seed3 from "./mock/data3";
 import {
   DOC_TYPE_LABEL, COST_CATEGORY_LABEL, MOVEMENT_LABEL, PROJECT_TYPE_LABEL, type ProjectType,
-  type User, type InviteInput, type Project, type ProjectMembership, type Document, type Attachment, type ChronologyEvent, type Approval, type Threshold,
+  type User, type InviteInput, ASSET_TYPES, type Project, type ProjectMembership, type Document, type Attachment, type ChronologyEvent, type Approval, type Threshold,
   type Stage, type GateStatus, type DocType, type RoleCode, type EventType, type ReviewStatus,
   type Vendor, type InventoryItem, type StockLocation, type CostItem, type PurchaseOrder, type PurchaseItem, type GoodsReceipt, type Asset,
   type StockMovement, type StockBalance, type Actual, type ChangeOrder, type Retention, type QbBill, type CostCategory, type ProjectMoney, type AssetType,
@@ -889,6 +889,33 @@ export class MockApi {
   // Phase 3 — locations, transfers, stock counts
   // ======================================================================
   listLocations() { return this.locations.filter((l) => l.isActive); }
+  addVendor(actorId: string, input: { name: string; category?: string }): Vendor {
+    this.require(actorId, "catalogue.manage");
+    const name = input.name.trim();
+    if (!name) throw new ApiError("Vendor name is required", "invalid");
+    if (this.vendors.some((v) => v.name.toLowerCase() === name.toLowerCase())) throw new ApiError(`${name} is already on the vendor list`, "conflict");
+    const v: Vendor = { id: this.id("v"), name, category: input.category?.trim() || undefined };
+    this.vendors.push(v); this.emit(); return v;
+  }
+  /** The item catalogue. Without it nothing can be received into stock, so a PO has nowhere to land. */
+  addItem(actorId: string, input: { sku: string; name: string; category: AssetType; unit?: string; isSerialised?: boolean;
+                                    reorderLevel?: number; reorderQty?: number; defaultVendorId?: string;
+                                    make?: string; model?: string; warrantyMonths?: number }): InventoryItem {
+    this.require(actorId, "catalogue.manage");
+    const sku = input.sku.trim().toUpperCase(); const name = input.name.trim();
+    if (!sku) throw new ApiError("SKU is required", "invalid");
+    if (!name) throw new ApiError("Item name is required", "invalid");
+    if (!ASSET_TYPES.includes(input.category)) throw new ApiError(`Category must be one of: ${ASSET_TYPES.join(", ")}`, "invalid");
+    if (this.items.some((i) => i.sku.toLowerCase() === sku.toLowerCase())) throw new ApiError(`SKU ${sku} is already in use`, "conflict");
+    if ((input.reorderLevel ?? 0) < 0 || (input.reorderQty ?? 0) < 0) throw new ApiError("Reorder figures cannot be negative", "invalid");
+    if (input.defaultVendorId && !this.vendors.some((v) => v.id === input.defaultVendorId)) throw new ApiError("Unknown vendor", "invalid");
+    const it: InventoryItem = { id: this.id("it"), sku, name, category: input.category, unit: input.unit?.trim() || "pcs",
+      isSerialised: !!input.isSerialised, reorderLevel: input.reorderLevel ?? 0, reorderQty: input.reorderQty ?? 0,
+      defaultVendorId: input.defaultVendorId || undefined, isActive: true,
+      make: input.make?.trim() || undefined, model: input.model?.trim() || undefined,
+      warrantyMonths: input.warrantyMonths || undefined };
+    this.items.push(it); this.emit(); return it;
+  }
   addLocation(actorId: string, input: { name: string; type: StockLocation["type"]; custodianId?: string }): StockLocation {
     this.require(actorId, "inventory.write");
     if (!input.name.trim()) throw new ApiError("Name is required", "invalid");

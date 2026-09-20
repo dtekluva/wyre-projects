@@ -204,4 +204,19 @@ ok(api.gateStatus(np.id).stage === 0 && api.gateStatus(np.id).items.length === 3
 expectErr(() => api.createProject("u_admin", npBase), "conflict", "duplicate project name is rejected");
 const np2 = api.createProject("u_admin", { ...npBase, name: "Second Test Project" });
 ok(Number(np2.code.slice(-3)) === Number(np.code.slice(-3)) + 1, "codes increment per year");
+// ---- catalogue: items and vendors, the reference data everything else needs ----
+{
+  expectErr(() => api.addItem("u_ft1", { sku: "X", name: "x", category: "panel" }), "forbidden", "a tech cannot add catalogue items");
+  expectErr(() => api.addVendor("u_ft1", { name: "Nope" }), "forbidden", "a tech cannot add vendors");
+  const v = api.addVendor("u_sk", { name: "Fresh Supplier Ltd", category: "Panels" });
+  ok(api.vendors.some((x) => x.id === v.id), "store keeper adds a vendor");
+  expectErr(() => api.addVendor("u_sk", { name: "fresh supplier ltd" }), "conflict", "duplicate vendor name is rejected, case-insensitively");
+  const it = api.addItem("u_sk", { sku: "pnl-600", name: "600 W panel", category: "panel", reorderLevel: 10, defaultVendorId: v.id });
+  ok(it.sku === "PNL-600" && it.unit === "pcs" && it.isActive, "SKU upper-cased, unit defaulted, item active");
+  expectErr(() => api.addItem("u_sk", { sku: "PNL-600", name: "dupe", category: "panel" }), "conflict", "duplicate SKU is rejected");
+  expectErr(() => api.addItem("u_sk", { sku: "Y", name: "y", category: "sandwich" }), "invalid", "unknown category is rejected");
+  expectErr(() => api.addItem("u_sk", { sku: "Z", name: "z", category: "panel", reorderLevel: -1 }), "invalid", "negative reorder level is rejected");
+  ok(api.addItem("u_dir", { sku: "CBL-6", name: "6 mm cable", category: "cable", unit: "m" }).unit === "m", "a director may also maintain the catalogue");
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED"); process.exit(fails ? 1 : 0);

@@ -11,7 +11,7 @@ export type Permission =
   | "membership.manage" | "users.manage"
   | "thresholds.read" | "thresholds.manage"
   | "money.read" | "money.write"
-  | "inventory.read" | "inventory.write" | "inventory.request" | "inventory.check" | "writeoff.approve"
+  | "inventory.read" | "inventory.write" | "catalogue.manage" | "inventory.request" | "inventory.check" | "writeoff.approve"
   | "goods_receipt.create" | "goods_receipt.check"
   | "cost.create" | "cost.check" | "change_order.create" | "retention.request"
   | "asset.read" | "asset.write" | "recon.read" | "recon.write"
@@ -31,7 +31,7 @@ export const MATRIX: Record<RoleCode, Permission[]> = {
               "attachment.create","attachment.read","po.read","po.approve","writeoff.approve",
               "stockcount.approve","commissioning.check","approval.read","membership.manage","users.manage",
               "thresholds.read","thresholds.manage","money.read","inventory.read","asset.read",
-              "recon.read","dashboard.read"),
+              "recon.read","dashboard.read","catalogue.manage"),
   // Checker and project owner — the old pm and lead_engineer merged. Holds gate.request AND gate.approve,
   // which is safe because segregation of duties is enforced per person, not per role: you cannot approve
   // your own request or check your own submission.
@@ -43,7 +43,7 @@ export const MATRIX: Record<RoleCode, Permission[]> = {
               "inventory.read","inventory.request","inventory.check","asset.read","asset.write",
               "visit.create","visit.check","issue.create","issue.update","issue.check",
               "commissioning.create","commissioning.check","hse.create","hse.check",
-              "warranty.create","warranty.check","dashboard.read"),
+              "warranty.create","warranty.check","dashboard.read","catalogue.manage"),
   // Field capture — the old field_tech, renamed. Creates, never checks.
   tech: R("project.read","chronology.read","document.create","document.read",
           "attachment.create","attachment.read","goods_receipt.create",
@@ -53,7 +53,7 @@ export const MATRIX: Record<RoleCode, Permission[]> = {
              "approval.read","thresholds.read","money.read","money.write","cost.create","cost.check","goods_receipt.check","inventory.read",
              "inventory.check","retention.request","asset.read","recon.read","recon.write","dashboard.read"),
   store_keeper: R("stockcount.create","project.read","chronology.read","attachment.create","attachment.read","po.read","goods_receipt.create",
-                  "inventory.read","inventory.write","asset.read","asset.write","thresholds.read","dashboard.read"),
+                  "inventory.read","inventory.write","asset.read","asset.write","thresholds.read","dashboard.read","catalogue.manage"),
   auditor: R("project.read","chronology.read","document.read","attachment.read","po.read","approval.read","thresholds.read",
              "money.read","inventory.read","asset.read","recon.read","dashboard.read"),
 };

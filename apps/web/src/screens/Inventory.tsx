@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
-import { MOVEMENT_LABEL, fmtDate, naira, relative, type MovementType, type StockCount } from "@wyre/api";
+import { ASSET_TYPES, MOVEMENT_LABEL, fmtDate, naira, relative, type AssetType, type MovementType, type StockCount } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
@@ -36,6 +36,7 @@ export function Inventory() {
         {Object.entries(sv.byCategory).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([c, v]) => <Kpi key={c} label={`Value · ${c}`} value={naira(v, true)} />)}
       </div>
 
+      <Catalogue />
       <div className="card table--wrap"><div className="card__head"><div className="card__title">Stock on hand</div><span className="sm muted">click a row to filter the ledger</span></div>
         <table className="table"><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th className="num">On hand</th><th className="num">Unit cost</th><th className="num">Value</th><th className="num">Reorder at</th><th></th></tr></thead>
           <tbody>{api.items.map((it) => { const b = bal.find((x) => x.itemId === it.id)!; const av = api.available(it.id); return <tr key={it.id} onClick={() => setFocus(focus === it.id ? "" : it.id)} style={{ cursor: "pointer", background: focus === it.id ? "var(--ns-color-surface-selected)" : undefined }}>
@@ -94,4 +95,75 @@ export function Inventory() {
       </div>
     </>
   );
+}
+
+/**
+ * Items and vendors — the reference data everything else depends on. A PO needs a vendor, and stock only
+ * enters the ledger against an item, so on an empty database this card is the first thing anyone uses.
+ */
+function Catalogue() {
+  const api = useApi(); const { user } = useAuth(); const safe = useSafe();
+  const may = api.can(user.id, "catalogue.manage");
+  const [tab, setTab] = useState<"" | "item" | "vendor">("");
+  const [sku, setSku] = useState(""); const [name, setName] = useState(""); const [cat, setCat] = useState<AssetType>("panel");
+  const [unit, setUnit] = useState("pcs"); const [ser, setSer] = useState(false);
+  const [lvl, setLvl] = useState("0"); const [rq, setRq] = useState("0"); const [vend, setVend] = useState("");
+  const [vName, setVName] = useState(""); const [vCat, setVCat] = useState("");
+
+  if (!may) return null;
+
+  const head = <div className="card__head"><div className="card__title">Catalogue</div>
+    <span className="sm muted">{api.items.length} item{api.items.length === 1 ? "" : "s"} · {api.vendors.length} vendor{api.vendors.length === 1 ? "" : "s"}</span></div>;
+
+  if (!tab) return <div className="card" style={{ marginBottom: 20 }}>{head}
+    <div className="card__body row" style={{ gap: 8 }}>
+      <div className="grow sm muted">{api.items.length || api.vendors.length
+        ? "Add the things you buy and the people you buy them from."
+        : "Nothing here yet. A purchase order needs a vendor, and stock only enters the ledger against an item — so start here."}</div>
+      <button className="ns-btn ns-btn--primary" onClick={() => setTab("item")}>＋ New item</button>
+      <button className="ns-btn" onClick={() => setTab("vendor")}>＋ New vendor</button>
+    </div></div>;
+
+  return <div className="card" style={{ marginBottom: 20 }}>{head}
+    <div className="card__body stack" style={{ gap: 12 }}>
+      {tab === "item" ? <>
+        <div className="form">
+          <label className="ns-field"><span className="ns-field__label">SKU</span>
+            <input className="ns-input" value={sku} onChange={(e) => setSku(e.target.value.toUpperCase())} placeholder="INV-5KW" /></label>
+          <label className="ns-field"><span className="ns-field__label">Name</span>
+            <input className="ns-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="5 kW hybrid inverter" /></label>
+          <label className="ns-field"><span className="ns-field__label">Category</span>
+            <select className="ns-input" value={cat} onChange={(e) => setCat(e.target.value as AssetType)}>{ASSET_TYPES.map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
+          <label className="ns-field"><span className="ns-field__label">Unit</span>
+            <input className="ns-input" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="pcs" /></label>
+          <label className="ns-field"><span className="ns-field__label">Reorder at</span>
+            <input className="ns-input" type="number" min="0" value={lvl} onChange={(e) => setLvl(e.target.value)} /></label>
+          <label className="ns-field"><span className="ns-field__label">Reorder qty</span>
+            <input className="ns-input" type="number" min="0" value={rq} onChange={(e) => setRq(e.target.value)} /></label>
+          <label className="ns-field"><span className="ns-field__label">Default vendor</span>
+            <select className="ns-input" value={vend} onChange={(e) => setVend(e.target.value)}>
+              <option value="">— none —</option>{api.vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
+        </div>
+        <label className="row sm" style={{ gap: 8 }}>
+          <input type="checkbox" checked={ser} onChange={(e) => setSer(e.target.checked)} />
+          <span>Track individual serial numbers — required for anything that carries a warranty</span></label>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="ns-btn ns-btn--primary" disabled={!sku.trim() || !name.trim()}
+            onClick={() => { if (safe(() => api.addItem(user.id, { sku, name, category: cat, unit, isSerialised: ser, reorderLevel: Number(lvl) || 0, reorderQty: Number(rq) || 0, defaultVendorId: vend || undefined }), `${name} added to the catalogue`)) { setSku(""); setName(""); setLvl("0"); setRq("0"); setSer(false); setTab(""); } }}>Add item</button>
+          <button className="ns-btn ns-btn--ghost" onClick={() => setTab("")}>Cancel</button>
+        </div>
+      </> : <>
+        <div className="form">
+          <label className="ns-field"><span className="ns-field__label">Vendor name</span>
+            <input className="ns-input" value={vName} onChange={(e) => setVName(e.target.value)} placeholder="Dixsen Energy" /></label>
+          <label className="ns-field"><span className="ns-field__label">What they supply</span>
+            <input className="ns-input" value={vCat} onChange={(e) => setVCat(e.target.value)} placeholder="Inverters & batteries" /></label>
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="ns-btn ns-btn--primary" disabled={!vName.trim()}
+            onClick={() => { if (safe(() => api.addVendor(user.id, { name: vName, category: vCat || undefined }), `${vName} added`)) { setVName(""); setVCat(""); setTab(""); } }}>Add vendor</button>
+          <button className="ns-btn ns-btn--ghost" onClick={() => setTab("")}>Cancel</button>
+        </div>
+      </>}
+    </div></div>;
 }

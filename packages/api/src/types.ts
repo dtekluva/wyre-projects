@@ -176,6 +176,8 @@ export interface GoodsReceipt extends AuditFields, ReviewFields {
 }
 
 export type AssetType = "panel" | "inverter" | "battery" | "meter" | "ct" | "ats" | "cable" | "mounting" | "other";
+/** Runtime list, same order as backend/tracker/constants.py ASSET_TYPES. */
+export const ASSET_TYPES: readonly AssetType[] = ["panel", "inverter", "battery", "meter", "ct", "ats", "cable", "mounting", "other"];
 export type AssetStatus = "in_stock" | "installed" | "faulty" | "replaced" | "decommissioned";
 export interface Asset extends AuditFields {
   id: string; projectId?: string; inventoryItemId: string; assetType: AssetType; make: string; model: string; serial: string;
