@@ -643,7 +643,7 @@ export class MockApi {
     const total = items.reduce((s, i) => s + i.lineTotal, 0);
     const requiredRoles: RoleCode[] = total >= this.thresholdNum("po.director_threshold", 5_000_000) ? ["finance", "director"] : ["finance"];
     const poNumber = `PO-${new Date().getFullYear()}-${String(this.purchaseOrders.length + 27).padStart(3, "0")}`;
-    const ap: Approval = { id: this.id("ap"), projectId, kind: "po", title: `${poNumber} · ${this.vendorName(input.vendorId)}`,
+    const ap: Approval = { id: this.id("ap"), projectId, kind: "po", title: `${poNumber} · ${this.vendorName(vendorId)}`,
       description: `${items.map((i) => `${i.qty} × ${i.description}`).join("; ")}. ${requiredRoles.length > 1 ? "≥ director threshold → Finance + Director." : "Finance approval."}`,
       requestedBy: actorId, requestedAt: at, requiredRoles, decisions: [], status: "pending", amount: total };
     this.approvals.push(ap);
