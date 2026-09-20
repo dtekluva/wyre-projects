@@ -66,7 +66,7 @@ export function ProjectMoney() {
   const dirThr = api.thresholdNum("po.director_threshold", 5_000_000);
   // forms
   const [ciCat, setCiCat] = useState<CostCategory>("equipment"); const [ciLabel, setCiLabel] = useState(""); const [ciAmt, setCiAmt] = useState("");
-  const [vendor, setVendor] = useState(api.vendors[0]?.id ?? ""); const [poNotes, setPoNotes] = useState("");
+  const [vendor, setVendor] = useState(""); const [poNotes, setPoNotes] = useState("");
   type L = { description: string; qty: string; unitCost: string; inventoryItemId: string; costItemId: string };
   const blank = (): L => ({ description: "", qty: "1", unitCost: "", inventoryItemId: "", costItemId: cost.find((c) => c.reviewStatus === "checked")?.id ?? "" });
   const [lines, setLines] = useState<L[]>([blank()]);
@@ -101,7 +101,9 @@ export function ProjectMoney() {
         {pos.length ? pos.map((po) => <PoRow key={po.id} po={po} p={p} />) : <div className="card__body"><Empty title="No purchase orders yet" /></div>}
         {api.can(user.id, "po.create", p.id) && <div className="card__foot" style={{ display: "block" }}>
           <div className="ns-overline" style={{ marginBottom: 8 }}>Raise a purchase order</div>
-          <div className="form" style={{ marginBottom: 8 }}><label className="ns-field"><span className="ns-field__label">Vendor</span><select className="ns-input" value={vendor} onChange={(e) => setVendor(e.target.value)}>{api.vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
+          <div className="form" style={{ marginBottom: 8 }}><label className="ns-field"><span className="ns-field__label">Vendor <span className="muted">(optional)</span></span>
+            <input className="ns-input" list="po-vendors" value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="Who you are buying from" />
+            <datalist id="po-vendors">{api.vendors.map((v) => <option key={v.id} value={v.name} />)}</datalist></label>
             <label className="ns-field"><span className="ns-field__label">Notes</span><input className="ns-input" value={poNotes} onChange={(e) => setPoNotes(e.target.value)} /></label></div>
           <div className="polines">{lines.map((l, i) => <div key={i} className="poline">
             <label className="ns-field"><span className="ns-field__hint">Description</span><input className="ns-input" value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} /></label>
@@ -113,7 +115,7 @@ export function ProjectMoney() {
           </div>)}</div>
           <div className="row" style={{ marginTop: 10, flexWrap: "wrap" }}><button className="ns-btn ns-btn--ghost ns-btn--sm" type="button" onClick={() => setLines((ls) => [...ls, blank()])}>+ line</button>
             <span className="sm muted">Total <b className="ns-mono">{naira(total)}</b> → {total >= dirThr ? "Finance + Director" : "Finance"} approval</span>
-            <button className="ns-btn ns-btn--primary right" type="button" onClick={() => { if (safe(() => { api.createPO(user.id, p.id, { vendorId: vendor, notes: poNotes, items: lines.map((l) => ({ description: l.description, qty: Number(l.qty), unitCost: Number(l.unitCost), inventoryItemId: l.inventoryItemId || undefined, costItemId: l.costItemId || undefined })) }); }, "PO raised — sent for approval")) { setLines([blank()]); setPoNotes(""); } }}>Raise PO</button></div>
+            <button className="ns-btn ns-btn--primary right" type="button" onClick={() => { if (safe(() => { api.createPO(user.id, p.id, { vendorName: vendor, notes: poNotes, items: lines.map((l) => ({ description: l.description, qty: Number(l.qty), unitCost: Number(l.unitCost), inventoryItemId: l.inventoryItemId || undefined, costItemId: l.costItemId || undefined })) }); }, "PO raised — sent for approval")) { setLines([blank()]); setPoNotes(""); } }}>Raise PO</button></div>
         </div>}
       </div>
 

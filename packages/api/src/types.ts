@@ -11,6 +11,9 @@ export const ROLE_LABEL: Record<RoleCode, string> = {
   finance: "Finance", store_keeper: "Store Keeper", auditor: "Auditor",
 };
 /** Every role, in the order the UI should offer them: broadest responsibility first. */
+/** Mirrors money.UNNAMED_VENDOR on the server. */
+export const UNNAMED_VENDOR = "Vendor not recorded";
+
 export const ROLE_CODES: readonly RoleCode[] = ["director", "techlead", "tech", "finance", "store_keeper", "auditor"];
 /** Roles that apply to every project without a membership */
 export const GLOBAL_ROLES: readonly RoleCode[] = ["director", "finance", "store_keeper", "auditor"];

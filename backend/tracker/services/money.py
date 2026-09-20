@@ -14,6 +14,9 @@ from ..models import (Actual, Approval, Asset, ChangeOrder, CostItem, GoodsRecei
                       Retention, StockMovement, User, Vendor)
 from . import base as b
 
+# A purchase order does not need a named vendor, but the column and everything reading it still do.
+UNNAMED_VENDOR = "Vendor not recorded"
+
 
 @transaction.atomic
 def add_cost_item(actor: User, project_id: str, input: dict) -> CostItem:
@@ -48,9 +51,19 @@ def create_po(actor: User, project_id: str, input: dict) -> PurchaseOrder:
     lines = [l for l in (input.get("items") or []) if b.clean(l.get("description")) and b.dec(l.get("qty")) > 0 and b.dec(l.get("unitCost")) > 0]
     if not lines:
         raise ApiError("Add at least one line with quantity and unit cost", "invalid")
+    # A vendor is no longer required (user decision, 2026-09-20). Three things downstream still expect
+    # one — the asset register, the actual posted by a goods receipt, and QuickBooks reconciliation —
+    # so rather than make the column nullable and teach each of them about None, an unnamed order gets
+    # a standing placeholder. Naming one later is then an edit, not a migration.
     vendor = Vendor.objects.filter(pk=input.get("vendorId")).first()
     if vendor is None:
-        raise ApiError("Choose a vendor", "invalid")
+        typed = b.clean(input.get("vendorName"))
+        if typed:
+            # same rule as stock: a name that arrives starts being tracked
+            vendor = (Vendor.objects.filter(name__iexact=typed).first()
+                      or Vendor.objects.create(name=typed))
+        else:
+            vendor, _ = Vendor.objects.get_or_create(name=UNNAMED_VENDOR)
     at = b.now()
     total = sum((b.dec(l["qty"]) * b.dec(l["unitCost"]) for l in lines), Decimal("0"))
     required = ["finance", "director"] if total >= b.threshold_num("po.director_threshold", 5_000_000) else ["finance"]

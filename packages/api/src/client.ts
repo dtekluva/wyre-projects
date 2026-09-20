@@ -8,7 +8,7 @@ import * as seed2 from "./mock/data2";
 import * as seed3 from "./mock/data3";
 import {
   DOC_TYPE_LABEL, COST_CATEGORY_LABEL, MOVEMENT_LABEL, PROJECT_TYPE_LABEL, type ProjectType,
-  type User, type InviteInput, type Extraction, ASSET_TYPES, type Project, type ProjectMembership, type Document, type Attachment, type ChronologyEvent, type Approval, type Threshold,
+  type User, type InviteInput, UNNAMED_VENDOR, type Extraction, ASSET_TYPES, type Project, type ProjectMembership, type Document, type Attachment, type ChronologyEvent, type Approval, type Threshold,
   type Stage, type GateStatus, type DocType, type RoleCode, type EventType, type ReviewStatus,
   type Vendor, type InventoryItem, type StockLocation, type CostItem, type PurchaseOrder, type PurchaseItem, type GoodsReceipt, type Asset,
   type StockMovement, type StockBalance, type Actual, type ChangeOrder, type Retention, type QbBill, type CostCategory, type ProjectMoney, type AssetType,
@@ -626,11 +626,18 @@ export class MockApi {
     const pendingQty = this.goodsReceipts.filter((g) => g.poId === poId && g.reviewStatus === "pending").flatMap((g) => g.lines).filter((l) => l.purchaseItemId === item.id).reduce((s, l) => s + l.qty, 0);
     return item.qty - item.qtyReceived - pendingQty;
   }
-  createPO(actorId: string, projectId: string, input: { vendorId: string; notes?: string; items: { inventoryItemId?: string; costItemId?: string; description: string; qty: number; unitCost: number }[] }): PurchaseOrder {
+  createPO(actorId: string, projectId: string, input: { vendorId?: string; vendorName?: string; notes?: string; items: { inventoryItemId?: string; costItemId?: string; description: string; qty: number; unitCost: number }[] }): PurchaseOrder {
     this.require(actorId, "po.create", projectId);
     const lines = input.items.filter((i) => i.description.trim() && i.qty > 0 && i.unitCost > 0);
     if (!lines.length) throw new ApiError("Add at least one line with quantity and unit cost", "invalid");
-    if (!this.vendors.some((v) => v.id === input.vendorId)) throw new ApiError("Choose a vendor", "invalid");
+    // A vendor is optional. A typed name starts being tracked, exactly like a stock item; blank falls
+    // back to a standing placeholder so the asset register and reconciliation still have something.
+    let vendorId = input.vendorId && this.vendors.some((v) => v.id === input.vendorId) ? input.vendorId : "";
+    if (!vendorId) {
+      const typed = (input.vendorName ?? "").trim();
+      const found = this.vendors.find((v) => v.name.toLowerCase() === (typed || UNNAMED_VENDOR).toLowerCase());
+      vendorId = found ? found.id : this.addVendorRaw(typed || UNNAMED_VENDOR);
+    }
     const at = this.now();
     const items: PurchaseItem[] = lines.map((l) => ({ id: this.id("pi"), inventoryItemId: l.inventoryItemId || undefined, costItemId: l.costItemId || undefined, description: l.description.trim(), qty: l.qty, unitCost: l.unitCost, lineTotal: l.qty * l.unitCost, qtyReceived: 0 }));
     const total = items.reduce((s, i) => s + i.lineTotal, 0);
@@ -640,7 +647,7 @@ export class MockApi {
       description: `${items.map((i) => `${i.qty} × ${i.description}`).join("; ")}. ${requiredRoles.length > 1 ? "≥ director threshold → Finance + Director." : "Finance approval."}`,
       requestedBy: actorId, requestedAt: at, requiredRoles, decisions: [], status: "pending", amount: total };
     this.approvals.push(ap);
-    const po: PurchaseOrder = { id: this.id("po"), projectId, poNumber, vendorId: input.vendorId, status: "pending_approval", raisedBy: actorId, raisedAt: at, items, total, notes: input.notes?.trim() || undefined,
+    const po: PurchaseOrder = { id: this.id("po"), projectId, poNumber, vendorId, status: "pending_approval", raisedBy: actorId, raisedAt: at, items, total, notes: input.notes?.trim() || undefined,
       approvalId: ap.id, createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId };
     this.purchaseOrders.push(po);
     this.log(projectId, actorId, "po_raised", `${poNumber} raised — ${this.vendorName(input.vendorId)}, ${this.fmt(total)} (awaiting ${requiredRoles.join(" + ")})`, undefined, { model: "PurchaseOrder", id: po.id });
@@ -945,6 +952,11 @@ export class MockApi {
     e.status = "rejected"; e.decidedBy = actorId; e.decidedAt = this.now();
     this.emit();
     return e;
+  }
+  private addVendorRaw(name: string): string {
+    const v: Vendor = { id: this.id("v"), name };
+    this.vendors.push(v);
+    return v.id;
   }
   addVendor(actorId: string, input: { name: string; category?: string }): Vendor {
     this.require(actorId, "catalogue.manage");
