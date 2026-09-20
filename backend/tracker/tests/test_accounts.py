@@ -121,3 +121,66 @@ class AccountsTest(TestCase):
             u = self.invite()["user"]
         accounts.revoke_invite(self.boss, u.id)
         self.assertFalse(User.objects.filter(pk=u.id).exists())
+
+
+class ManageUsersTest(TestCase):
+    """Deactivate, change roles, delete — and the guards that stop the company locking itself out."""
+
+    def setUp(self):
+        seed_rbac()
+        def mk(uid, username, roles, active=True):
+            u = User.objects.create(id=uid, username=username, name=username, email=f"{username}@wyreng.com", is_active=active)
+            u.set_password("x" * 12); u.save(); u.roles.set(Role.objects.filter(code__in=roles)); return u
+        self.boss = mk("u_b", "boss", ["director"])
+        self.boss2 = mk("u_b2", "boss.two", ["director"])
+        self.tech = mk("u_t", "tech.one", ["tech"])
+
+    def err(self, code, fn, *a):
+        with self.assertRaises(ApiError) as cm:
+            fn(*a)
+        self.assertEqual(cm.exception.code, code, cm.exception.message)
+        return cm.exception
+
+    def test_only_users_manage_may_change_anything(self):
+        self.err("forbidden", accounts.set_user_roles, self.tech, "u_t", ["director"])
+        self.err("forbidden", accounts.set_user_active, self.tech, "u_b", False)
+        self.err("forbidden", accounts.delete_user, self.tech, "u_b")
+
+    def test_change_roles(self):
+        u = accounts.set_user_roles(self.boss, "u_t", ["techlead", "finance"])
+        self.assertEqual(sorted(u.role_codes()), ["finance", "techlead"])
+        self.err("invalid", accounts.set_user_roles, self.boss, "u_t", [])
+        self.err("invalid", accounts.set_user_roles, self.boss, "u_t", ["wizard"])
+
+    def test_deactivate_blocks_sign_in_and_is_reversible(self):
+        u = accounts.set_user_active(self.boss, "u_t", False)
+        self.assertFalse(u.is_active)
+        from rest_framework_simplejwt.authentication import default_user_authentication_rule as rule
+        self.assertFalse(rule(u), "an inactive user must fail the JWT authentication rule")
+        self.err("conflict", accounts.set_user_active, self.boss, "u_t", False)
+        self.assertTrue(accounts.set_user_active(self.boss, "u_t", True).is_active)
+
+    def test_cannot_lock_yourself_or_everyone_out(self):
+        self.err("invalid", accounts.set_user_active, self.boss, "u_b", False)   # self
+        self.err("invalid", accounts.delete_user, self.boss, "u_b")              # self
+        accounts.set_user_active(self.boss, "u_b2", False)                       # now boss is the only admin
+        self.err("invalid", accounts.set_user_roles, self.boss, "u_b", ["tech"])
+        self.assertTrue(User.objects.get(pk="u_b").roles.filter(code="director").exists(), "roles rolled back")
+
+    def test_delete_only_when_there_is_no_history(self):
+        accounts.delete_user(self.boss, "u_t")
+        self.assertFalse(User.objects.filter(pk="u_t").exists())
+
+    def test_delete_refuses_someone_with_history(self):
+        from tracker.models import Project, ChronologyEvent
+        from django.utils import timezone
+        p = Project.objects.create(id="p_x", code="WYR-2026-900", name="X", client_name="C", branch_name="B",
+                                   location="L", project_type="solar_battery", stage=0, rag="green",
+                                   pm=self.boss, lead_engineer=self.boss, contract_value=1, approved_budget=1,
+                                   created_by=self.boss, updated_by=self.boss, created_at=timezone.now(),
+                                   updated_at=timezone.now(), retention_percent=5)
+        ChronologyEvent.objects.create(project=p, occurred_at=timezone.now(), actor=self.tech,
+                                       event_type="note", summary="did a thing")
+        e = self.err("conflict", accounts.delete_user, self.boss, "u_t")
+        self.assertIn("Deactivate", e.message)
+        self.assertTrue(User.objects.filter(pk="u_t").exists())

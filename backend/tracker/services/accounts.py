@@ -12,10 +12,16 @@ from typing import Iterable, Optional
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import ProtectedError
 
 from ..errors import ApiError
+from html import escape
+
+from ..constants import ROLE_LABEL
+from .. import rbac
 from ..models import Role, User
 from . import base as b
+from . import email_templates as T
 from . import mailer, tokens
 
 log = logging.getLogger(__name__)
@@ -31,14 +37,18 @@ def _link(path: str, token: str) -> str:
     return f"{settings.APP_BASE_URL}/{path}/{token}"
 
 
-def _send(user: User, subject: str, intro: str, action: str, url: str, footer: str) -> bool:
-    """Best-effort. A mail failure must not roll back the account change — the director can resend."""
-    text = f"Hi {user.name},\n\n{intro}\n\n{action}:\n{url}\n\n{footer}\n\n— Wyre Tracker"
-    html = (f"<p>Hi {user.name},</p><p>{intro}</p>"
-            f"<p><a href=\"{url}\" style=\"background:#5C3592;color:#fff;padding:10px 18px;"
-            f"border-radius:6px;text-decoration:none;display:inline-block\">{action}</a></p>"
-            f"<p style=\"color:#666;font-size:13px\">Or paste this into your browser:<br>{url}</p>"
-            f"<p style=\"color:#666;font-size:13px\">{footer}</p>")
+def _send(user: User, subject: str, *, preheader: str, heading: str, greeting: str,
+          body_html: str, text_body: str, rows: list[tuple[str, str]], action: str, url: str,
+          note: str, footer: str) -> bool:
+    """Best-effort. A mail failure must not roll back the account change — the director can resend.
+
+    Every message goes out as both parts: plain text for readers who refuse HTML (and for the ones who
+    will paste it into a terminal), and the table-based HTML for everyone else."""
+    facts = "\n".join(f"{k}: {v}" for k, v in rows)
+    text = (f"{greeting}\n\n{text_body}\n\n{facts}\n\n{action}:\n{url}\n\n{note}\n\n{footer}\n\n— Wyre Tracker")
+    html = T.layout(preheader=preheader, heading=heading, greeting=greeting,
+                    body_html=T.paragraph(body_html) + T.facts(rows),
+                    action=action, url=url, note=note, footer=footer)
     if not mailer.configured():
         log.warning("Mailgun not configured — %s link for %s was not sent: %s", subject, user.email, url)
         return False
@@ -90,11 +100,21 @@ def invite_user(actor: User, input: dict) -> dict:
 
 
 def _send_invite(user: User, actor: User) -> bool:
-    return _send(user, "You have been invited to Wyre Tracker",
-                 f"{actor.name} has set up an account for you on Wyre Tracker. "
-                 f"Your username is <b>{user.username}</b>.",
-                 "Choose your password", _link("invite", tokens.make(user, tokens.INVITE)),
-                 "This link is good for 7 days and can only be used once.")
+    roles = ", ".join(ROLE_LABEL.get(r, r) for r in user.role_codes()) or "—"
+    return _send(
+        user, f"{actor.name} has invited you to Wyre Tracker",
+        preheader=f"Set your password and sign in as {user.username}.",
+        heading="You have an account",
+        greeting=f"Hi {user.name.split(' ')[0]},",
+        body_html=(f"<b>{escape(actor.name)}</b> has set up a Wyre Tracker account for you. It is where "
+                   f"Wyre runs its projects — site visits, documents, approvals and the evidence behind them. "
+                   f"Choose a password and you are in."),
+        text_body=(f"{actor.name} has set up a Wyre Tracker account for you. Choose a password and you are in."),
+        rows=[("Username", user.username), ("Your roles", roles), ("Invited by", actor.name)],
+        action="Choose your password",
+        url=_link("invite", tokens.make(user, tokens.INVITE)),
+        note="This link works once and expires in 7 days. If it has run out, ask whoever invited you to send another.",
+        footer="You are receiving this because a Wyre Tracker administrator created an account for this address.")
 
 
 def resend_invite(actor: User, user_id: str) -> dict:
@@ -126,11 +146,21 @@ def request_reset(email: str) -> None:
     user = User.objects.filter(email__iexact=b.clean(email), is_active=True).first()
     if not user:
         return
-    _send(user, "Reset your Wyre Tracker password",
-          "Somebody asked to reset the password on your Wyre Tracker account. "
-          "If that was not you, ignore this email and nothing changes.",
-          "Choose a new password", _link("reset", tokens.make(user, tokens.RESET)),
-          "This link is good for 2 hours and can only be used once.")
+    _send(
+        user, "Reset your Wyre Tracker password",
+        preheader="Choose a new password — the link lasts 2 hours.",
+        heading="Reset your password",
+        greeting=f"Hi {user.name.split(' ')[0]},",
+        body_html=("Somebody asked to reset the password on your Wyre Tracker account. If that was you, "
+                   "use the button below. If it was not, ignore this email — nothing has changed and your "
+                   "current password still works."),
+        text_body=("Somebody asked to reset the password on your Wyre Tracker account. If that was not you, "
+                   "ignore this email — nothing has changed."),
+        rows=[("Username", user.username), ("Account", user.email)],
+        action="Choose a new password",
+        url=_link("reset", tokens.make(user, tokens.RESET)),
+        note="This link works once and expires in 2 hours. Requesting another replaces it.",
+        footer="You are receiving this because a password reset was requested for this address.")
 
 
 def preview(token: str, salt: str) -> dict:
@@ -153,3 +183,75 @@ def set_password(token: str, salt: str, password: str) -> User:
     user.set_password(pw)
     user.save(update_fields=["password"])   # the hash changes, so the link is now spent
     return user
+
+
+# ---- managing existing people -------------------------------------------------------------------------
+
+def _other_admins(user: User):
+    """Active people other than `user` who can still manage users. The guard against locking the whole
+    company out of its own admin screen."""
+    return [u for u in User.objects.filter(is_active=True).exclude(pk=user.pk).prefetch_related("roles")
+            if rbac.can(u, "users.manage")]
+
+
+@transaction.atomic
+def set_user_roles(actor: User, user_id: str, role_codes: list[str]) -> User:
+    b.require(actor, "users.manage")
+    user = b.get_user(user_id)
+    codes = [c for c in dict.fromkeys(role_codes or []) if c]
+    if not codes:
+        raise ApiError("Everyone needs at least one role", "invalid")
+    known = set(Role.objects.values_list("code", flat=True))
+    unknown = [c for c in codes if c not in known]
+    if unknown:
+        raise ApiError(f"Unknown role: {', '.join(unknown)}", "invalid")
+
+    user.roles.set(Role.objects.filter(code__in=codes))
+    user.refresh_from_db()
+    # Re-check AFTER the change: dropping your own director role, with nobody else holding it, would
+    # leave the system with no way back in.
+    if not _other_admins(actor) and not rbac.can(user if user.pk == actor.pk else actor, "users.manage"):
+        raise ApiError("That would leave nobody able to manage users. Give someone else the role first.", "invalid")
+    log.info("roles_changed by=%s username=%s roles=%s", actor.username, user.username, codes)
+    return user
+
+
+@transaction.atomic
+def set_user_active(actor: User, user_id: str, active: bool) -> User:
+    """Deactivating is the normal way to remove somebody: they cannot sign in, their history stays
+    intact, and it is reversible on their first day back."""
+    b.require(actor, "users.manage")
+    user = b.get_user(user_id)
+    if user.pk == actor.pk and not active:
+        raise ApiError("You cannot deactivate your own account", "invalid")
+    if not active and rbac.can(user, "users.manage") and not _other_admins(actor):
+        raise ApiError("That is the last account that can manage users", "invalid")
+    if user.is_active == active:
+        raise ApiError(f"{user.name} is already {'active' if active else 'deactivated'}", "conflict")
+    user.is_active = active
+    user.save(update_fields=["is_active"])
+    # An access token already issued stays valid until it expires (12 h), so this is not an instant
+    # ejection — it stops the next sign-in and the next refresh.
+    log.info("user_%s by=%s username=%s", "reactivated" if active else "deactivated", actor.username, user.username)
+    return user
+
+
+@transaction.atomic
+def delete_user(actor: User, user_id: str) -> None:
+    """Only for accounts that never did anything. Eighteen models reference User with PROTECT, so anyone
+    who raised, checked or approved so much as one thing cannot be deleted — that is the audit trail
+    doing its job, and deactivating is the right answer instead."""
+    b.require(actor, "users.manage")
+    user = b.get_user(user_id)
+    if user.pk == actor.pk:
+        raise ApiError("You cannot delete your own account", "invalid")
+    if rbac.can(user, "users.manage") and not _other_admins(actor):
+        raise ApiError("That is the last account that can manage users", "invalid")
+    name, username = user.name, user.username
+    try:
+        user.delete()
+    except ProtectedError:
+        raise ApiError(
+            f"{name} has history in the system and cannot be deleted — their name is attached to work "
+            f"that has to stay auditable. Deactivate the account instead.", "conflict")
+    log.info("user_deleted by=%s username=%s name=%s", actor.username, username, name)

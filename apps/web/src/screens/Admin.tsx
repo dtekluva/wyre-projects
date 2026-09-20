@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ROLE_CODES, ROLE_LABEL, MATRIX, fmtDate, type RoleCode } from "@wyre/api";
+import { ROLE_CODES, ROLE_LABEL, MATRIX, fmtDate, type RoleCode, type User } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { Avatar, Badge, Note, RoleChips } from "../components/ui";
@@ -10,22 +10,48 @@ export function AdminUsers() {
   if (!api.can(user.id, "users.manage")) return <Note tone="danger">Only a Director can manage users and roles.</Note>;
   return (
     <>
-      <div className="page-head"><div><h1 className="page-title">Users & roles</h1><div className="page-sub">{api.getUsers().length} users · {api.getUsers().filter((u) => u.status === "invited").length} awaiting their invite</div></div></div>
+      <div className="page-head"><div><h1 className="page-title">Users & roles</h1><div className="page-sub">{api.getUsers().length} users · {api.getUsers().filter((u) => u.status === "invited").length} awaiting their invite · {api.getUsers().filter((u) => u.status === "disabled").length} deactivated</div></div></div>
       <InviteUser />
       <div className="card table--wrap"><table className="table"><thead><tr><th>User</th><th>Global / base roles</th><th>Project memberships</th><th className="num">Permissions</th></tr></thead>
         <tbody>{api.getUsers().map((u) => { const ms = api.memberships.filter((m) => m.userId === u.id && !m.revokedAt); return <tr key={u.id}>
           <td><span className="row"><Avatar user={u} sm />{u.name}<span className="sm muted">{u.email}</span>
-            {u.status === "invited" && <Badge variant="warning">invited</Badge>}</span>
-            {u.status === "invited" && <span className="row sm" style={{ gap: 6, marginTop: 4 }}>
-              <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => safe(() => api.resendInvite(user.id, u.id), "Invite resent")}>Resend</button>
-              <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => safe(() => api.revokeInvite(user.id, u.id), "Invite revoked")}>Revoke</button>
-            </span>}</td>
-          <td><RoleChips roles={u.roles} /></td>
+            {u.status === "invited" && <Badge variant="warning">invited</Badge>}
+            {u.status === "disabled" && <Badge variant="danger">deactivated</Badge>}</span>
+            <span className="row sm" style={{ gap: 6, marginTop: 4 }}>
+              {u.status === "invited" && <>
+                <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => safe(() => api.resendInvite(user.id, u.id), "Invite resent")}>Resend</button>
+                <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => safe(() => api.revokeInvite(user.id, u.id), "Invite revoked")}>Revoke</button>
+              </>}
+              {u.id !== user.id && u.status !== "invited" && (u.status === "disabled"
+                ? <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => safe(() => api.setUserActive(user.id, u.id, true), `${u.name} reactivated`)}>Reactivate</button>
+                : <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => safe(() => api.setUserActive(user.id, u.id, false), `${u.name} deactivated — they can no longer sign in`)}>Deactivate</button>)}
+              {u.id !== user.id && <button className="ns-btn ns-btn--ghost ns-btn--sm" style={{ color: "var(--ns-color-danger-text)" }}
+                onClick={() => { if (confirm(`Delete ${u.name}? This only works if they have never done anything in the system — otherwise deactivate them instead.`)) safe(() => api.deleteUser(user.id, u.id), `${u.name} deleted`); }}>Delete</button>}
+            </span></td>
+          <td><RoleEditor target={u} /></td>
           <td className="sm">{ms.length ? ms.map((m) => `${api.projects.find((p) => p.id === m.projectId)?.code} (${ROLE_LABEL[m.role]})`).join(" · ") : <span className="muted">—</span>}</td>
           <td className="num ns-mono">{new Set(u.roles.flatMap((r) => MATRIX[r])).size}</td>
         </tr>; })}</tbody></table></div>
     </>
   );
+}
+
+/** Roles are a set, so this is a row of toggles rather than a dropdown. Saves on change. */
+function RoleEditor({ target }: { target: User }) {
+  const api = useApi(); const { user } = useAuth(); const safe = useSafe();
+  const [open, setOpen] = useState(false);
+  if (!open) return <span className="row" style={{ gap: 6 }}>
+    <RoleChips roles={target.roles} />
+    <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setOpen(true)} aria-label={`Change roles for ${target.name}`}>Change</button>
+  </span>;
+  const toggle = (r: RoleCode) => {
+    const next = target.roles.includes(r) ? target.roles.filter((x) => x !== r) : [...target.roles, r];
+    safe(() => api.setUserRoles(user.id, target.id, next), "Roles updated");
+  };
+  return <span className="row row--wrap" style={{ gap: 5 }}>
+    {ROLE_CODES.map((r) => <button key={r} type="button" className={`ns-btn ns-btn--sm ${target.roles.includes(r) ? "ns-btn--primary" : ""}`} onClick={() => toggle(r)}>{ROLE_LABEL[r]}</button>)}
+    <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setOpen(false)}>Done</button>
+  </span>;
 }
 
 /** Invite by email. Nothing secret is sent — the link lets them choose their own password. */

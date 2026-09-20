@@ -29,6 +29,9 @@ COMMANDS: dict[str, Handler] = {
     "inviteUser": lambda a, d, f: _invited(accounts.invite_user(a, d)),
     "resendInvite": lambda a, d, f: _invited(accounts.resend_invite(a, d.get("userId"))),
     "revokeInvite": lambda a, d, f: accounts.revoke_invite(a, d.get("userId")),
+    "setUserRoles": lambda a, d, f: S.user(accounts.set_user_roles(a, d.get("userId"), d.get("roles") or [])),
+    "setUserActive": lambda a, d, f: S.user(accounts.set_user_active(a, d.get("userId"), bool(d.get("active")))),
+    "deleteUser": lambda a, d, f: accounts.delete_user(a, d.get("userId")),
     "assignCommissioning": lambda a, d, f: S.project(projects.assign_commissioning(a, d.get("projectId"), d.get("userId"))),
     "revokeMembership": lambda a, d, f: projects.revoke_membership(a, d.get("membershipId")),
     # documents & attachments

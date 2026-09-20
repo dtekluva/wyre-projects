@@ -528,6 +528,45 @@ export class MockApi {
     this.users.splice(i, 1);
     this.emit();
   }
+  /** Active people other than `id` who can still manage users — the anti-lockout guard. */
+  private otherAdmins(id: string) { return this.users.filter((u) => u.id !== id && u.status !== "disabled" && canFn(u, "users.manage", undefined, this.memberships)); }
+  setUserRoles(actorId: string, userId: string, roles: RoleCode[]) {
+    this.require(actorId, "users.manage");
+    const u = this.users.find((x) => x.id === userId); if (!u) throw new ApiError("Not found", "not_found");
+    const next = [...new Set(roles)];
+    if (!next.length) throw new ApiError("Everyone needs at least one role", "invalid");
+    const before = u.roles;
+    u.roles = next;
+    if (!this.otherAdmins(actorId).length && !this.can(actorId, "users.manage")) {
+      u.roles = before;
+      throw new ApiError("That would leave nobody able to manage users. Give someone else the role first.", "invalid");
+    }
+    this.emit(); return u;
+  }
+  setUserActive(actorId: string, userId: string, active: boolean) {
+    this.require(actorId, "users.manage");
+    const u = this.users.find((x) => x.id === userId); if (!u) throw new ApiError("Not found", "not_found");
+    if (u.id === actorId && !active) throw new ApiError("You cannot deactivate your own account", "invalid");
+    const isAdmin = canFn(u, "users.manage", undefined, this.memberships);
+    if (!active && isAdmin && !this.otherAdmins(actorId).length) throw new ApiError("That is the last account that can manage users", "invalid");
+    const now = u.status === "disabled" ? false : true;
+    if (now === active) throw new ApiError(`${u.name} is already ${active ? "active" : "deactivated"}`, "conflict");
+    u.status = active ? "active" : "disabled";
+    this.emit(); return u;
+  }
+  deleteUser(actorId: string, userId: string) {
+    this.require(actorId, "users.manage");
+    const i = this.users.findIndex((x) => x.id === userId); if (i < 0) throw new ApiError("Not found", "not_found");
+    if (userId === actorId) throw new ApiError("You cannot delete your own account", "invalid");
+    const u = this.users[i];
+    if (canFn(u, "users.manage", undefined, this.memberships) && !this.otherAdmins(actorId).length) throw new ApiError("That is the last account that can manage users", "invalid");
+    // mirrors the server: 18 models reference User with PROTECT, so anyone with history is undeletable
+    const touched = this.events.some((e) => e.actorId === userId) || this.memberships.some((m) => m.userId === userId && !m.revokedAt)
+      || this.projects.some((p) => p.pmId === userId || p.leadEngineerId === userId);
+    if (touched) throw new ApiError(`${u.name} has history in the system and cannot be deleted — their name is attached to work that has to stay auditable. Deactivate the account instead.`, "conflict");
+    this.users.splice(i, 1);
+    this.emit();
+  }
   revokeMembership(actorId: string, membershipId: string) {
     const m = this.memberships.find((x) => x.id === membershipId); if (!m) throw new ApiError("Not found", "not_found");
     this.require(actorId, "membership.manage", m.projectId);

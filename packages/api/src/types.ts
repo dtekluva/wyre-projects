@@ -18,7 +18,7 @@ export const GLOBAL_ROLES: readonly RoleCode[] = ["director", "finance", "store_
 export interface User {
   id: string; name: string; email: string; roles: RoleCode[]; initials: string; username?: string;
   /** "invited" = account created but the person has never followed their link and set a password */
-  status?: "active" | "invited";
+  status?: "active" | "invited" | "disabled";
 }
 export interface InviteInput { name: string; email: string; username: string; roles: RoleCode[] }
 export interface LinkOwner { name: string; username: string; email: string }

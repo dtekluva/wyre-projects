@@ -44,7 +44,7 @@ def user(u: User) -> dict:
     # their link. The admin screen uses it to offer resend/revoke.
     return {"id": u.id, "name": u.name or u.username, "email": u.email, "roles": u.role_codes(),
             "initials": u.initials, "username": u.username,
-            "status": "active" if u.has_usable_password() else "invited"}
+            "status": "disabled" if not u.is_active else ("active" if u.has_usable_password() else "invited")}
 
 
 def project(p: Project, open_issues: Optional[dict] = None) -> dict:

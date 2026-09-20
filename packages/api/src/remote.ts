@@ -137,6 +137,9 @@ export class RemoteApi extends MockApi {
     wrap("inviteUser", (a) => ({ name: "inviteUser", body: a[1] as unknown as Record<string, Json> }));
     wrap("resendInvite", (a) => ({ name: "resendInvite", body: { userId: a[1] } }));
     wrap("revokeInvite", (a) => ({ name: "revokeInvite", body: { userId: a[1] } }));
+    wrap("setUserRoles", (a) => ({ name: "setUserRoles", body: { userId: a[1], roles: a[2] as unknown as Json } }));
+    wrap("setUserActive", (a) => ({ name: "setUserActive", body: { userId: a[1], active: a[2] } }));
+    wrap("deleteUser", (a) => ({ name: "deleteUser", body: { userId: a[1] } }));
     wrap("revokeMembership", (a) => ({ name: "revokeMembership", body: { membershipId: a[1] } }));
     wrap("check", (a) => ({ name: "check", body: { kind: a[0], id: a[1], decision: a[3], comment: a[4] } }));
     wrap("requestGate", (a) => ({ name: "requestGate", body: { projectId: a[0] } }));
