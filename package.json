@@ -13,9 +13,10 @@
     "build": "npm run tokens && npm run build -w @wyre/web",
     "typecheck": "npm run typecheck -w @wyre/web",
     "test:api": "esbuild packages/api/src/index.ts --bundle --platform=node --format=esm --outfile=packages/api/dist/api.mjs --log-level=warning && node packages/api/test/flow.test.mjs",
-    "test": "npm run typecheck && npm run test:api && npm run test:wired && npm run test:routes",
+    "test": "npm run typecheck && npm run test:api && npm run test:wired && npm run test:routes && npm run test:location",
     "test:wired": "node packages/api/test/wired.test.mjs",
-    "test:routes": "node packages/api/test/public-routes.test.mjs"
+    "test:routes": "node packages/api/test/public-routes.test.mjs",
+    "test:location": "node packages/api/test/location.test.mjs"
   },
   "engines": {
     "node": ">=18"

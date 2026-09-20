@@ -695,7 +695,7 @@ export class MockApi {
     const at = this.now();
     const g: GoodsReceipt = { id: this.id("grn"), projectId: po.projectId, poId, grnNumber: `GRN-${new Date().getFullYear()}-${String(this.goodsReceipts.length + 10).padStart(3, "0")}`,
       receivedAt: at, receivedBy: actorId, lines: lines.map((l) => ({ purchaseItemId: l.purchaseItemId, qty: l.qty, serials: l.serials, condition: l.condition ?? "good" })),
-      attachmentIds: input.attachmentIds, locationId: input.locationId ?? "loc_wh", notes: input.notes?.trim() || undefined,
+      attachmentIds: input.attachmentIds, locationId: input.locationId ?? this.mainLocationId() ?? "", notes: input.notes?.trim() || undefined,
       createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
     this.goodsReceipts.push(g);
     this.log(po.projectId, actorId, "delivery", `${g.grnNumber} — ${lines.map((l) => `${l.qty} × ${po.items.find((i) => i.id === l.purchaseItemId)!.description}`).join(", ")} received against ${po.poNumber} (pending check)`, undefined, { model: "GoodsReceipt", id: g.id });
@@ -797,18 +797,18 @@ export class MockApi {
     const out: StockBalance[] = [];
     for (const [k, qty] of loc) { const [itemId, locationId] = k.split("|"); const w = wac.get(itemId)!; const it = this.item(itemId);
       out.push({ itemId, locationId, qtyOnHand: qty, wacUnitCost: round(w.wac), value: round(qty * w.wac), lastMovementAt: last.get(itemId), belowReorder: qty <= it.reorderLevel }); }
-    for (const it of this.items) if (!out.some((b) => b.itemId === it.id)) out.push({ itemId: it.id, locationId: "loc_wh", qtyOnHand: 0, wacUnitCost: 0, value: 0, belowReorder: 0 <= it.reorderLevel });
+    for (const it of this.items) if (!out.some((b) => b.itemId === it.id)) out.push({ itemId: it.id, locationId: this.mainLocationId() ?? "", qtyOnHand: 0, wacUnitCost: 0, value: 0, belowReorder: 0 <= it.reorderLevel });
     return out;
   }
-  balanceOf(itemId: string, locationId = "loc_wh") { return this.balances().find((b) => b.itemId === itemId && b.locationId === locationId) ?? { itemId, locationId, qtyOnHand: 0, wacUnitCost: 0, value: 0, belowReorder: true }; }
+  balanceOf(itemId: string, locationId = this.mainLocationId() ?? "") { return this.balances().find((b) => b.itemId === itemId && b.locationId === locationId) ?? { itemId, locationId, qtyOnHand: 0, wacUnitCost: 0, value: 0, belowReorder: true }; }
   wacOf(itemId: string) { const b = this.balances().find((x) => x.itemId === itemId); return b?.wacUnitCost ?? 0; }
   stockValue() { const bs = this.balances(); const byCat: Record<string, number> = {}; bs.forEach((b) => { const c = this.item(b.itemId).category; byCat[c] = (byCat[c] ?? 0) + b.value; }); return { total: round(bs.reduce((s, b) => s + b.value, 0)), byCategory: byCat }; }
   /** available = checked on-hand minus quantities reserved by pending issues / write-offs */
-  available(itemId: string, locationId = "loc_wh") {
+  available(itemId: string, locationId = this.mainLocationId() ?? "") {
     const pend = this.movements.filter((m) => m.itemId === itemId && m.reviewStatus === "pending" && ["issue", "write_off", "transfer"].includes(m.movementType) && m.locationFromId === locationId).reduce((s, m) => s + m.qty, 0);
     return this.balanceOf(itemId, locationId).qtyOnHand - pend;
   }
-  inStockSerials(itemId: string, locationId = "loc_wh") {
+  inStockSerials(itemId: string, locationId = this.mainLocationId() ?? "") {
     const reserved = new Set(this.movements.filter((m) => m.reviewStatus === "pending" && m.itemId === itemId).flatMap((m) => m.serials ?? []));
     return this.assets.filter((a) => a.inventoryItemId === itemId && a.status === "in_stock" && a.locationId === locationId && !reserved.has(a.serial)).map((a) => a.serial);
   }
@@ -830,7 +830,7 @@ export class MockApi {
   }
   issueStock(actorId: string, input: { itemId: string; qty: number; projectId: string; serials?: string[]; label?: string; locationId?: string }): StockMovement {
     if (!this.can(actorId, "inventory.write") && !this.can(actorId, "inventory.request", input.projectId)) throw new ApiError("Only a Store Keeper (or a PM / Field Tech on the project) can issue stock", "forbidden");
-    const loc = input.locationId ?? "loc_wh"; const it = this.item(input.itemId);
+    const loc = input.locationId ?? this.mainLocationId() ?? ""; const it = this.item(input.itemId);
     if (!(input.qty > 0)) throw new ApiError("Quantity must be positive", "invalid");
     const avail = this.available(it.id, loc); if (input.qty > avail) throw new ApiError(`Only ${avail} ${it.unit} of ${it.name} available at ${this.locationName(loc)} — no negative stock`, "invalid");
     const serials = this.validateSerials(it.id, input.qty, input.serials, loc);
@@ -849,7 +849,7 @@ export class MockApi {
     if (it.isSerialised) { serials = (input.serials ?? []).map((s) => s.trim()).filter(Boolean); if (serials.length !== input.qty) throw new ApiError(`${input.qty} serials required`, "invalid");
       const bad = serials.find((s) => !this.assets.some((a) => a.serial === s && a.projectId === input.projectId && a.status === "installed")); if (bad) throw new ApiError(`Serial ${bad} is not installed on this project`, "invalid"); }
     const wac = this.wacOf(it.id); const at = this.now();
-    const m: StockMovement = { id: this.id("mv"), itemId: it.id, movementType: "return", qty: input.qty, locationToId: "loc_wh", unitCost: wac, totalCost: round(input.qty * wac), projectId: input.projectId,
+    const m: StockMovement = { id: this.id("mv"), itemId: it.id, movementType: "return", qty: input.qty, locationToId: this.mainLocationId() ?? "", unitCost: wac, totalCost: round(input.qty * wac), projectId: input.projectId,
       sourceRef: { model: "Return", id: this.id("rt"), label: input.reason?.trim() || "Unused parts returned" }, serials, createdBy: actorId, createdAt: at, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
     this.movements.push(m);
     this.log(input.projectId, actorId, "stock_movement", `Return requested — ${it.name} × ${input.qty} (pending check)`, undefined, { model: "StockMovement", id: m.id });
@@ -880,13 +880,13 @@ export class MockApi {
     if (!input.reason.trim()) throw new ApiError("A reason is required", "invalid");
     if (!input.attachmentIds.length) throw new ApiError("A photo of the damaged / lost goods is required", "invalid");
     const avail = this.available(it.id); if (input.qty > avail) throw new ApiError(`Only ${avail} available`, "invalid");
-    const serials = this.validateSerials(it.id, input.qty, input.serials, "loc_wh");
+    const serials = this.validateSerials(it.id, input.qty, input.serials, this.mainLocationId() ?? "");
     const wac = this.wacOf(it.id); const amount = round(input.qty * wac); const at = this.now();
     const requiredRoles: RoleCode[] = amount >= this.thresholdNum("writeoff.director_threshold", 500_000) ? ["finance", "director"] : ["finance"];
     const ap: Approval = { id: this.id("ap"), projectId: input.projectId, kind: "write_off", title: `Write-off · ${input.qty} × ${it.name} (${this.fmt(amount)})`, description: `${input.reason.trim()} ${requiredRoles.length > 1 ? "Above director threshold → Finance + Director." : "Below ₦500k → Finance only."}`,
       requestedBy: actorId, requestedAt: at, requiredRoles, decisions: [], status: "pending", amount };
     this.approvals.push(ap);
-    const m: StockMovement = { id: this.id("mv"), itemId: it.id, movementType: "write_off", qty: input.qty, locationFromId: "loc_wh", unitCost: wac, totalCost: amount, projectId: input.projectId, reason: input.reason.trim(), serials,
+    const m: StockMovement = { id: this.id("mv"), itemId: it.id, movementType: "write_off", qty: input.qty, locationFromId: this.mainLocationId() ?? "", unitCost: wac, totalCost: amount, projectId: input.projectId, reason: input.reason.trim(), serials,
       attachmentIds: input.attachmentIds, createdBy: actorId, createdAt: at, approvalId: ap.id, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
     this.movements.push(m);
     this.log(input.projectId, actorId, "stock_movement", `Write-off requested — ${it.name} × ${input.qty}, ${this.fmt(amount)} (awaiting ${requiredRoles.join(" + ")})`, input.reason.trim(), { model: "StockMovement", id: m.id });
