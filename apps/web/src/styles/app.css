@@ -88,6 +88,16 @@ button, input, select, textarea { font: inherit; }
 .table th { text-align: left; font-size: var(--ns-size-label); font-weight: var(--ns-weight-semibold); letter-spacing: var(--ns-tracking-label); text-transform: uppercase;
   color: var(--ns-color-text-tertiary); padding: 10px 12px; background: var(--ns-color-surface-subtle); border-bottom: var(--ns-border-hairline) solid var(--ns-color-border-default); white-space: nowrap; }
 .table td { padding: 11px 12px; border-bottom: var(--ns-border-hairline) solid var(--ns-color-border-subtle); vertical-align: middle; }
+/* A row of inputs, not a row of text. Cells carrying a hint under the field are taller than the rest,
+   and vertical-align:middle then drops their neighbours' inputs by half the difference — which reads as
+   everything being slightly out of line. Align every cell to the top instead, and give the plain-text
+   cells a 40px line box (the input's min-height) so they sit centred against the fields. */
+.table--entry td { vertical-align: top; }
+.table--entry td.cell-mid { line-height: 40px; }
+.table--entry .ns-input { margin: 0; }
+/* .ns-input has no vertical padding: an <input> centres its own text in the 40px box, a <textarea>
+   does not — its first line hugs the top edge and sits above every field beside it. */
+.table--entry textarea.ns-input { padding-top: 10px; padding-bottom: 10px; }
 .table tbody tr:hover td { background: var(--ns-color-surface-hover); }
 .table tbody tr:last-child td { border-bottom: none; }
 .table--wrap { overflow-x: auto; }

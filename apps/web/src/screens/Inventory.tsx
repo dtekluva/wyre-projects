@@ -210,7 +210,7 @@ function ReceiveFromNote() {
         <label className="ns-field" style={{ maxWidth: 280 }}><span className="ns-field__label">Into which location</span>
           <select className="ns-input" value={loc} onChange={(e) => setLoc(e.target.value)}>
             {locs.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
-        <div className="table--wrap"><table className="table"><thead><tr>
+        <div className="table--wrap"><table className="table table--entry"><thead><tr>
           <th>What it is</th><th className="num">Qty</th><th>Unit</th><th className="num">Unit cost</th><th className="num">Line total</th><th>Serial numbers</th></tr></thead>
           <tbody>{lines.map((l, i) => {
             // The model is told what is already in stock and returns the existing name when a line is
@@ -228,7 +228,7 @@ function ReceiveFromNote() {
                   {l.matches_existing && l.matches_existing !== l.description ? ` · page said "${l.description}"` : ""}
                   {l.unit_cost ? ` · ${naira(l.unit_cost)} each` : ""}</div></td>
               <td className="num" style={{ width: 90 }}><input className="ns-input" type="number" min="0" value={qty[i] ?? String(l.qty)} onChange={(e) => setQty({ ...qty, [i]: e.target.value })} /></td>
-              <td className="sm" style={{ width: 70 }}>{l.unit || "pcs"}</td>
+              <td className="sm cell-mid" style={{ width: 70 }}>{l.unit || "pcs"}</td>
               <td className="num" style={{ width: 120 }}>
                 <input className="ns-input" type="number" min="0" step="0.01" placeholder="0"
                        value={costs[i] ?? (l.unit_cost != null ? String(l.unit_cost) : "")}
@@ -236,7 +236,7 @@ function ReceiveFromNote() {
                 {/* A price of zero is legal — a donation, a sample — but it makes the running average
                     cost meaningless for that item, so say so rather than letting it pass unremarked. */}
                 {!(Number(costs[i] ?? l.unit_cost ?? 0) > 0) && <div className="sm muted">no price</div>}</td>
-              <td className="num ns-mono" style={{ width: 110 }}>{naira((Number(costs[i] ?? l.unit_cost ?? 0) || 0) * n)}</td>
+              <td className="num ns-mono cell-mid" style={{ width: 110 }}>{naira((Number(costs[i] ?? l.unit_cost ?? 0) || 0) * n)}</td>
               <td style={{ minWidth: 200 }}>
                 <textarea className="ns-input" rows={Math.max(1, l.serials.length)} placeholder="one per line, if any"
                           value={serials[i] ?? l.serials.join("\n")} onChange={(e) => setSerials({ ...serials, [i]: e.target.value })} />
