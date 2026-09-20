@@ -253,3 +253,72 @@ class StockWithoutACatalogueTest(TestCase):
     def test_a_line_still_needs_a_name(self):
         with self.assertRaises(ApiError):
             self.receive("   ", 1)
+
+
+class SelfReviewTest(TestCase):
+    """Finance, Director and Store Keeper may sign off their own work (user decision, 2026-09-20).
+    Everyone else still needs a second person."""
+
+    def setUp(self):
+        from django.utils import timezone
+        from tracker.models import Project
+        from tracker.services import stock
+        seed_rbac()
+
+        def mk(uid, *roles):
+            u = User.objects.create(id=uid, username=uid, name=uid, email=f"{uid}@wyreng.com")
+            u.set_password("x" * 12); u.save(); u.roles.set(Role.objects.filter(code__in=roles)); return u
+
+        # Submitting stock needs inventory.write (store keeper); checking it needs inventory.check
+        # (finance / techlead). Signing off your OWN stock therefore needs both — which is the shape
+        # of a small team where one person wears two hats.
+        self.keeper = mk("u_sk", "store_keeper", "finance")
+        self.fin = mk("u_fin", "finance")
+        self.tech = mk("u_tech", "tech")
+        self.lead = mk("u_lead", "techlead")
+        self.loc = stock.add_location(self.keeper, {"name": "W", "type": "warehouse"})
+        now = timezone.now()
+        self.project = Project.objects.create(
+            id="p_sr", code="WYR-2026-901", name="Self review", client_name="C", branch_name="B",
+            location="L", project_type="solar_battery", stage=0, rag="green", pm=self.lead,
+            lead_engineer=self.lead, contract_value=1, approved_budget=1, retention_percent=5,
+            created_by=self.lead, updated_by=self.lead, created_at=now, updated_at=now)
+
+    def _receive(self, actor):
+        from tracker.services import stock
+        return stock.receive_stock(actor, {"locationId": self.loc.id, "reason": "r", "attachmentIds": ["a"],
+                                           "lines": [{"name": "Widget", "qty": 1, "unitCost": 10}]})[0]
+
+    def test_a_trusted_role_may_check_their_own(self):
+        from tracker.services import review, stock
+        m = self._receive(self.keeper)
+        review.check(self.keeper, "stock_movement", m.id, "checked")
+        m.refresh_from_db()
+        self.assertEqual(m.review_status, "checked")
+        self.assertEqual(m.submitted_by_id, m.checked_by_id, "the audit trail still shows it was self-checked")
+        self.assertEqual(stock.available(m.item_id, self.loc.id), 1)
+
+    def test_their_own_now_appears_in_their_queue(self):
+        from tracker.services import review
+        m = self._receive(self.keeper)
+        self.assertTrue([q for q in review.review_queue(self.keeper) if q["id"] == m.id],
+                        "a store keeper must be able to find their own submission in order to check it")
+
+    def test_a_techlead_still_cannot_check_their_own(self):
+        """techlead holds visit.check, so this fails on segregation of duties rather than permission."""
+        from tracker.services import field, review
+        v = field.log_visit(self.lead, self.project.id, {
+            "visitType": "routine", "startedAt": "2026-09-20T09:00:00Z", "endedAt": "2026-09-20T11:00:00Z",
+            "findings": "f", "actionsTaken": "a", "attachmentIds": ["att1"]})
+        with self.assertRaises(ApiError) as cm:
+            review.check(self.lead, "site_visit", v.id, "checked")
+        self.assertIn("segregation of duties", cm.exception.message)
+        self.assertFalse([q for q in review.review_queue(self.lead) if q["id"] == v.id],
+                         "and it stays out of their queue")
+
+    def test_rule_is_by_role_not_by_who_submitted(self):
+        from tracker import rbac
+        self.assertTrue(rbac.may_self_review(self.fin))
+        self.assertTrue(rbac.may_self_review(self.keeper))
+        self.assertFalse(rbac.may_self_review(self.tech))
+        self.assertFalse(rbac.may_self_review(self.lead))

@@ -38,7 +38,8 @@ def _collect(user: Optional[User]) -> list[dict]:
     def push(kind, it, project_id, title, subtitle, amount=None):
         if it.review_status != "pending":
             return
-        if user is not None and (it.submitted_by_id == user.id or not rbac.can(user, CHECK_PERM[kind], project_id)):
+        own = user is not None and it.submitted_by_id == user.id and not rbac.may_self_review(user)
+        if user is not None and (own or not rbac.can(user, CHECK_PERM[kind], project_id)):
             return
         age = (now - it.submitted_at).days
         items.append({"kind": kind, "id": it.id, "projectId": project_id, "title": title, "subtitle": subtitle, "amount": None if amount is None else float(amount),
@@ -50,7 +51,11 @@ def _collect(user: Optional[User]) -> list[dict]:
         push("attachment", a, a.project_id, a.caption or a.file_name, f"{a.linked_to['model']}: {a.linked_to.get('label', '')}" if a.linked_to else "Photo" if a.kind == "image" else "File")
     for g in GoodsReceipt.objects.filter(review_status="pending").select_related("po__vendor"):
         push("goods_receipt", g, g.project_id, f"{g.grn_number} · {g.po.vendor.name}", f"{len(g.lines)} line{'s' if len(g.lines) > 1 else ''} against {g.po.po_number}", money_svc.grn_value(g))
-    for m in StockMovement.objects.filter(review_status="pending", movement_type__in=["issue", "return", "transfer"]).select_related("item"):
+    # "receipt" belongs here now. Receipts used to come only from a goods receipt against an approved
+    # PO, which arrives already checked — so a PENDING receipt could not exist and the queue never
+    # looked for one. receive_stock (taking stock in without a PO) creates exactly that, and without
+    # this line those movements are invisible to every checker, not just to the person who made them.
+    for m in StockMovement.objects.filter(review_status="pending", movement_type__in=["receipt", "issue", "return", "transfer"]).select_related("item"):
         if (m.source_ref or {}).get("model") == "SiteVisit":
             continue
         push("stock_movement", m, m.project_id, f"{MOVEMENT_LABEL[m.movement_type]} · {m.item.name} × {b.dec(m.qty).normalize():f}", (m.source_ref or {}).get("label", ""), m.total_cost)
@@ -91,7 +96,7 @@ def check(actor: User, kind: str, id: str, decision: str, comment: Optional[str]
     project_id = getattr(item, "project_id", None)
     if item.review_status != "pending":
         raise ApiError("Already reviewed", "conflict")
-    if item.submitted_by_id == actor.id:
+    if item.submitted_by_id == actor.id and not rbac.may_self_review(actor):
         raise ApiError("You cannot check your own submission (segregation of duties)", "forbidden")
     b.require(actor, CHECK_PERM[kind], project_id)
     if decision not in ("checked", "rejected"):

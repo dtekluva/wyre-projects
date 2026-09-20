@@ -27,7 +27,7 @@ def list_approvals(project_id: Optional[str] = None, status: Optional[str] = Non
 def can_decide(user: User, a: Approval) -> dict:
     if a.status != "pending":
         return {"ok": False, "reason": "Already decided"}
-    if a.requested_by_id == user.id:
+    if a.requested_by_id == user.id and not rbac.may_self_review(user):
         return {"ok": False, "reason": "You raised this — segregation of duties"}
     perm = "gate.approve" if a.kind == "gate" else "writeoff.approve" if a.kind == "write_off" else "po.approve"
     if not rbac.can(user, perm, a.project_id):

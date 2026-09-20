@@ -1,7 +1,7 @@
 // In-memory API for the frontend-first phases. Same surface the Django backend will implement.
 // Enforces: RBAC (§2), stage gates (§3), actor capture (§4), maker-checker + segregation of duties (§4.13, §5),
 // money & stock rules (§0, §4.4, §4.10, §4.15, §11).
-import { can as canFn, rolesOn as rolesOnFn, type Permission } from "./rbac";
+import { can as canFn, maySelfReview, rolesOn as rolesOnFn, type Permission } from "./rbac";
 import { STAGES } from "./gates";
 import * as seed from "./mock/data";
 import * as seed2 from "./mock/data2";
@@ -298,7 +298,7 @@ export class MockApi {
     const escalation = this.thresholdNum("check.escalation_days", 3);
     const push = (kind: ReviewKind, it: ReviewItem["item"], projectId: string | undefined, title: string, subtitle: string, amount?: number) => {
       if (it.reviewStatus !== "pending") return;
-      if (it.submittedBy === userId) return; // segregation of duties
+      if (it.submittedBy === userId && !maySelfReview(this.userOrStub(userId))) return; // segregation of duties
       if (!this.can(userId, this.checkPerm(kind), projectId)) return;
       const ageDays = Math.floor((nowMs - new Date(it.submittedAt).getTime()) / 86400000);
       items.push({ kind, id: it.id, projectId, title, subtitle, amount, submittedBy: it.submittedBy, submittedAt: it.submittedAt, ageDays, overdue: ageDays > escalation, item: it });
@@ -307,7 +307,9 @@ export class MockApi {
     this.attachments.forEach((a) => push("attachment", a, a.projectId, a.caption ?? a.fileName, a.linkedTo ? `${a.linkedTo.model}: ${a.linkedTo.label}` : a.kind === "image" ? "Photo" : "File"));
     this.goodsReceipts.forEach((g) => { const po = this.purchaseOrders.find((p) => p.id === g.poId);
       push("goods_receipt", g, g.projectId, `${g.grnNumber} · ${this.vendorName(po?.vendorId)}`, `${g.lines.length} line${g.lines.length > 1 ? "s" : ""} against ${po?.poNumber}`, this.grnValue(g)); });
-    this.movements.filter((m) => (m.movementType === "issue" || m.movementType === "return" || m.movementType === "transfer") && m.sourceRef?.model !== "SiteVisit").forEach((m) =>
+    // "receipt" included: a receipt against a PO arrives already checked, but stock taken in without
+    // one is pending and has to be reviewable. Mirrors the backend queryset in review._collect.
+    this.movements.filter((m) => ["receipt", "issue", "return", "transfer"].includes(m.movementType) && m.sourceRef?.model !== "SiteVisit").forEach((m) =>
       push("stock_movement", m, m.projectId, `${MOVEMENT_LABEL[m.movementType]} · ${this.itemName(m.itemId)} × ${m.qty}`, m.sourceRef?.label ?? "", m.totalCost));
     this.costItems.forEach((c) => push("cost_item", c, c.projectId, c.label, `Budget line · ${COST_CATEGORY_LABEL[c.category]}`, c.plannedAmount));
     this.visits.forEach((v) => push("site_visit", v, v.projectId, `${VISIT_TYPE_LABEL[v.visitType]} visit · ${v.startedAt.slice(0, 10)}`, `${v.technicianIds.map((t) => this.userName(t)).join(", ")} · ${v.parts.length} part line${v.parts.length === 1 ? "" : "s"} · ${v.attachmentIds.length} photo${v.attachmentIds.length === 1 ? "" : "s"}`, v.costTotal));
@@ -334,7 +336,7 @@ export class MockApi {
     const item = this.findReviewable(kind, id);
     const projectId = "projectId" in item ? (item as { projectId?: string }).projectId : undefined;
     if (item.reviewStatus !== "pending") throw new ApiError("Already reviewed", "conflict");
-    if (item.submittedBy === actorId) throw new ApiError("You cannot check your own submission (segregation of duties)", "forbidden");
+    if (item.submittedBy === actorId && !maySelfReview(this.userOrStub(actorId))) throw new ApiError("You cannot check your own submission (segregation of duties)", "forbidden");
     this.require(actorId, this.checkPerm(kind), projectId);
     if (decision === "rejected" && !comment?.trim()) throw new ApiError("A comment is required to reject", "invalid");
     const at = this.now();
@@ -409,7 +411,7 @@ export class MockApi {
   approvalsFor(userId: string) { return this.listApprovals({ status: "pending" }).filter((a) => this.canDecide(userId, a).ok); }
   canDecide(userId: string, a: Approval): { ok: boolean; reason?: string; role?: RoleCode } {
     if (a.status !== "pending") return { ok: false, reason: "Already decided" };
-    if (a.requestedBy === userId) return { ok: false, reason: "You raised this — segregation of duties" };
+    if (a.requestedBy === userId && !maySelfReview(this.userOrStub(userId))) return { ok: false, reason: "You raised this — segregation of duties" };
     const perm: Permission = a.kind === "gate" ? "gate.approve" : a.kind === "write_off" ? "writeoff.approve" : "po.approve";
     if (!this.can(userId, perm, a.projectId)) return { ok: false, reason: "Your role cannot approve this" };
     const mine = this.rolesOn(userId, a.projectId ?? "__global__");

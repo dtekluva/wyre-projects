@@ -43,6 +43,17 @@ MATRIX: dict[str, list[str]] = {
                 "money.read", "inventory.read", "asset.read", "recon.read", "dashboard.read"],
 }
 
+# Roles trusted to sign off their own work (user decision, 2026-09-20). Everyone else still needs a
+# second pair of eyes: a tech cannot check the visit they logged, a techlead cannot approve their own
+# gate request. The record always shows who submitted and who checked, so a self-review is visible in
+# the audit trail rather than hidden by it.
+SELF_REVIEW_ROLES = {"finance", "director", "store_keeper"}
+
+
+def may_self_review(user) -> bool:
+    return bool(SELF_REVIEW_ROLES.intersection(base_roles(user)))
+
+
 CHECK_PERM = {
     "document": "document.check", "attachment": "attachment.check", "goods_receipt": "goods_receipt.check", "stock_movement": "inventory.check",
     "cost_item": "cost.check", "site_visit": "visit.check", "issue": "issue.check", "commissioning": "commissioning.check",

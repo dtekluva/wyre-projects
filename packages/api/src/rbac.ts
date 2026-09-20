@@ -75,6 +75,14 @@ export function can(user: User, perm: Permission, _projectId: string | undefined
 }
 
 /** Who may check whose input — spec §4.13 */
+/** Roles trusted to sign off their own work (user decision, 2026-09-20) — mirrors rbac.SELF_REVIEW_ROLES.
+ *  Everyone else still needs a second pair of eyes. Who submitted and who checked is always recorded,
+ *  so a self-review shows up in the audit trail rather than being hidden by it. */
+export const SELF_REVIEW_ROLES: RoleCode[] = ["finance", "director", "store_keeper"];
+export function maySelfReview(user: User): boolean {
+  return user.roles.some((r) => SELF_REVIEW_ROLES.includes(r));
+}
+
 export const CHECKER_ROLES: Record<"document" | "attachment" | "goods_receipt" | "stock_movement" | "cost_item" | "site_visit" | "issue" | "commissioning" | "hse" | "warranty", RoleCode[]> = {
   document: ["techlead", "director"],
   attachment: ["techlead"],
