@@ -133,6 +133,7 @@ function ReceiveFromNote() {
   const [names, setNames] = useState<Record<number, string>>({});
   const [qty, setQty] = useState<Record<number, string>>({});
   const [serials, setSerials] = useState<Record<number, string>>({});
+  const [costs, setCosts] = useState<Record<number, string>>({});
   const [typed, setTyped] = useState<ReadLine[]>([]);
 
   const all = api.extractions ?? [];
@@ -150,13 +151,13 @@ function ReceiveFromNote() {
   const lines: ReadLine[] = typed.length ? typed : (f.lines ?? []);
   const reviewing = typed.length > 0 || (ext?.status === "done");
 
-  const reset = () => { setExtId(""); setFile([]); setNames({}); setQty({}); setSerials({}); setTyped([]); };
+  const reset = () => { setExtId(""); setFile([]); setNames({}); setQty({}); setSerials({}); setCosts({}); setTyped([]); };
 
   const submit = () => {
     const payload = lines.map((l, i) => {
       const name = (names[i] ?? l.description).trim(); if (!name) return null;
       const ser = (serials[i] ?? l.serials.join("\n")).split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
-      return { name, unit: l.unit ?? "", qty: Number(qty[i] ?? l.qty) || 0, unitCost: l.unit_cost ?? 0, serials: ser };
+      return { name, unit: l.unit ?? "", qty: Number(qty[i] ?? l.qty) || 0, unitCost: Number(costs[i] ?? l.unit_cost ?? 0) || 0, serials: ser };
     }).filter(Boolean);
     if (!payload.length) return safe(() => { throw new Error("Give at least one line a name"); }, "");
     const ok = safe(() => api.receiveStock(user.id, {
@@ -210,7 +211,7 @@ function ReceiveFromNote() {
           <select className="ns-input" value={loc} onChange={(e) => setLoc(e.target.value)}>
             {locs.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
         <div className="table--wrap"><table className="table"><thead><tr>
-          <th>What it is</th><th className="num">Qty</th><th>Unit</th><th>Serial numbers</th></tr></thead>
+          <th>What it is</th><th className="num">Qty</th><th>Unit</th><th className="num">Unit cost</th><th className="num">Line total</th><th>Serial numbers</th></tr></thead>
           <tbody>{lines.map((l, i) => {
             // The model is told what is already in stock and returns the existing name when a line is
             // the same product written differently, so a second delivery lands on the same pile.
@@ -228,6 +229,14 @@ function ReceiveFromNote() {
                   {l.unit_cost ? ` · ${naira(l.unit_cost)} each` : ""}</div></td>
               <td className="num" style={{ width: 90 }}><input className="ns-input" type="number" min="0" value={qty[i] ?? String(l.qty)} onChange={(e) => setQty({ ...qty, [i]: e.target.value })} /></td>
               <td className="sm" style={{ width: 70 }}>{l.unit || "pcs"}</td>
+              <td className="num" style={{ width: 120 }}>
+                <input className="ns-input" type="number" min="0" step="0.01" placeholder="0"
+                       value={costs[i] ?? (l.unit_cost != null ? String(l.unit_cost) : "")}
+                       onChange={(e) => setCosts({ ...costs, [i]: e.target.value })} />
+                {/* A price of zero is legal — a donation, a sample — but it makes the running average
+                    cost meaningless for that item, so say so rather than letting it pass unremarked. */}
+                {!(Number(costs[i] ?? l.unit_cost ?? 0) > 0) && <div className="sm muted">no price</div>}</td>
+              <td className="num ns-mono" style={{ width: 110 }}>{naira((Number(costs[i] ?? l.unit_cost ?? 0) || 0) * n)}</td>
               <td style={{ minWidth: 200 }}>
                 <textarea className="ns-input" rows={Math.max(1, l.serials.length)} placeholder="one per line, if any"
                           value={serials[i] ?? l.serials.join("\n")} onChange={(e) => setSerials({ ...serials, [i]: e.target.value })} />
@@ -235,6 +244,7 @@ function ReceiveFromNote() {
             </tr>; })}</tbody></table></div>
         <div className="row" style={{ gap: 8 }}>
           {typed.length > 0 && <button className="ns-btn ns-btn--ghost" onClick={() => setTyped([...typed, { description: "", qty: 1, unit: "pcs", unit_cost: null, serials: [] }])}>＋ Another line</button>}
+          <span className="grow sm muted">Total {naira(lines.reduce((t, l, i) => t + (Number(costs[i] ?? l.unit_cost ?? 0) || 0) * (Number(qty[i] ?? l.qty) || 0), 0))}</span>
           <button className="ns-btn ns-btn--primary" onClick={submit}>Submit for check</button>
           <button className="ns-btn ns-btn--ghost" onClick={() => { if (ext) safe(() => api.rejectExtraction(user.id, ext.id), "Discarded"); reset(); }}>Discard</button>
         </div>
