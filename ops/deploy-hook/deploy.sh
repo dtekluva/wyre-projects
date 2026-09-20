@@ -17,8 +17,8 @@ cd "$DIR" || exit 1
 prev=$(git rev-parse HEAD)
 t() { date -u +%H:%M:%S; }
 state() { printf '{"sha":"%s","prev":"%s","state":"%s","at":"%s","note":"%s"}\n' "$SHA" "$prev" "$1" "$(date -u +%FT%TZ)" "${2:-}" > "$STATE"; }
-build()  { echo "[$(t)] building api + web"; $COMPOSE build api web 2>&1 | grep -E "Successfully tagged|ERROR|error:" ; return "${PIPESTATUS[0]}"; }
-up()     { echo "[$(t)] restarting"; $COMPOSE up -d api scheduler web 2>&1 | grep -E "Started|Error"; }
+build()  { echo "[$(t)] building api + web"; local out rc; out=$($COMPOSE build api web 2>&1); rc=$?; printf '%s\n' "$out" | grep -E "Successfully tagged|ERROR|error:" || true; return $rc; }
+up()     { echo "[$(t)] restarting"; local out rc; out=$($COMPOSE up -d api scheduler web 2>&1); rc=$?; printf '%s\n' "$out" | grep -vE "swap limit" | tail -4; return $rc; }
 health() {
   echo "[$(t)] health check"
   for i in $(seq 1 40); do
