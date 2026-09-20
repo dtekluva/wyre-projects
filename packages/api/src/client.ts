@@ -898,7 +898,11 @@ export class MockApi {
   extractions: Extraction[] = [];
   listExtractions(sourceId: string) { return this.extractions.filter((e) => e.sourceId === sourceId && !["accepted", "rejected"].includes(e.status)); }
   /** The demo build has no backend to read anything, so this reports that plainly rather than faking a result. */
-  requestExtraction(actorId: string, _sourceKind: string, sourceId: string): Extraction {
+  receiveStock(actorId: string, _input: unknown): never {
+    this.require(actorId, "inventory.write");
+    throw new ApiError("Receiving stock from a document needs the live backend", "conflict");
+  }
+  requestExtraction(actorId: string, _sourceKind: string, sourceId: string, _target?: string): Extraction {
     const doc = this.documents.find((d) => d.id === sourceId);
     this.require(actorId, "document.update", doc?.projectId);
     throw new ApiError("Reading documents needs the live backend — this is the demo build", "conflict");

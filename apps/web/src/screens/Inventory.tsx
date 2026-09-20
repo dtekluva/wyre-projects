@@ -38,6 +38,7 @@ export function Inventory() {
       </div>
 
       <Catalogue />
+      <ReceiveFromNote />
       <div className="card table--wrap"><div className="card__head"><div className="card__title">Stock on hand</div><span className="sm muted">click a row to filter the ledger</span></div>
         <table className="table"><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th className="num">On hand</th><th className="num">Unit cost</th><th className="num">Value</th><th className="num">Reorder at</th><th></th></tr></thead>
           <tbody>{api.items.map((it) => { const b = bal.find((x) => x.itemId === it.id)!; const av = api.available(it.id); return <tr key={it.id} onClick={() => setFocus(focus === it.id ? "" : it.id)} style={{ cursor: "pointer", background: focus === it.id ? "var(--ns-color-surface-selected)" : undefined }}>
@@ -164,6 +165,116 @@ function Catalogue() {
           <button className="ns-btn ns-btn--primary" disabled={!vName.trim()}
             onClick={() => { if (safe(() => api.addVendor(user.id, { name: vName, category: vCat || undefined }), `${vName} added`)) { setVName(""); setVCat(""); setTab(""); } }}>Add vendor</button>
           <button className="ns-btn ns-btn--ghost" onClick={() => setTab("")}>Cancel</button>
+        </div>
+      </>}
+    </div></div>;
+}
+
+type ReadLine = { description: string; qty: number; unit: string | null; unit_cost: number | null; serials: string[] };
+
+/**
+ * Upload a delivery note, let Claude read it, then map each line to a catalogue item and submit.
+ *
+ * The mapping step is the point. An extracted description is the supplier's words, not your SKU, so a
+ * person picks the item — the model never decides what a line *is*, only what the page *says*.
+ */
+function ReceiveFromNote() {
+  const api = useApi(); const { user } = useAuth(); const safe = useSafe();
+  const may = api.can(user.id, "inventory.write");
+  const locs = api.listLocations(); const mainLoc = api.mainLocationId();
+  const [file, setFile] = useState<Pick[]>([]);
+  const [extId, setExtId] = useState("");
+  const [loc, setLoc] = useState(mainLoc ?? "");
+  const [picked, setPicked] = useState<Record<number, string>>({});
+  const [qty, setQty] = useState<Record<number, string>>({});
+  const [serials, setSerials] = useState<Record<number, string>>({});
+  if (!may) return null;
+
+  const ext = (api.extractions ?? []).find((e) => e.id === extId);
+  const f = (ext?.fields ?? {}) as unknown as { reference?: string; supplier?: string; dated?: string; lines?: ReadLine[]; notes?: string; confidence?: string };
+  const lines = f.lines ?? [];
+
+  // Offer a best guess by word overlap, but never silently apply it — the select starts on the guess
+  // and the store keeper confirms or changes it.
+  const guess = (desc: string) => {
+    const words = desc.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+    let best = ""; let score = 0;
+    for (const it of api.items) {
+      const hay = `${it.sku} ${it.name} ${it.make ?? ""} ${it.model ?? ""}`.toLowerCase();
+      const n = words.filter((w) => hay.includes(w)).length;
+      if (n > score) { score = n; best = it.id; }
+    }
+    return score >= 1 ? best : "";
+  };
+
+  const itemFor = (i: number, l: ReadLine) => picked[i] ?? guess(l.description);
+
+  const submit = () => {
+    const payload = lines.map((l, i) => {
+      const itemId = itemFor(i, l); if (!itemId) return null;
+      const it = api.item(itemId);
+      const ser = (serials[i] ?? l.serials.join("\n")).split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
+      return { itemId, qty: Number(qty[i] ?? l.qty) || 0, unitCost: l.unit_cost ?? 0, serials: it.isSerialised ? ser : [] };
+    }).filter(Boolean);
+    if (!payload.length) return safe(() => { throw new Error("Match at least one line to a catalogue item"); }, "");
+    if (safe(() => api.receiveStock(user.id, {
+      locationId: loc, reason: f.reference ? `Delivery note ${f.reference}` : "Received from document",
+      attachmentIds: [ext!.sourceId], lines: payload,
+    }), "Submitted — each line is pending a check")) { setExtId(""); setFile([]); setPicked({}); setQty({}); setSerials({}); }
+  };
+
+  return <div className="card" style={{ marginBottom: 20 }}>
+    <div className="card__head"><div className="card__title">Receive stock from a delivery note</div>
+      <span className="sm muted">read by Claude · every line still gets checked by someone else</span></div>
+    <div className="card__body stack" style={{ gap: 12 }}>
+      {!ext ? <>
+        <div className="sm muted">Upload the waybill, delivery note or supplier invoice. Serial numbers are read off the page so nobody retypes them.</div>
+        <div className="row" style={{ gap: 8 }}>
+          <FilePick picks={file} onChange={setFile} required label="Delivery note" />
+          <button className="ns-btn ns-btn--primary" disabled={!file.length} onClick={() => safe(() => {
+            const p0 = file[0];
+            const att = api.addEvidence(user.id, { fileName: p0.fileName, sizeBytes: p0.size, blob: p0.file, caption: "Delivery note" });
+            const e = api.requestExtraction(user.id, "attachment", att.id, "stock_lines");
+            setExtId(e.id);
+          }, "Reading the note — this takes a few seconds")}>Read it</button>
+        </div>
+      </> : ext.status === "queued" || ext.status === "running" ? <Note tone="info">Reading the note…</Note>
+      : ext.status === "failed" ? <Note tone="danger">Could not read it: {ext.error}
+          <button className="ns-btn ns-btn--ghost ns-btn--sm" style={{ marginLeft: 8 }} onClick={() => { setExtId(""); setFile([]); }}>Start again</button></Note>
+      : <>
+        <div className="row sm" style={{ gap: 12 }}>
+          <span><b>{f.reference || "no reference"}</b></span>
+          {f.supplier && <span className="muted">{f.supplier}</span>}
+          {f.dated && <span className="muted">{fmtDate(f.dated)}</span>}
+          <Badge variant={f.confidence === "high" ? "success" : f.confidence === "low" ? "danger" : "warning"}>confidence {f.confidence}</Badge>
+          <span className="grow" />
+          <span className="muted">${ext.costUsd.toFixed(4)}</span>
+        </div>
+        {f.notes && <Note tone="warn">{f.notes}</Note>}
+        <label className="ns-field" style={{ maxWidth: 280 }}><span className="ns-field__label">Into which location</span>
+          <select className="ns-input" value={loc} onChange={(e) => setLoc(e.target.value)}>
+            {locs.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
+        <div className="table--wrap"><table className="table"><thead><tr>
+          <th>On the page</th><th>Catalogue item</th><th className="num">Qty</th><th>Serials</th></tr></thead>
+          <tbody>{lines.map((l, i) => {
+            const id = itemFor(i, l); const it = id ? api.item(id) : undefined;
+            const need = it?.isSerialised ? Number(qty[i] ?? l.qty) || 0 : 0;
+            const have = (serials[i] ?? l.serials.join("\n")).split(/[\n,]/).map((x) => x.trim()).filter(Boolean).length;
+            return <tr key={i}>
+              <td><div>{l.description}</div><div className="sm muted">{l.qty}{l.unit ? ` ${l.unit}` : ""}{l.unit_cost ? ` @ ${naira(l.unit_cost)}` : " · no price on the page"}</div></td>
+              <td><select className="ns-input" value={id} onChange={(e) => setPicked({ ...picked, [i]: e.target.value })}>
+                <option value="">— skip this line —</option>
+                {api.items.map((x) => <option key={x.id} value={x.id}>{x.sku} · {x.name}</option>)}</select>
+                {!id && <div className="sm muted">no match — add it to the catalogue first</div>}</td>
+              <td className="num" style={{ width: 90 }}><input className="ns-input" type="number" min="0" value={qty[i] ?? String(l.qty)} onChange={(e) => setQty({ ...qty, [i]: e.target.value })} /></td>
+              <td style={{ minWidth: 200 }}>{it?.isSerialised
+                ? <><textarea className="ns-input" rows={Math.max(2, l.serials.length)} value={serials[i] ?? l.serials.join("\n")} onChange={(e) => setSerials({ ...serials, [i]: e.target.value })} />
+                    <div className={`sm ${have === need ? "muted" : "note--danger"}`}>{have} of {need} needed</div></>
+                : <span className="sm muted">not serialised</span>}</td>
+            </tr>; })}</tbody></table></div>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="ns-btn ns-btn--primary" onClick={submit}>Submit for check</button>
+          <button className="ns-btn ns-btn--ghost" onClick={() => safe(() => { api.rejectExtraction(user.id, ext.id); setExtId(""); setFile([]); }, "Discarded")}>Discard</button>
         </div>
       </>}
     </div></div>;
