@@ -34,5 +34,18 @@ ok(up?.entries.some((e) => e.id === "att_orphan_c"), "an upload nothing points a
 ok(!api.projects.some((p) => flattenFiles(sectionFiles(api, { projectId: p.id })).some((e) => e.id.startsWith("att_orphan"))), "warehouse files never leak into a project gallery");
 ok(wh.every((s) => s.entries.every((e, i, arr) => i === 0 || arr[i - 1].at >= e.at)), "sections are newest first");
 
+// Issue photos — before, during, after — belong together under "Issues", captioned by what they are.
+const pj = api.projects[0].id;
+const pa = { ...base, projectId: pj, uploadedBy: "u_ft1", submittedBy: "u_ft1" };
+api.attachments.push({ ...pa, id: "att_iss_b", caption: "Before — Loose rail" }, { ...pa, id: "att_iss_m", caption: "Supplier quote" }, { ...pa, id: "att_iss_a", caption: "After — Loose rail" });
+api.issues.push({ id: "iss_x", projectId: pj, category: "mechanical", severity: "low", title: "Loose rail", description: "", raisedBy: "u_ft1", raisedAt: now, source: "manual", status: "resolved",
+  costToResolve: 0, attachmentIds: ["att_iss_m"], beforeAttachmentIds: ["att_iss_b"], afterAttachmentIds: ["att_iss_a"], isSnag: false, slaDueAt: now,
+  createdAt: now, createdBy: "u_ft1", updatedAt: now, updatedBy: "u_ft1", reviewStatus: "pending", submittedBy: "u_ft1", submittedAt: now, reviewVersion: 1 });
+const isec = sectionFiles(api, { projectId: pj }).find((s) => s.key === "issues");
+const lab = (id) => isec?.entries.find((e) => e.id === id)?.via?.label;
+ok(!!isec && ["att_iss_b", "att_iss_m", "att_iss_a"].every((id) => isec.entries.some((e) => e.id === id)), "before, during and after all file under Issues");
+ok(lab("att_iss_b") === "Before · Loose rail" && lab("att_iss_m") === "Loose rail" && lab("att_iss_a") === "After · Loose rail", `issue tiles say what they are (${lab("att_iss_b")} / ${lab("att_iss_m")} / ${lab("att_iss_a")})`);
+ok(!sectionFiles(api, { projectId: pj }).find((s) => s.key === "uploads")?.entries.some((e) => e.id.startsWith("att_iss")), "issue photos no longer land in Photos & files");
+
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED");
 process.exit(fails ? 1 : 0);

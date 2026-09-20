@@ -9,6 +9,7 @@ import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { Avatar, Badge, Empty, Note, ReviewBadge } from "../components/ui";
+import { IssueDetail } from "../components/IssueDetail";
 
 const SEV: Record<IssueSeverity, "danger" | "warning" | "info" | "neutral"> = { critical: "danger", high: "warning", medium: "info", low: "neutral" };
 const CATS: IssueCategory[] = ["electrical", "mechanical", "performance", "data", "safety", "client", "other"];
@@ -17,29 +18,22 @@ const COLS: { key: string; label: string; statuses: IssueStatus[] }[] = [
   { key: "resolved", label: "Resolved · pending check", statuses: ["resolved"] }, { key: "closed", label: "Closed", statuses: ["closed", "wont_fix"] },
 ];
 
-function IssueCard({ i, p }: { i: Issue; p: Project }) {
-  const api = useApi(); const { user } = useAuth(); const safe = useSafe(); const sla = api.issueSla(i);
-  const [open, setOpen] = useState(false); const [root, setRoot] = useState(""); const [res, setRes] = useState(""); const [cost, setCost] = useState(""); const [after, setAfter] = useState<Pick[]>([]);
-  const canUpdate = api.can(user.id, "issue.update", p.id) && !["closed", "wont_fix", "resolved"].includes(i.status);
-  return <div className="issue">
+/** Board card: a summary. Everything else — files at any stage, actions, checking — lives in the detail it opens. */
+function IssueCard({ i, onOpen }: { i: Issue; onOpen: () => void }) {
+  const api = useApi(); const sla = api.issueSla(i);
+  const extra = i.attachmentIds.length;
+  return <div className="issue issue--btn" role="button" tabIndex={0} title="Open issue" onClick={onOpen}
+    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}>
     <div className="row" style={{ justifyContent: "space-between" }}><b className="ellipsis">{i.title}</b><Badge variant={SEV[i.severity]}>{i.severity}</Badge></div>
     <div className="row row--wrap sm muted">{i.category}{i.isSnag && <Badge variant="info">snag</Badge>}<ReviewBadge status={i.reviewStatus} />{sla.open && (sla.breached ? <Badge variant="danger">SLA −{Math.abs(sla.hoursLeft)} h</Badge> : <span>SLA {sla.hoursLeft} h</span>)}</div>
     <div className="sm muted">{api.userName(i.raisedBy)} · {relative(i.raisedAt)}{i.assigneeId ? ` · → ${api.userName(i.assigneeId)}` : ""}</div>
-    <div className="row row--wrap" style={{ marginTop: 6, gap: 10 }}>
-      <span className="sm muted">Before</span><Thumbs ids={i.beforeAttachmentIds} empty="none" />
-      {i.afterAttachmentIds.length > 0 && <><span className="sm muted">After</span><Thumbs ids={i.afterAttachmentIds} /></>}
+    <div className="row row--wrap" style={{ marginTop: 6, gap: 10 }} onClick={(e) => e.stopPropagation()}>
+      <span className="sm muted">Before</span><Thumbs ids={i.beforeAttachmentIds} empty="none" max={3} />
+      {extra > 0 && <><span className="sm muted">+{extra} file{extra > 1 ? "s" : ""}</span><Thumbs ids={i.attachmentIds} max={3} /></>}
+      {i.afterAttachmentIds.length > 0 && <><span className="sm muted">After</span><Thumbs ids={i.afterAttachmentIds} max={3} /></>}
     </div>
     {i.resolution && <div className="sm"><b>Fix:</b> {i.resolution}{i.costToResolve ? ` · ${naira(i.costToResolve)}` : ""}</div>}
     {i.checkComment && <div className="sm muted">Checker: “{i.checkComment}”</div>}
-    {canUpdate && !open && <div className="row" style={{ marginTop: 4 }}>
-      {i.status === "open" && <button className="ns-btn ns-btn--secondary ns-btn--sm" onClick={() => safe(() => api.setIssueStatus(user.id, i.id, "in_progress", user.id), "In progress")}>Start</button>}
-      {i.status === "in_progress" && <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => safe(() => api.setIssueStatus(user.id, i.id, "awaiting_parts"), "Awaiting parts")}>Parts</button>}
-      <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setOpen(true)}>Resolve…</button></div>}
-    {open && <div className="stack" style={{ marginTop: 6 }}>
-      <input className="ns-input" placeholder="Root cause" value={root} onChange={(e) => setRoot(e.target.value)} /><input className="ns-input" placeholder="Resolution" value={res} onChange={(e) => setRes(e.target.value)} />
-      <div className="row"><input className="ns-input" type="number" placeholder="Extra cost ₦" value={cost} onChange={(e) => setCost(e.target.value)} /><FilePick picks={after} onChange={setAfter} required label="After photo" /></div>
-      <div className="row"><button className="ns-btn ns-btn--primary ns-btn--sm" disabled={!after.length} onClick={() => { if (safe(() => { const f = after[0]; const a = api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: `After — ${i.title}` }); api.resolveIssue(user.id, i.id, { rootCause: root, resolution: res, afterAttachmentIds: [a.id], costToResolve: Number(cost) || 0 }); }, "Resolution submitted — pending check")) setOpen(false); }}>Submit</button><button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setOpen(false)}>Cancel</button></div>
-    </div>}
   </div>;
 }
 
@@ -47,6 +41,7 @@ export function ProjectField() {
   const p = useOutletContext<Project>(); const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   const issues = api.listIssues({ projectId: p.id }); const visits = api.listVisits(p.id); const coms = api.listCommissioning(p.id); const hse = api.listHse(p.id); const wars = api.listWarranty(p.id);
   const [tab, setTab] = useState<"issues" | "visits" | "commissioning" | "hse" | "warranty">("issues");
+  const [openIssue, setOpenIssue] = useState<string | null>(null);
   const [assignee, setAssignee] = useState("");
   // forms
   const [iCat, setICat] = useState<IssueCategory>("electrical"); const [iSev, setISev] = useState<IssueSeverity>("medium"); const [iTitle, setITitle] = useState(""); const [iDesc, setIDesc] = useState(""); const [iPhoto, setIPhoto] = useState<Pick[]>([]); const [iAsset, setIAsset] = useState("");
@@ -62,8 +57,9 @@ export function ProjectField() {
   return <div className="stack" style={{ gap: 16 }}>
     <div className="row row--wrap">{tabs.map(([k, l]) => <button key={k} className={`chip ${tab === k ? "chip--on" : ""}`} onClick={() => setTab(k)}>{l}</button>)}</div>
 
+    {openIssue && (() => { const i = issues.find((x) => x.id === openIssue); return i ? <IssueDetail issue={i} onClose={() => setOpenIssue(null)} /> : null; })()}
     {tab === "issues" && <>
-      <div className="board">{COLS.map((c) => { const list = issues.filter((i) => c.statuses.includes(i.status)); return <div key={c.key} className="board__col"><div className="board__head">{c.label} <span className="muted">{list.length}</span></div>{list.map((i) => <IssueCard key={i.id} i={i} p={p} />)}{!list.length && <div className="sm muted">—</div>}</div>; })}</div>
+      <div className="board">{COLS.map((c) => { const list = issues.filter((i) => c.statuses.includes(i.status)); return <div key={c.key} className="board__col"><div className="board__head">{c.label} <span className="muted">{list.length}</span></div>{list.map((i) => <IssueCard key={i.id} i={i} onOpen={() => setOpenIssue(i.id)} />)}{!list.length && <div className="sm muted">—</div>}</div>; })}</div>
       {api.can(user.id, "issue.create", p.id) && <div className="card"><div className="card__head"><div className="card__title">Raise an issue</div><span className="sm muted">before photo required · report is maker-checked</span></div>
         <div className="card__body form">
           <select className="ns-input" value={iSev} onChange={(e) => setISev(e.target.value as IssueSeverity)}>{(["critical", "high", "medium", "low"] as IssueSeverity[]).map((s) => <option key={s} value={s}>{s} · SLA {api.slaHours(s)} h</option>)}</select>

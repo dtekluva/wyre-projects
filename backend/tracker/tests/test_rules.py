@@ -347,6 +347,35 @@ class VisitPhotoTest(TestCase):
         self.err("invalid", field.add_visit_photos, u["u_ft1"], v.id, {"attachmentIds": [self.photo(u["u_pm2"], "p4")]})
         self.err("forbidden", field.add_visit_photos, u["u_fin"], v.id, {"attachmentIds": [self.photo(u["u_ft1"])]})
 
+    def test_add_files_to_an_issue_at_any_stage(self):
+        u = self.u
+        i = field.raise_issue(u["u_ft1"], "p1", {"category": "electrical", "severity": "high", "title": "Breaker trips", "description": "d",
+                                                  "beforeAttachmentIds": [self.photo(u["u_ft1"], caption="before")]})
+        self.assertEqual(i.attachment_ids, [])
+        quote = self.photo(u["u_ft1"], caption="supplier quote")
+        i = field.add_issue_photos(u["u_ft1"], i.id, {"attachmentIds": [quote]})
+        self.assertEqual(i.attachment_ids, [quote])
+        self.assertEqual(i.review_status, "pending"); self.assertEqual(i.review_version, 1, "still the first submission")
+        field.set_issue_status(u["u_ft1"], i.id, "awaiting_parts", None)
+        i = field.add_issue_photos(u["u_ft1"], i.id, {"attachmentIds": [self.photo(u["u_ft1"], caption="parts arrived")]})
+        self.assertEqual(len(i.attachment_ids), 2, "files can be added in any status")
+        self.err("conflict", field.add_issue_photos, u["u_ft1"], i.id, {"attachmentIds": [quote]})
+        self.err("conflict", field.add_issue_photos, u["u_ft1"], i.id, {"attachmentIds": i.before_attachment_ids}, )
+        self.err("invalid", field.add_issue_photos, u["u_ft1"], i.id, {"attachmentIds": []})
+        self.err("invalid", field.add_issue_photos, u["u_ft1"], i.id, {"attachmentIds": [self.photo(u["u_pm2"], "p4")]})
+        self.err("forbidden", field.add_issue_photos, u["u_fin"], i.id, {"attachmentIds": [self.photo(u["u_ft1"])]})
+
+    def test_adding_to_a_checked_issue_reopens_the_review(self):
+        u = self.u
+        i = field.raise_issue(u["u_ft1"], "p1", {"category": "mechanical", "severity": "low", "title": "Loose rail", "description": "d",
+                                                  "beforeAttachmentIds": [self.photo(u["u_ft1"])]})
+        review.check(u["u_pm1"], "issue", i.id, "checked")
+        i.refresh_from_db(); self.assertEqual(i.review_status, "checked")
+        i = field.add_issue_photos(u["u_ft1"], i.id, {"attachmentIds": [self.photo(u["u_ft1"], caption="late evidence")]})
+        self.assertEqual(i.review_status, "pending", "a checked record that is edited goes back for review")
+        self.assertEqual(i.review_version, 2); self.assertIsNone(i.checked_by)
+        self.assertTrue(any("re-entered review" in e.summary for e in i.project.events.all()))
+
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u
         v = field.log_visit(u["u_ft1"], "p1", {"visitType": "inspection", "startedAt": "2026-09-10T09:00:00Z", "endedAt": "2026-09-10T10:00:00Z",

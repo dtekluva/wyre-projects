@@ -1,6 +1,6 @@
 import { STAGES, type StageDef } from "./gates";
 import { MOVEMENT_LABEL, type Actual, type Attachment, type CommissioningRecord, type DocType, type Document, type GoodsReceipt,
-  type HseIncident, type ReviewStatus, type SiteVisit, type StockMovement } from "./types";
+  type HseIncident, type Issue, type ReviewStatus, type SiteVisit, type StockMovement } from "./types";
 
 /**
  * Sectioning for the file gallery.
@@ -24,7 +24,7 @@ export interface FileSection { key: string; title: string; hint?: string; stage?
 /** The slice of the store the sectioner reads. MockApi satisfies it structurally. */
 export interface FileStore {
   documents: Document[]; attachments: Attachment[]; goodsReceipts: GoodsReceipt[]; movements: StockMovement[];
-  actuals: Actual[]; visits: SiteVisit[]; commissionings: CommissioningRecord[]; hseIncidents: HseIncident[];
+  actuals: Actual[]; visits: SiteVisit[]; commissionings: CommissioningRecord[]; hseIncidents: HseIncident[]; issues: Issue[];
   items: { id: string; name: string }[];
 }
 export type FileScope = { projectId: string } | "warehouse";
@@ -33,6 +33,7 @@ const SECTION_META: Record<string, { title: string; hint?: string }> = {
   "docs-other": { title: "Other documents" },
   uploads: { title: "Photos & files", hint: "uploaded directly, not tied to a record" },
   deliveries: { title: "Deliveries", hint: "delivery notes and photos on stock received" },
+  issues: { title: "Issues", hint: "before, during and after" },
   visits: { title: "Site visits" },
   commissioning: { title: "Commissioning" },
   hse: { title: "HSE" },
@@ -42,12 +43,12 @@ const SECTION_META: Record<string, { title: string; hint?: string }> = {
   signoffs: { title: "Sign-offs", hint: "client signatures" },
   linked: { title: "From other records" },
 };
-const SECTION_ORDER = ["docs-other", "uploads", "deliveries", "visits", "commissioning", "hse", "writeoffs", "movements", "expenses", "signoffs", "linked"];
+const SECTION_ORDER = ["docs-other", "uploads", "deliveries", "issues", "visits", "commissioning", "hse", "writeoffs", "movements", "expenses", "signoffs", "linked"];
 
 /** Where an attachment uploaded against a record with only `linkedTo` set should go. */
 const LINKED_MODEL_SECTION: Record<string, string> = {
   PurchaseOrder: "deliveries", GoodsReceipt: "deliveries", StockMovement: "movements", SiteVisit: "visits", Visit: "visits",
-  CommissioningRecord: "commissioning", Commissioning: "commissioning", HseIncident: "hse", Actual: "expenses", Issue: "visits",
+  CommissioningRecord: "commissioning", Commissioning: "commissioning", HseIncident: "hse", Actual: "expenses", Issue: "issues",
 };
 
 type Hit = { section: string; via: FileVia; n: number };
@@ -69,6 +70,12 @@ function indexAttachments(s: FileStore): Map<string, Hit> {
     const via = { model: "CommissioningRecord", id: c.id, label: `Commissioning · ${c.date.slice(0, 10)}` };
     for (const it of c.items) put(it.attachmentId, "commissioning", { ...via, label: `${it.label} · commissioning` });
     for (const id of c.attachmentIds) put(id, "commissioning", via);
+  }
+  for (const i of s.issues) {
+    const via = { model: "Issue", id: i.id, label: i.title };
+    for (const id of i.beforeAttachmentIds) put(id, "issues", { ...via, label: `Before · ${i.title}` });
+    for (const id of i.attachmentIds ?? []) put(id, "issues", via);
+    for (const id of i.afterAttachmentIds) put(id, "issues", { ...via, label: `After · ${i.title}` });
   }
   for (const v of s.visits) for (const id of v.attachmentIds) put(id, "visits", { model: "SiteVisit", id: v.id, label: `${v.visitType} visit · ${v.startedAt.slice(0, 10)}` });
   for (const h of s.hseIncidents) for (const id of h.attachmentIds) put(id, "hse", { model: "HseIncident", id: h.id, label: `${h.type} · ${h.occurredAt.slice(0, 10)}` });

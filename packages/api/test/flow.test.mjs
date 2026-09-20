@@ -120,6 +120,28 @@ ok(isu.status === "resolved" && isu.reviewStatus === "pending" && isu.reviewVers
 api.check("issue", isu.id, "u_pm1", "rejected", "still tripping");
 ok(isu.status === "in_progress" && isu.reviewStatus === "rejected", "rejected resolution → back to in progress");
 api.resolveIssue("u_ft1", isu.id, { rootCause: "loose lug", resolution: "replaced lug", afterAttachmentIds: ["a2"], costToResolve: 5000 });
+
+// files at any stage of an issue
+const isu2 = api.raiseIssue("u_ft1", "p1", { category: "mechanical", severity: "low", title: "Loose rail", description: "d", beforeAttachmentIds: ["b1"] });
+ok(Array.isArray(isu2.attachmentIds) && isu2.attachmentIds.length === 0, "a new issue starts with no extra files");
+expectErr(() => api.addIssuePhotos("u_ft1", isu2.id, { attachmentIds: [] }), "invalid", "adding nothing is refused");
+const q1 = api.addAttachment("u_ft1", "p1", { fileName: "quote.pdf", kind: "document", caption: "Supplier quote" });
+const other = api.addAttachment("u_pm2", "p4", { fileName: "elsewhere.jpg", caption: "wrong project" });
+expectErr(() => api.addIssuePhotos("u_ft1", isu2.id, { attachmentIds: [other.id] }), "invalid", "a file from another project is refused");
+expectErr(() => api.addIssuePhotos("u_fin", isu2.id, { attachmentIds: [q1.id] }), "forbidden", "finance cannot add files to an issue");
+api.addIssuePhotos("u_ft1", isu2.id, { attachmentIds: [q1.id] });
+ok(isu2.attachmentIds.length === 1 && isu2.reviewStatus === "pending" && isu2.reviewVersion === 1, "file added while pending — still the first submission");
+api.setIssueStatus("u_ft1", isu2.id, "awaiting_parts");
+const q2 = api.addAttachment("u_ft1", "p1", { fileName: "parts.jpg", caption: "Parts arrived" });
+api.addIssuePhotos("u_ft1", isu2.id, { attachmentIds: [q2.id] });
+ok(isu2.attachmentIds.length === 2, "files can be added in any status");
+expectErr(() => api.addIssuePhotos("u_ft1", isu2.id, { attachmentIds: [q1.id] }), "conflict", "the same file cannot be attached twice");
+api.check("issue", isu2.id, "u_pm1", "checked");
+ok(isu2.reviewStatus === "checked", "issue checked");
+const q3 = api.addAttachment("u_ft1", "p1", { fileName: "late.jpg", caption: "Late evidence" });
+api.addIssuePhotos("u_ft1", isu2.id, { attachmentIds: [q3.id] });
+ok(isu2.reviewStatus === "pending" && isu2.reviewVersion === 2 && !isu2.checkedBy, "adding to a checked issue re-enters review (§4.13)");
+ok(api.listEvents("p1").some((e) => /re-entered review/.test(e.summary)), "chronology records the re-entry");
 const p1Act1 = api.money("p1").actual; api.check("issue", isu.id, "u_pm1", "checked");
 ok(isu.status === "closed" && api.money("p1").actual === p1Act1 + 5000, "checked resolution closes the issue and posts ₦5k O&M actual");
 

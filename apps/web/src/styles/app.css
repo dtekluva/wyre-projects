@@ -601,3 +601,7 @@ button.frow { text-align: left; font: inherit; cursor: pointer; }
   .gallery__search { width: 100%; }
   .modal__nav { width: 34px; height: 48px; font-size: 26px; }
 }
+
+.issue--btn { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.issue--btn:hover { border-color: var(--ns-color-primary); }
+.issue--btn:focus-visible { outline: 2px solid var(--ns-color-primary); outline-offset: 2px; }

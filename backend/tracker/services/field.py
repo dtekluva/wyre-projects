@@ -75,6 +75,36 @@ def log_visit(actor: User, project_id: str, input: dict) -> SiteVisit:
 
 
 @transaction.atomic
+def add_issue_photos(actor: User, issue_id: str, input: dict) -> Issue:
+    """Attach files to an issue at any point in its life — a progress photo, a supplier quote, a test sheet.
+    Before/after stay what they are (the state at raise and at resolve); this is everything in between.
+    Same rules as visits: must be on the project, no duplicates, and per §4.13 an already-checked issue
+    re-enters review so late evidence cannot slip in behind a completed check."""
+    i = b.get_or_404(Issue, issue_id, "Issue")
+    b.require(actor, "issue.update", i.project_id)
+    ids = [str(x) for x in (input.get("attachmentIds") or [])]
+    if not ids:
+        raise ApiError("Choose at least one file", "invalid")
+    valid = set(Attachment.objects.filter(pk__in=ids, project_id=i.project_id).values_list("id", flat=True))
+    if [x for x in ids if x not in valid]:
+        raise ApiError("File is not on this project", "invalid")
+    already = set(i.attachment_ids or []) | set(i.before_attachment_ids or []) | set(i.after_attachment_ids or [])
+    fresh = [x for x in ids if x not in already]
+    if not fresh:
+        raise ApiError("Those files are already attached", "conflict")
+    at = b.now()
+    i.attachment_ids = list(i.attachment_ids or []) + fresh
+    b.stamp(i, actor, at)
+    reopened = i.review_status == "checked"
+    if reopened:
+        b.new_review(i, actor, at, version=i.review_version + 1)
+    i.save()
+    n = len(fresh)
+    b.log(i.project_id, actor, "issue", f"{n} file{'' if n == 1 else 's'} added to {i.title}"
+          + (" — record re-entered review" if reopened else ""), None, {"model": "Issue", "id": i.id})
+    return i
+
+
 def add_visit_photos(actor: User, visit_id: str, input: dict) -> SiteVisit:
     """Attach further photos to a visit after the fact. Per §4.13 an edit to an already-checked record
     re-enters review, so late evidence cannot slip in behind a completed check."""

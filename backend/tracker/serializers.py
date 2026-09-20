@@ -169,7 +169,7 @@ def issue(i: Issue) -> dict:
     return {"id": i.id, "projectId": i.project_id, "stationId": i.station_id, "assetId": i.asset_id, "category": i.category, "severity": i.severity, "title": i.title,
             "description": i.description, "raisedBy": i.raised_by_id, "raisedAt": iso(i.raised_at), "source": i.source, "status": i.status, "assigneeId": i.assignee_id,
             "rootCause": i.root_cause, "resolution": i.resolution, "resolvedBy": i.resolved_by_id, "resolvedAt": iso(i.resolved_at), "costToResolve": num(i.cost_to_resolve),
-            "linkedVisitId": i.linked_visit_id, "warrantyClaimId": i.warranty_claim_id, "beforeAttachmentIds": i.before_attachment_ids, "afterAttachmentIds": i.after_attachment_ids,
+            "linkedVisitId": i.linked_visit_id, "warrantyClaimId": i.warranty_claim_id, "attachmentIds": list(i.attachment_ids or []), "beforeAttachmentIds": i.before_attachment_ids, "afterAttachmentIds": i.after_attachment_ids,
             "isSnag": i.is_snag, "slaDueAt": iso(i.sla_due_at), **audit(i), **review(i)}
 
 

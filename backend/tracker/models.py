@@ -536,6 +536,8 @@ class Issue(Audit, Reviewable):
     warranty_claim_id = models.CharField(max_length=40, null=True, blank=True)
     before_attachment_ids = models.JSONField(default=list)
     after_attachment_ids = models.JSONField(default=list)
+    # anything added while the issue is open — progress photos, a supplier quote, a test sheet — with captions
+    attachment_ids = models.JSONField(default=list)
     is_snag = models.BooleanField(default=False)
     sla_due_at = models.DateTimeField()
 

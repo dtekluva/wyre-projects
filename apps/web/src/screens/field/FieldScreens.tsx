@@ -107,7 +107,7 @@ export function FieldIssueNew() {
 
 export function FieldIssueDetail() {
   const { id } = useParams(); const api = useApi(); const { user } = useAuth(); const plabel = useProjectLabel(); const { submit } = useField(); const nav = useNavigate();
-  const i = api.issues.find((x) => x.id === id); const [open, setOpen] = useState(false); const [root, setRoot] = useState(""); const [res, setRes] = useState(""); const [cost, setCost] = useState(""); const [shots, setShots] = useState<Shot[]>([]);
+  const i = api.issues.find((x) => x.id === id); const [open, setOpen] = useState(false); const [root, setRoot] = useState(""); const [res, setRes] = useState(""); const [cost, setCost] = useState(""); const [more, setMore] = useState<Shot[]>([]); const [shots, setShots] = useState<Shot[]>([]);
   if (!i) return <Empty title="Issue not found" />;
   const sla = api.issueSla(i); const canUpdate = api.can(user.id, "issue.update", i.projectId) && !["closed", "wont_fix", "resolved"].includes(i.status);
   const asset = i.assetId ? api.assets.find((a) => a.id === i.assetId) : undefined;
@@ -121,6 +121,16 @@ export function FieldIssueDetail() {
     <div className="sm muted">{i.assigneeId ? `Assigned to ${api.userName(i.assigneeId)}` : "Unassigned"}</div>
     <div className="row row--wrap" style={{ gap: 10 }}><span className="sm muted">Before</span><Thumbs ids={i.beforeAttachmentIds} empty="none" />
       {i.afterAttachmentIds.length > 0 && <><span className="sm muted">After</span><Thumbs ids={i.afterAttachmentIds} /></>}</div>
+    {i.attachmentIds.length > 0 && <div className="row row--wrap" style={{ gap: 10 }}><span className="sm muted">Added</span><Thumbs ids={i.attachmentIds} /></div>}
+    {api.can(user.id, "issue.update", i.projectId) && <div className="stack" style={{ gap: 6 }}>
+      <label className="flabel">Add photos or files — any stage</label>
+      <CameraInput shots={more} onChange={setMore} captions label="Add photo" />
+      {more.length > 0 && <button className="ns-btn ns-btn--secondary ns-btn--block" onClick={() => {
+        submit(`${more.length} file${more.length > 1 ? "s" : ""} added — ${i.title}`, { kind: "add_issue_photos", actorId: user.id, issueId: i.id, projectId: i.projectId,
+          photos: more.map((s) => ({ fileName: s.fileName, caption: s.caption?.trim() || `${i.title} — ${s.fileName}`, blob: s.file })) });
+        setMore([]);
+      }}>Add {more.length} file{more.length > 1 ? "s" : ""}{i.reviewStatus === "checked" ? " (re-enters review)" : ""}</button>}
+    </div>}
     {i.resolution && <div className="fnote"><b>Resolution:</b> {i.resolution}{i.rootCause ? ` · root cause: ${i.rootCause}` : ""}{i.costToResolve ? ` · ${naira(i.costToResolve)}` : ""}</div>}
     {i.checkComment && <div className="fnote fnote--warn">Checker: “{i.checkComment}”</div>}
     {canUpdate && !open && <div className="fgrid">

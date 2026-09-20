@@ -1114,7 +1114,7 @@ export class MockApi {
     if (input.assetId && !this.assets.some((a) => a.id === input.assetId && a.projectId === projectId)) throw new ApiError("Asset is not on this project", "invalid");
     const at = this.now();
     const i: Issue = { id: this.id("iss"), projectId, assetId: input.assetId, category: input.category, severity: input.severity, title: input.title.trim(), description: input.description.trim(), raisedBy: actorId, raisedAt: at,
-      source: input.source ?? "manual", status: "open", costToResolve: 0, linkedVisitId: input.linkedVisitId, beforeAttachmentIds: input.beforeAttachmentIds, afterAttachmentIds: [], isSnag: !!input.isSnag,
+      source: input.source ?? "manual", status: "open", costToResolve: 0, linkedVisitId: input.linkedVisitId, attachmentIds: [], beforeAttachmentIds: input.beforeAttachmentIds, afterAttachmentIds: [], isSnag: !!input.isSnag,
       slaDueAt: new Date(new Date(at).getTime() + this.slaHours(input.severity) * 3600000).toISOString(), createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
     this.issues.push(i);
     this.log(projectId, actorId, "issue", `Issue raised — ${i.severity.toUpperCase()} · ${i.title} (SLA ${this.slaHours(i.severity)} h)`, i.description, { model: "Issue", id: i.id });
@@ -1127,6 +1127,24 @@ export class MockApi {
     i.status = status; if (assigneeId) i.assigneeId = assigneeId; i.updatedAt = this.now(); i.updatedBy = actorId;
     this.log(i.projectId, actorId, "issue", `${i.title} → ${status.replace("_", " ")}${assigneeId ? ` (assigned ${this.userName(assigneeId)})` : ""}`, undefined, { model: "Issue", id: i.id });
     this.emit();
+  }
+  /** Files at any point in an issue's life — before/after stay the state at raise and at resolve; this is everything
+   *  between. Per §4.13 an already-checked issue re-enters review, so late evidence cannot slip in behind a check. */
+  addIssuePhotos(actorId: string, issueId: string, input: { attachmentIds: string[] }): Issue {
+    const i = this.issues.find((x) => x.id === issueId); if (!i) throw new ApiError("Issue not found", "not_found");
+    this.require(actorId, "issue.update", i.projectId);
+    const ids = input.attachmentIds ?? [];
+    if (!ids.length) throw new ApiError("Choose at least one file", "invalid");
+    if (ids.some((id) => !this.attachments.some((a) => a.id === id && a.projectId === i.projectId))) throw new ApiError("File is not on this project", "invalid");
+    const already = new Set([...i.attachmentIds, ...i.beforeAttachmentIds, ...i.afterAttachmentIds]);
+    const fresh = ids.filter((id) => !already.has(id));
+    if (!fresh.length) throw new ApiError("Those files are already attached", "conflict");
+    const at = this.now();
+    i.attachmentIds = [...i.attachmentIds, ...fresh]; i.updatedAt = at; i.updatedBy = actorId;
+    const reopened = i.reviewStatus === "checked";
+    if (reopened) Object.assign(i, { reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: i.reviewVersion + 1, checkedBy: undefined, checkedAt: undefined, checkComment: undefined });
+    this.log(i.projectId, actorId, "issue", `${fresh.length} file${fresh.length === 1 ? "" : "s"} added to ${i.title}${reopened ? " — record re-entered review" : ""}`, undefined, { model: "Issue", id: i.id });
+    this.emit(); return i;
   }
   /** Resolution re-enters review: an 'after' photo is mandatory; the checker closes it. */
   resolveIssue(actorId: string, issueId: string, input: { rootCause: string; resolution: string; afterAttachmentIds: string[]; costToResolve?: number; visitId?: string }) {

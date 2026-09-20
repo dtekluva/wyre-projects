@@ -12,6 +12,7 @@ export function dataUrlToBlob(dataUrl: string): Blob {
 export type Command =
   | { kind: "raise_issue"; actorId: string; projectId: string; photos: Photo[]; input: { category: string; severity: string; title: string; description: string; assetId?: string; isSnag?: boolean } }
   | { kind: "set_issue_status"; actorId: string; issueId: string; status: "in_progress" | "awaiting_parts" }
+  | { kind: "add_issue_photos"; actorId: string; issueId: string; projectId: string; photos: Photo[] }
   | { kind: "resolve_issue"; actorId: string; issueId: string; projectId: string; photos: Photo[]; input: { rootCause: string; resolution: string; costToResolve: number } }
   | { kind: "log_visit"; actorId: string; projectId: string; photos: Photo[]; signature?: { name: string; rating?: number; fileName: string; blob?: Blob };
       input: { visitType: string; startedAt: string; endedAt: string; findings: string; actionsTaken: string; costTravel: number; costLabour: number; locationId: string; parts: { itemId: string; qty: number }[]; gps?: { lat: number; lng: number }; offlineCapturedAt?: string } };
@@ -55,6 +56,7 @@ export function applyCommand(api: MockApi, c: Command) {
   switch (c.kind) {
     case "raise_issue": { const ids = photos(c.projectId, c.actorId, c.photos); return api.raiseIssue(c.actorId, c.projectId, { ...c.input, category: c.input.category as never, severity: c.input.severity as never, beforeAttachmentIds: ids }); }
     case "set_issue_status": return api.setIssueStatus(c.actorId, c.issueId, c.status, c.actorId);
+    case "add_issue_photos": { const ids = photos(c.projectId, c.actorId, c.photos); return api.addIssuePhotos(c.actorId, c.issueId, { attachmentIds: ids }); }
     case "resolve_issue": { const ids = photos(c.projectId, c.actorId, c.photos); return api.resolveIssue(c.actorId, c.issueId, { ...c.input, afterAttachmentIds: ids }); }
     case "log_visit": {
       const ids = photos(c.projectId, c.actorId, c.photos);

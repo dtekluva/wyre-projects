@@ -70,7 +70,7 @@ const I = (id: string, projectId: string, by: string, daysAgo: number, i: Partia
   const at = d(daysAgo, 10);
   const row: Issue = { id, projectId, category: i.category, severity: i.severity, title: i.title, description: i.description, raisedBy: by, raisedAt: at, source: i.source ?? "manual",
     status: i.status ?? "open", assigneeId: i.assigneeId, rootCause: i.rootCause, resolution: i.resolution, resolvedBy: i.resolvedBy, resolvedAt: i.resolvedAt, costToResolve: i.costToResolve ?? 0,
-    linkedVisitId: i.linkedVisitId, warrantyClaimId: i.warrantyClaimId, assetId: i.assetId, beforeAttachmentIds: i.beforeAttachmentIds ?? [], afterAttachmentIds: i.afterAttachmentIds ?? [], isSnag: i.isSnag ?? false,
+    linkedVisitId: i.linkedVisitId, warrantyClaimId: i.warrantyClaimId, assetId: i.assetId, attachmentIds: i.attachmentIds ?? [], beforeAttachmentIds: i.beforeAttachmentIds ?? [], afterAttachmentIds: i.afterAttachmentIds ?? [], isSnag: i.isSnag ?? false,
     slaDueAt: hrs(at, slaH[i.severity]), ...audit(by, at), ...review(by, i.resolvedAt ?? at, rs, checkedBy, version) };
   issues.push(row); return row;
 };

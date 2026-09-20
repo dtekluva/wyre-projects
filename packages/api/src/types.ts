@@ -266,6 +266,8 @@ export interface Issue extends AuditFields, ReviewFields {
   title: string; description: string; raisedBy: string; raisedAt: string; source: "manual" | "visit" | "telemetry_alert";
   status: IssueStatus; assigneeId?: string; rootCause?: string; resolution?: string; resolvedBy?: string; resolvedAt?: string;
   costToResolve: number; linkedVisitId?: string; warrantyClaimId?: string;
+  /** files added while the issue is open — progress photos, quotes, test sheets — each with its own caption */
+  attachmentIds: string[];
   beforeAttachmentIds: string[]; afterAttachmentIds: string[]; isSnag: boolean; slaDueAt: string;
 }
 

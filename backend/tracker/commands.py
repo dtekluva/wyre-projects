@@ -74,6 +74,7 @@ COMMANDS: dict[str, Handler] = {
     "raiseIssue": lambda a, d, f: S.issue(field.raise_issue(a, d.get("projectId"), _in(d))),
     "setIssueStatus": lambda a, d, f: S.issue(field.set_issue_status(a, d.get("issueId"), d.get("status"), d.get("assigneeId"))),
     "resolveIssue": lambda a, d, f: S.issue(field.resolve_issue(a, d.get("issueId"), _in(d))),
+    "addIssuePhotos": lambda a, d, f: S.issue(field.add_issue_photos(a, d.get("issueId"), _in(d))),
     "createCommissioning": lambda a, d, f: S.commissioning(field.create_commissioning(a, d.get("projectId"), _in(d))),
     "reportHse": lambda a, d, f: S.hse(field.report_hse(a, d.get("projectId"), _in(d))),
     "raiseWarrantyClaim": lambda a, d, f: S.warranty(field.raise_warranty_claim(a, d.get("projectId"), _in(d))),
