@@ -73,6 +73,8 @@ def id_p():
     return _nid("p")
 def id_inv():
     return _nid("inv")
+def id_vatp():
+    return _nid("vatp")
 
 def id_pi():
     return _nid("pi")
@@ -338,6 +340,18 @@ class ClientInvoice(Audit, Reviewable):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["project", "invoice_number"], name="uniq_invoice_number_per_project")]
+
+
+class VatPayment(Audit, Reviewable):
+    """VAT paid on a project — a partial or the lot — with its receipts. Counts once Finance or a Director checks it.
+    This is the only route by which VAT is settled; invoices record what was billed and received, nothing more."""
+    id = models.CharField(primary_key=True, max_length=40, default=id_vatp)
+    project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="vat_payments")
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    paid_on = models.DateField()
+    method = models.CharField(max_length=20, default="remitted")   # remitted | withheld_by_client
+    note = models.CharField(max_length=300, blank=True, null=True)
+    attachment_ids = models.JSONField(default=list, blank=True)
 
 
 class Approval(models.Model):

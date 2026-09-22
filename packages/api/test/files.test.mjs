@@ -51,7 +51,7 @@ ok(!sectionFiles(api, { projectId: pj }).find((s) => s.key === "uploads")?.entri
 const isec2 = sectionFiles(api, { projectId: "p1" }).find((s) => s.key === "invoices");
 const invLabels = (isec2?.entries ?? []).map((e) => e.via?.label ?? "");
 ok(!!isec2 && isec2.entries.length >= 3, `seed invoice files land under Invoices & receipts (${isec2?.entries.length ?? 0})`);
-ok(invLabels.some((l) => l.startsWith("Invoice ")) && invLabels.some((l) => l.startsWith("Receipt · ")) && invLabels.some((l) => l.startsWith("VAT · ")), `tiles say invoice / receipt / VAT (${invLabels.join(", ")})`);
+ok(invLabels.some((l) => l.startsWith("Invoice ")) && invLabels.some((l) => l.startsWith("Receipt · ")) && invLabels.some((l) => l.startsWith("VAT payment · ")), `tiles say invoice / receipt / VAT payment (${invLabels.join(", ")})`);
 
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED");
 process.exit(fails ? 1 : 0);

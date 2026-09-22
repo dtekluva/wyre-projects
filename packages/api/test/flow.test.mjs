@@ -173,21 +173,26 @@ ok(vtM.invoicedNet === 800_000 && vtM.invoicedVat === 60_000, "checked invoice c
 expectErr(() => api.recordReceipt("u_fin", vtInv.id, { amount: 900_000 }), "invalid", "a receipt cannot exceed the gross");
 api.recordReceipt("u_fin", vtInv.id, { amount: 800_000, note: "net paid, VAT withheld" });
 ok(api.money(vtP.id).received === 800_000, "receipt recorded");
-expectErr(() => api.settleVat("u_fin", vtInv.id, { status: "withheld_by_client" }), "invalid", "settling VAT needs evidence");
-expectErr(() => api.settleVat("u_fin", vtInv.id, { status: "outstanding" }), "invalid", "'outstanding' is not a settlement");
+// VAT is paid per project, in as many payments as it takes, each checked by Finance or a Director
+expectErr(() => api.recordVatPayment("u_ft1", vtP.id, { amount: 1000 }), "forbidden", "a tech cannot record a VAT payment");
+expectErr(() => api.recordVatPayment("u_fin", vtP.id, { amount: 0 }), "invalid", "a VAT payment must be more than zero");
 const vtCn = api.addAttachment("u_fin", vtP.id, { fileName: "credit-note.pdf", kind: "document", caption: "VAT credit note" });
-api.settleVat("u_fin", vtInv.id, { status: "withheld_by_client", attachmentIds: [vtCn.id], note: "client remits" });
+const vp1 = api.recordVatPayment("u_fin", vtP.id, { amount: 60_000, method: "withheld_by_client", note: "INV-1 VAT, client credit note", attachmentIds: [vtCn.id] });
+ok(vp1.reviewStatus === "pending" && api.money(vtP.id).vatSettled === 0 && api.money(vtP.id).vatOutstanding === 150_000, "a pending VAT payment does not count yet");
+ok(api.reviewQueue("u_dir").some((q) => q.kind === "vat_payment" && q.id === vp1.id), "the payment is in the Director's review queue");
+api.check("vat_payment", vp1.id, "u_dir", "checked");
 vtM = api.money(vtP.id);
-ok(vtInv.vatStatus === "withheld_by_client" && vtM.vatSettled === 60_000 && vtM.vatOutstanding === 90_000, `VAT settled on the invoice; outstanding = due − settled (${vtM.vatOutstanding})`);
-expectErr(() => api.settleVat("u_fin", vtInv.id, { status: "remitted", attachmentIds: [vtCn.id] }), "conflict", "settled VAT cannot be settled twice");
-// collected → remitted path
-const vtInv2 = api.raiseInvoice("u_fin", vtP.id, { invoiceNumber: "INV-2", description: "Balance", netAmount: 1_200_000 });
-api.check("client_invoice", vtInv2.id, "u_dir", "checked");
-api.settleVat("u_fin", vtInv2.id, { status: "collected" });
-ok(vtInv2.vatStatus === "collected" && api.money(vtP.id).vatCollected === 90_000 && api.money(vtP.id).vatOutstanding === 90_000, "collected VAT is money in but still owed to FIRS");
-const vtFirs = api.addAttachment("u_fin", vtP.id, { fileName: "vtFirs-receipt.pdf", kind: "document", caption: "FIRS receipt" });
-api.settleVat("u_fin", vtInv2.id, { status: "remitted", attachmentIds: [vtFirs.id] });
-ok(api.money(vtP.id).vatOutstanding === 0 && api.money(vtP.id).vatCollected === 0, "remitting clears the liability");
+ok(vtM.vatSettled === 60_000 && vtM.vatOutstanding === 90_000, `checked payment counts: outstanding = due − paid (${vtM.vatOutstanding})`);
+const vp2 = api.recordVatPayment("u_fin", vtP.id, { amount: 90_000, method: "remitted", note: "balance to FIRS" });
+api.check("vat_payment", vp2.id, "u_dir", "checked");
+ok(api.money(vtP.id).vatOutstanding === 0, "a second, partial-then-final payment clears the liability");
+const vtFirs = api.addAttachment("u_fin", vtP.id, { fileName: "firs-receipt.pdf", kind: "document", caption: "FIRS receipt" });
+api.addVatPaymentReceipts("u_fin", vp2.id, { attachmentIds: [vtFirs.id] });
+ok(vp2.attachmentIds.includes(vtFirs.id) && vp2.reviewStatus === "pending" && vp2.reviewVersion === 2, "adding a receipt to a checked payment re-enters review (§4.13)");
+ok(api.money(vtP.id).vatOutstanding === 90_000, "…and it stops counting until re-checked");
+expectErr(() => api.addVatPaymentReceipts("u_fin", vp2.id, { attachmentIds: [vtFirs.id] }), "conflict", "the same receipt cannot be attached twice");
+api.check("vat_payment", vp2.id, "u_dir", "checked");
+ok(api.money(vtP.id).vatOutstanding === 0, "re-checked, it counts again");
 // retention on net
 ok(api.retention("p4").amountHeld === Math.round(api.projects.find((x) => x.id === "p4").contractValueNet * api.projects.find((x) => x.id === "p4").retentionPercent / 100), "retention is held on the NET contract");
 const p1Act1 = api.money("p1").actual; api.check("issue", isu.id, "u_pm1", "checked");

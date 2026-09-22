@@ -615,3 +615,7 @@ button.frow { text-align: left; font: inherit; cursor: pointer; }
 .vat-chip { display: inline-flex; align-items: center; gap: 4px; }
 .money--4b { grid-template-columns: repeat(4, 1fr); border-bottom: var(--ns-border-hairline) solid var(--ns-color-border-default); }
 @media (max-width: 700px) { .money--4b { grid-template-columns: repeat(2, 1fr); } }
+.money__cell--btn { text-align: left; font: inherit; color: inherit; border: 0; cursor: pointer; }
+.money__cell--btn:hover { background: var(--ns-color-surface-hover); }
+.money__cell--btn:focus-visible { outline: 2px solid var(--ns-color-primary); outline-offset: -2px; }
+.money__hint { font-weight: var(--ns-weight-medium); text-transform: none; letter-spacing: 0; color: var(--ns-color-primary); margin-left: 4px; }

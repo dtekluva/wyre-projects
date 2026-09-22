@@ -259,6 +259,14 @@ export interface ClientInvoice extends AuditFields, ReviewFields {
   /** the invoice itself */
   attachmentIds: string[];
 }
+/** VAT paid on a project — a partial or the lot — with its receipts. Checked by Finance or a Director before it counts. */
+export type VatPaymentMethod = "remitted" | "withheld_by_client";
+export const VAT_PAYMENT_METHOD_LABEL: Record<VatPaymentMethod, string> = { remitted: "Remitted to FIRS by us", withheld_by_client: "Withheld and remitted by the client" };
+export interface VatPayment extends AuditFields, ReviewFields {
+  id: string; projectId: string; amount: number; paidOn: string; method: VatPaymentMethod; note?: string;
+  /** FIRS receipts, client credit notes — several allowed, more can be added later */
+  attachmentIds: string[];
+}
 
 export interface QbBill {
   id: string; docNumber: string; vendorName: string; txnDate: string; dueDate: string; totalAmount: number; balance: number;
@@ -272,7 +280,7 @@ export interface ProjectMoney {
   /** VAT & billing — net contract (+ approved COs) is the base; gross is derived; everything is labelled */
   contractNet: number; vatRate: number; vatDue: number; contractGross: number;
   invoicedNet: number; invoicedVat: number; received: number;
-  vatCollected: number; vatSettled: number; vatOutstanding: number;
+  vatSettled: number; vatOutstanding: number;
 }
 
 // ============================ Phase 3 — field & quality (spec §4.6, §4.8, §4.9, §4.14, §4.15 phase 3) ============================

@@ -57,7 +57,7 @@ def may_self_review(user) -> bool:
 CHECK_PERM = {
     "document": "document.check", "attachment": "attachment.check", "goods_receipt": "goods_receipt.check", "stock_movement": "inventory.check",
     "cost_item": "cost.check", "site_visit": "visit.check", "issue": "issue.check", "commissioning": "commissioning.check",
-    "hse": "hse.check", "warranty": "warranty.check", "client_invoice": "billing.manage",
+    "hse": "hse.check", "warranty": "warranty.check", "client_invoice": "billing.manage", "vat_payment": "billing.manage",
 }
 
 _cache: Optional[dict[str, set[str]]] = None

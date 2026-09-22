@@ -1,6 +1,6 @@
 // Phase 3 seed — field & quality: vehicle location, transfers, visits, issues, commissioning, HSE, warranty, stock count.
 import type { StockLocation, StockMovement, Attachment, SiteVisit, Issue, CommissioningRecord, HseIncident, WarrantyClaim, StockCount, ReviewStatus } from "../types";
-import { type ClientInvoice, type AuditFields, type ReviewFields, COMMISSIONING_TEMPLATE } from "../types";
+import { type ClientInvoice, type VatPayment, type AuditFields, type ReviewFields, COMMISSIONING_TEMPLATE } from "../types";
 import { NOW } from "./data";
 import { assets as assets2 } from "./data2";
 
@@ -126,7 +126,15 @@ const INV = (id: string, projectId: string, by: string, daysAgo: number, i: Omit
 };
 INV("inv1", "p1", "u_fin", 60, { invoiceNumber: "WYR-INV-2026-014", issuedAt: d(60, 9), description: "Mobilisation — 40% of contract", netAmount: 23_731_700, vatAmount: 1_779_877.5, grossAmount: 25_511_577.5,
   receipts: [{ id: "rcpt1", date: d(45, 9), amount: 23_731_700, note: "Net paid; VAT withheld", attachmentIds: [att("p1", "sango-mobilisation-remittance.pdf", "u_fin", 45, "Remittance advice — WYR-INV-2026-014")], recordedBy: "u_fin", recordedAt: d(45, 9) }],
-  vatStatus: "withheld_by_client", vatSettledAt: d(40, 9), vatSettledBy: "u_fin", vatNote: "Client withholds VAT and remits to FIRS", vatEvidenceIds: [att("p1", "sango-vat-credit-note.pdf", "u_fin", 40, "WHT-VAT credit note — WYR-INV-2026-014")],
-  attachmentIds: [att("p1", "WYR-INV-2026-014.pdf", "u_fin", 60, "Invoice WYR-INV-2026-014")] });
+  vatStatus: "outstanding", attachmentIds: [att("p1", "WYR-INV-2026-014.pdf", "u_fin", 60, "Invoice WYR-INV-2026-014")] });
 INV("inv2", "p1", "u_fin", 12, { invoiceNumber: "WYR-INV-2026-031", issuedAt: d(12, 9), description: "Installation complete — 40% of contract", netAmount: 23_731_700, vatAmount: 1_779_877.5, grossAmount: 25_511_577.5,
   vatStatus: "outstanding", attachmentIds: [att("p1", "WYR-INV-2026-031.pdf", "u_fin", 12, "Invoice WYR-INV-2026-031")] });
+
+// ---------------- VAT payments (p1: the first invoice's VAT, withheld by the client; the rest still outstanding) ----------------
+export const vatPayments: VatPayment[] = [];
+const VP = (id: string, projectId: string, by: string, daysAgo: number, v: Pick<VatPayment, "amount" | "method" | "note"> & { files?: string[] }, rs: ReviewStatus = "checked", checkedBy = "u_dir"): VatPayment => {
+  const at = d(daysAgo, 9);
+  const row: VatPayment = { id, projectId, amount: v.amount, paidOn: at.slice(0, 10), method: v.method, note: v.note, attachmentIds: v.files ?? [], ...audit(by, at), ...review(by, at, rs, checkedBy, 1) };
+  vatPayments.push(row); return row;
+};
+VP("vatp1", "p1", "u_fin", 40, { amount: 1_779_877.5, method: "withheld_by_client", note: "VAT on WYR-INV-2026-014 — client credit note", files: [att("p1", "sango-vat-credit-note.pdf", "u_fin", 40, "WHT-VAT credit note — WYR-INV-2026-014")] });

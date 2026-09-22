@@ -2,7 +2,7 @@
 // Enforces: RBAC (§2), stage gates (§3), actor capture (§4), maker-checker + segregation of duties (§4.13, §5),
 // money & stock rules (§0, §4.4, §4.10, §4.15, §11).
 import { can as canFn, maySelfReview, rolesOn as rolesOnFn, type Permission } from "./rbac";
-import { VAT_SETTLED, VAT_TREATMENT_LABEL, type ClientInvoice, type InvoiceReceipt, type VatStatus, type VatTreatment } from "./types";
+import { VAT_PAYMENT_METHOD_LABEL, VAT_TREATMENT_LABEL, type ClientInvoice, type InvoiceReceipt, type VatPayment, type VatPaymentMethod, type VatTreatment } from "./types";
 import { DEFAULT_VAT_RATE, vatOn } from "./vat";
 import { STAGES } from "./gates";
 import * as seed from "./mock/data";
@@ -22,11 +22,11 @@ export class ApiError extends Error {
   constructor(message: string, public code: "forbidden" | "invalid" | "not_found" | "conflict") { super(message); }
 }
 
-export type ReviewKind = "document" | "attachment" | "goods_receipt" | "stock_movement" | "cost_item" | "site_visit" | "issue" | "commissioning" | "hse" | "warranty" | "client_invoice";
+export type ReviewKind = "document" | "attachment" | "goods_receipt" | "stock_movement" | "cost_item" | "site_visit" | "issue" | "commissioning" | "hse" | "warranty" | "client_invoice" | "vat_payment";
 export interface ReviewItem {
   kind: ReviewKind; id: string; projectId?: string; title: string; subtitle: string; amount?: number;
   submittedBy: string; submittedAt: string; ageDays: number; overdue: boolean;
-  item: Document | Attachment | GoodsReceipt | StockMovement | CostItem | SiteVisit | Issue | CommissioningRecord | HseIncident | WarrantyClaim | ClientInvoice;
+  item: Document | Attachment | GoodsReceipt | StockMovement | CostItem | SiteVisit | Issue | CommissioningRecord | HseIncident | WarrantyClaim | ClientInvoice | VatPayment;
 }
 
 /** Spec §4.1 — fields captured when a project is opened (stage 0, RAG green, nothing committed yet) */
@@ -69,6 +69,7 @@ export class MockApi {
   changeOrders: ChangeOrder[] = clone(seed2.changeOrders);
   retentions: Retention[] = clone(seed2.retentions);
   clientInvoices: ClientInvoice[] = clone(seed3.clientInvoices);
+  vatPayments: VatPayment[] = clone(seed3.vatPayments);
   qbBills: QbBill[] = clone(seed2.qbBills);
   // phase 3
   visits: SiteVisit[] = clone(seed3.visits);
@@ -82,7 +83,7 @@ export class MockApi {
   private seq = 1000;
   private static KEY = "wyre.tracker.state.v3";
   private static PERSISTED = ["projects","memberships","documents","attachments","events","approvals","thresholds",
-    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","extractions","clientInvoices","seq"] as const;
+    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","extractions","clientInvoices","vatPayments","seq"] as const;
 
   /** Synchronous key-value storage (web: localStorage). Native apps hydrate asynchronously via serialize()/hydrate() instead. */
   private storage: { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void } | null =
@@ -118,7 +119,7 @@ export class MockApi {
       events: clone(seed.events), approvals: clone(seed.approvals), thresholds: clone(seed.thresholds),
       vendors: clone(seed2.vendors), locations: clone([...seed2.locations, ...seed3.locations]), items: clone(seed2.items), costItems: clone(seed2.costItems), purchaseOrders: clone(seed2.purchaseOrders),
       goodsReceipts: clone(seed2.goodsReceipts), assets: clone(seed2.assets), movements: clone([...seed2.movements, ...seed3.movements]), actuals: clone(seed2.actuals),
-      changeOrders: clone(seed2.changeOrders), retentions: clone(seed2.retentions), clientInvoices: clone(seed3.clientInvoices), qbBills: clone(seed2.qbBills),
+      changeOrders: clone(seed2.changeOrders), retentions: clone(seed2.retentions), clientInvoices: clone(seed3.clientInvoices), vatPayments: clone(seed3.vatPayments), qbBills: clone(seed2.qbBills),
       visits: clone(seed3.visits), issues: clone(seed3.issues), commissionings: clone(seed3.commissionings), hseIncidents: clone(seed3.hseIncidents), warrantyClaims: clone(seed3.warrantyClaims), stockCounts: clone(seed3.stockCounts), seq: 1000 });
     this.emit();
   }
@@ -295,11 +296,11 @@ export class MockApi {
   // ---------- maker-checker ----------
   private checkPerm(kind: ReviewKind): Permission {
     return ({ document: "document.check", attachment: "attachment.check", goods_receipt: "goods_receipt.check", stock_movement: "inventory.check", cost_item: "cost.check",
-      site_visit: "visit.check", issue: "issue.check", commissioning: "commissioning.check", hse: "hse.check", warranty: "warranty.check", client_invoice: "billing.manage" } as const)[kind];
+      site_visit: "visit.check", issue: "issue.check", commissioning: "commissioning.check", hse: "hse.check", warranty: "warranty.check", client_invoice: "billing.manage", vat_payment: "billing.manage" } as const)[kind];
   }
   private findReviewable(kind: ReviewKind, id: string) {
     const list = ({ document: this.documents, attachment: this.attachments, goods_receipt: this.goodsReceipts, stock_movement: this.movements, cost_item: this.costItems,
-      site_visit: this.visits, issue: this.issues, commissioning: this.commissionings, hse: this.hseIncidents, warranty: this.warrantyClaims, client_invoice: this.clientInvoices } as Record<ReviewKind, { id: string }[]>)[kind];
+      site_visit: this.visits, issue: this.issues, commissioning: this.commissionings, hse: this.hseIncidents, warranty: this.warrantyClaims, client_invoice: this.clientInvoices, vat_payment: this.vatPayments } as Record<ReviewKind, { id: string }[]>)[kind];
     const it = list.find((x) => x.id === id); if (!it) throw new ApiError("Item not found", "not_found");
     return it as ReviewItem["item"];
   }
@@ -328,6 +329,7 @@ export class MockApi {
     this.hseIncidents.forEach((h) => push("hse", h, h.projectId, `HSE · ${HSE_TYPE_LABEL[h.type]}`, `${h.severity} · ${h.description.slice(0, 70)}`));
     this.warrantyClaims.forEach((w) => push("warranty", w, w.projectId, `Warranty claim · ${this.assets.find((a) => a.id === w.assetId)?.serial ?? w.assetId}`, `${w.status} · ${this.vendorName(w.vendorId)}`, w.costRecovered || undefined));
     this.clientInvoices.forEach((i) => push("client_invoice", i, i.projectId, `Invoice ${i.invoiceNumber} · ${this.raw(i.projectId).clientName}`, `${i.description} · net ${this.fmt(i.netAmount)} + VAT ${this.fmt(i.vatAmount)}`, i.grossAmount));
+    this.vatPayments.forEach((v) => push("vat_payment", v, v.projectId, `VAT payment · ${this.fmt(v.amount)}`, `${VAT_PAYMENT_METHOD_LABEL[v.method]} · ${v.paidOn}${v.note ? ` · ${v.note}` : ""}`, v.amount));
     return items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   }
   pendingChecks(projectId: string) {
@@ -341,7 +343,8 @@ export class MockApi {
       + this.commissionings.filter((c) => c.projectId === projectId && c.reviewStatus === "pending").length
       + this.hseIncidents.filter((h) => h.projectId === projectId && h.reviewStatus === "pending").length
       + this.warrantyClaims.filter((w) => w.projectId === projectId && w.reviewStatus === "pending").length
-      + this.clientInvoices.filter((i) => i.projectId === projectId && i.reviewStatus === "pending").length;
+      + this.clientInvoices.filter((i) => i.projectId === projectId && i.reviewStatus === "pending").length
+      + this.vatPayments.filter((v) => v.projectId === projectId && v.reviewStatus === "pending").length;
   }
 
   check(kind: ReviewKind, id: string, actorId: string, decision: Exclude<ReviewStatus, "pending">, comment?: string) {
@@ -375,13 +378,14 @@ export class MockApi {
       case "commissioning": { const c = item as CommissioningRecord; c.updatedAt = at; c.updatedBy = actorId; label = `commissioning record (${c.result})`;
         if (ok && c.result !== "fail") this.emitCommissioningEvidence(c, actorId); break; }
       case "hse": { const h = item as HseIncident; h.updatedAt = at; h.updatedBy = actorId; label = `HSE ${HSE_TYPE_LABEL[h.type]}`; break; }
+      case "vat_payment": { const v = item as VatPayment; v.updatedAt = at; v.updatedBy = actorId; label = `VAT payment ${this.fmt(v.amount)}`; break; }
       case "client_invoice": { const i = item as ClientInvoice; i.updatedAt = at; i.updatedBy = actorId; label = `invoice ${i.invoiceNumber} · ${this.fmt(i.grossAmount)} gross`; break; }
       case "warranty": { const w = item as WarrantyClaim; w.updatedAt = at; w.updatedBy = actorId; label = `warranty claim ${this.assets.find((a) => a.id === w.assetId)?.serial ?? ""}`;
         if (ok && w.costRecovered > 0 && ["accepted", "refunded", "replaced"].includes(w.status) && !this.actuals.some((a) => a.sourceRef.id === w.id))
           this.actuals.push({ id: this.id("act"), projectId: w.projectId, category: "om", source: "warranty", sourceRef: { model: "WarrantyClaim", id: w.id, label: `Warranty recovery — ${this.vendorName(w.vendorId)}` }, amount: -w.costRecovered, date: at, attachmentIds: [], createdBy: actorId });
         break; }
     }
-    const model = { document: "Document", attachment: "Attachment", goods_receipt: "GoodsReceipt", stock_movement: "StockMovement", cost_item: "CostItem", site_visit: "SiteVisit", issue: "Issue", commissioning: "CommissioningRecord", hse: "HseIncident", warranty: "WarrantyClaim", client_invoice: "ClientInvoice" }[kind];
+    const model = { document: "Document", attachment: "Attachment", goods_receipt: "GoodsReceipt", stock_movement: "StockMovement", cost_item: "CostItem", site_visit: "SiteVisit", issue: "Issue", commissioning: "CommissioningRecord", hse: "HseIncident", warranty: "WarrantyClaim", client_invoice: "ClientInvoice", vat_payment: "VatPayment" }[kind];
     this.log(projectId, actorId, ok ? "check_passed" : "check_rejected", `${ok ? "Checked" : "Rejected"}: ${label}`, comment?.trim() || undefined, { model, id });
     this.emit();
   }
@@ -800,9 +804,8 @@ export class MockApi {
     const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
     const invoicedNet = sum(invs.map((i) => i.netAmount)), invoicedVat = sum(invs.map((i) => i.vatAmount));
     const received = sum(invs.flatMap((i) => i.receipts.map((r) => r.amount)));
-    const vatCollected = sum(invs.filter((i) => i.vatStatus === "collected").map((i) => i.vatAmount));
-    const vatSettled = sum(invs.filter((i) => VAT_SETTLED.includes(i.vatStatus)).map((i) => i.vatAmount));
-    return { contractNet, vatRate: p.vatRate, vatDue, contractGross: contractNet + vatDue, invoicedNet, invoicedVat, received, vatCollected, vatSettled,
+    const vatSettled = sum(this.vatPayments.filter((v) => v.projectId === p.id && v.reviewStatus === "checked").map((v) => v.amount));
+    return { contractNet, vatRate: p.vatRate, vatDue, contractGross: contractNet + vatDue, invoicedNet, invoicedVat, received, vatSettled,
       vatOutstanding: Math.max(0, Math.round((vatDue - vatSettled) * 100) / 100) };
   }
   listInvoices(projectId: string) { return this.clientInvoices.filter((i) => i.projectId === projectId).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt)); }
@@ -859,20 +862,36 @@ export class MockApi {
     this.emit(); return inv;
   }
 
-  /** Where the invoice's VAT stands. Settling with FIRS — withheld by the client, or remitted by us — needs the paper that proves it. */
-  settleVat(actorId: string, invoiceId: string, input: { status: VatStatus; date?: string; note?: string; attachmentIds?: string[] }): ClientInvoice {
-    const inv = this.clientInvoices.find((i) => i.id === invoiceId); if (!inv) throw new ApiError("Invoice not found", "not_found");
-    this.require(actorId, "billing.manage", inv.projectId);
-    if (inv.reviewStatus !== "checked") throw new ApiError("The invoice must be checked first", "conflict");
-    const status = input.status; if (!status || status === "outstanding") throw new ApiError("Choose how the VAT was settled", "invalid");
-    if (VAT_SETTLED.includes(inv.vatStatus)) throw new ApiError(`VAT on ${inv.invoiceNumber} is already settled (${inv.vatStatus.replace(/_/g, " ")})`, "conflict");
+  listVatPayments(projectId: string) { return this.vatPayments.filter((v) => v.projectId === projectId).sort((a, b) => b.paidOn.localeCompare(a.paidOn)); }
+
+  /** VAT paid on the project — a partial or the lot. Enters review; counts once Finance or a Director checks it. */
+  recordVatPayment(actorId: string, projectId: string, input: { amount: number; paidOn?: string; method?: VatPaymentMethod; note?: string; attachmentIds?: string[] }): VatPayment {
+    this.require(actorId, "billing.manage", projectId); this.raw(projectId);
+    const amount = Number(input.amount); if (!Number.isFinite(amount) || amount <= 0) throw new ApiError("Amount must be more than zero", "invalid");
+    const method: VatPaymentMethod = input.method ?? "remitted"; if (!(method in VAT_PAYMENT_METHOD_LABEL)) throw new ApiError("Unknown payment method", "invalid");
+    const paidOn = input.paidOn || this.now().slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}/.test(paidOn)) throw new ApiError("Date must be YYYY-MM-DD", "invalid");
     const ids = input.attachmentIds ?? [];
-    if (VAT_SETTLED.includes(status) && !ids.length) throw new ApiError("Attach the FIRS receipt or the client's VAT credit note", "invalid");
-    if (ids.some((id) => !this.attachments.some((a) => a.id === id && a.projectId === inv.projectId))) throw new ApiError("File is not on this project", "invalid");
+    if (ids.some((id) => !this.attachments.some((a) => a.id === id && a.projectId === projectId))) throw new ApiError("File is not on this project", "invalid");
     const at = this.now();
-    Object.assign(inv, { vatStatus: status, vatSettledAt: input.date || at.slice(0, 10), vatSettledBy: actorId, vatNote: input.note?.trim() || undefined, vatEvidenceIds: [...inv.vatEvidenceIds, ...ids], updatedAt: at, updatedBy: actorId });
-    this.log(inv.projectId, actorId, "invoice", `VAT on ${inv.invoiceNumber} (${this.fmt(inv.vatAmount)}) — ${status.replace(/_/g, " ")}`, inv.vatNote, { model: "ClientInvoice", id: inv.id });
-    this.emit(); return inv;
+    const v: VatPayment = { id: this.id("vatp"), projectId, amount: Math.round(amount * 100) / 100, paidOn, method, note: input.note?.trim() || undefined, attachmentIds: ids,
+      createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
+    this.vatPayments.push(v);
+    this.log(projectId, actorId, "invoice", `VAT payment recorded — ${this.fmt(v.amount)} · ${VAT_PAYMENT_METHOD_LABEL[method]} (pending check)`, v.note, { model: "VatPayment", id: v.id });
+    this.emit(); return v;
+  }
+
+  /** More receipts for a payment already recorded. A checked payment re-enters review per §4.13. */
+  addVatPaymentReceipts(actorId: string, paymentId: string, input: { attachmentIds: string[] }): VatPayment {
+    const v = this.vatPayments.find((x) => x.id === paymentId); if (!v) throw new ApiError("VAT payment not found", "not_found");
+    this.require(actorId, "billing.manage", v.projectId);
+    const ids = input.attachmentIds ?? []; if (!ids.length) throw new ApiError("Choose at least one file", "invalid");
+    if (ids.some((id) => !this.attachments.some((a) => a.id === id && a.projectId === v.projectId))) throw new ApiError("File is not on this project", "invalid");
+    const fresh = ids.filter((id) => !v.attachmentIds.includes(id)); if (!fresh.length) throw new ApiError("Those files are already attached", "conflict");
+    const at = this.now(); v.attachmentIds = [...v.attachmentIds, ...fresh]; v.updatedAt = at; v.updatedBy = actorId;
+    const reopened = v.reviewStatus === "checked";
+    if (reopened) Object.assign(v, { reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: v.reviewVersion + 1, checkedBy: undefined, checkedAt: undefined, checkComment: undefined });
+    this.log(v.projectId, actorId, "invoice", `${fresh.length} receipt${fresh.length === 1 ? "" : "s"} added to the ${this.fmt(v.amount)} VAT payment${reopened ? " — record re-entered review" : ""}`, undefined, { model: "VatPayment", id: v.id });
+    this.emit(); return v;
   }
 
   // ======================================================================

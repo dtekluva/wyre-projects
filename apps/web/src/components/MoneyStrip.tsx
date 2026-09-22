@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { VAT_TREATMENT_LABEL, naira, pct, type Project } from "@wyre/api";
+import { VatModal } from "./VatModal";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { Bar, Note } from "./ui";
@@ -10,6 +12,7 @@ import { Bar, Note } from "./ui";
  */
 export function MoneyStrip({ p }: { p: Project }) {
   const api = useApi(); const { user } = useAuth();
+  const [vatOpen, setVatOpen] = useState(false);
   const exempt = p.vatTreatment === "exempt";
   const contract = (
     <div className="money__cell"><div className="money__label">Contract (net of VAT)</div><div className="money__value">{naira(p.contractValueNet)}</div>
@@ -26,14 +29,15 @@ export function MoneyStrip({ p }: { p: Project }) {
   return (
     <div className="money money--5">
       {contract}
-      <div className="money__cell"><div className="money__label">VAT {exempt ? "" : `${p.vatRate}%`}</div>
+      <button type="button" className="money__cell money__cell--btn" onClick={() => setVatOpen(true)} title="VAT payments on this project">
+        <div className="money__label">VAT {exempt ? "" : `${p.vatRate}%`} <span className="money__hint">payments ›</span></div>
         {exempt ? <><div className="money__value muted">—</div><div className="money__sub">{VAT_TREATMENT_LABEL[p.vatTreatment]}</div></> : <>
           <div className="money__value">{naira(m.vatDue)} <span className="sm muted" style={{ fontWeight: 400 }}>due</span></div>
-          <div className="money__sub row" style={{ gap: 6 }}><Bar pct={settledPct} /> {naira(m.vatSettled, true)} settled · <b className={m.vatOutstanding > 0 ? "warn-text" : ""}>{naira(m.vatOutstanding, true)} outstanding</b></div>
-          {m.vatCollected > 0 && <div className="money__sub">{naira(m.vatCollected, true)} collected from client — still to remit</div>}
+          <div className="money__sub row" style={{ gap: 6 }}><Bar pct={settledPct} /> {naira(m.vatSettled, true)} paid · <b className={m.vatOutstanding > 0 ? "warn-text" : ""}>{naira(m.vatOutstanding, true)} outstanding</b></div>
           {p.vatTreatment === "withheld_by_client" && <div className="money__sub">client withholds and remits to FIRS</div>}
         </>}
-      </div>
+      </button>
+      {vatOpen && <VatModal p={p} onClose={() => setVatOpen(false)} />}
       <div className="money__cell"><div className="money__label">Planned budget</div><div className="money__value">{m.planned ? naira(m.planned) : "—"}</div><div className="money__sub">{m.planned ? `${pct(m.planned, m.contractNet)}% of net contract${m.changeOrders ? ` · +${naira(m.changeOrders, true)} COs` : ""}` : "No checked budget lines"}</div></div>
       <div className="money__cell"><div className="money__label">Committed (POs)</div><div className="money__value">{naira(m.committed)}</div><div className="money__sub">{m.planned ? `${pct(m.committed, m.planned)}% of budget` : "—"}</div></div>
       <div className="money__cell"><div className="money__label">Actual (checked)</div><div className="money__value">{naira(m.actual)}</div>

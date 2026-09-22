@@ -28,7 +28,7 @@ export class RemoteApi extends MockApi {
     this.resetLocal();
     this.wrapMutations();
   }
-  private resetLocal() { for (const k of ["projects","memberships","documents","attachments","events","approvals","thresholds","vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","extractions","clientInvoices"]) (this as unknown as Record<string, unknown[]>)[k] = []; this.users = []; }
+  private resetLocal() { for (const k of ["projects","memberships","documents","attachments","events","approvals","thresholds","vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","extractions","clientInvoices","vatPayments"]) (this as unknown as Record<string, unknown[]>)[k] = []; this.users = []; }
   get signedIn() { return !!this.access; }
   onError(fn: (e: RemoteError) => void) { this.errorListeners.add(fn); return () => { this.errorListeners.delete(fn); }; }
   onSync(fn: (pending: number) => void) { this.syncListeners.add(fn); return () => { this.syncListeners.delete(fn); }; }
@@ -159,7 +159,8 @@ export class RemoteApi extends MockApi {
     wrap("setContractTerms", (a) => ({ name: "setContractTerms", body: { projectId: a[1], input: a[2] } }));
     wrap("raiseInvoice", (a) => ({ name: "raiseInvoice", body: { projectId: a[1], input: a[2] } }));
     wrap("recordReceipt", (a) => ({ name: "recordReceipt", body: { invoiceId: a[1], input: a[2] } }));
-    wrap("settleVat", (a) => ({ name: "settleVat", body: { invoiceId: a[1], input: a[2] } }));
+    wrap("recordVatPayment", (a) => ({ name: "recordVatPayment", body: { projectId: a[1], input: a[2] } }));
+    wrap("addVatPaymentReceipts", (a) => ({ name: "addVatPaymentReceipts", body: { paymentId: a[1], input: a[2] } }));
     wrap("updateWarrantyClaim", (a) => ({ name: "updateWarrantyClaim", body: { claimId: a[1], input: a[2] } }));
     wrap("updateCostItem", (a) => ({ name: "updateCostItem", body: { costItemId: a[1], input: a[2] as unknown as Json } }));
     wrap("updateDocument", (a) => ({ name: "updateDocument", body: { documentId: a[1], input: a[2] as unknown as Json } }));

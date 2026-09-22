@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from . import rbac
-from .models import (ClientInvoice, Extraction, Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
+from .models import (ClientInvoice, VatPayment, Extraction, Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
                      InventoryItem, Issue, Project, ProjectMembership, PurchaseOrder, QbBill, Retention, SiteVisit, StockCount, StockLocation, StockMovement,
                      Threshold, User, Vendor, WarrantyClaim)
 from .services.base import iso
@@ -226,6 +226,11 @@ def client_invoice(i: ClientInvoice) -> dict:
             "vatEvidenceIds": list(i.vat_evidence_ids or []), "attachmentIds": list(i.attachment_ids or []), **audit(i), **review(i)}
 
 
+def vat_payment(v: VatPayment) -> dict:
+    return {"id": v.id, "projectId": v.project_id, "amount": num(v.amount), "paidOn": d8(v.paid_on), "method": v.method, "note": v.note,
+            "attachmentIds": list(v.attachment_ids or []), **audit(v), **review(v)}
+
+
 def snapshot(u: User) -> dict:
     """Everything the web app's in-memory store needs.
 
@@ -266,6 +271,7 @@ def snapshot(u: User) -> dict:
         "changeOrders": [change_order(c) for c in ChangeOrder.objects.all().order_by("-created_at")] if sees_money else [],
         "retentions": [retention(r) for r in Retention.objects.all()] if sees_money else [],
         "clientInvoices": [client_invoice(i) for i in ClientInvoice.objects.all().order_by("-issued_at")] if sees_money else [],
+        "vatPayments": [vat_payment(v) for v in VatPayment.objects.all().order_by("-paid_on")] if sees_money else [],
         "qbBills": [qb_bill(q) for q in QbBill.objects.all().order_by("-txn_date")] if rbac.can(u, "recon.read") else [],
         "visits": [visit(v) for v in scoped(SiteVisit.objects.all()).order_by("-started_at")],
         "issues": [issue(i) for i in scoped(Issue.objects.all()).order_by("-raised_at")],

@@ -8,8 +8,8 @@ import { Badge } from "./ui";
 import { Thumbs } from "./Thumbs";
 import { FileLink } from "./FileLink";
 
-const KIND_LABEL: Record<ReviewItem["kind"], string> = { document: "Document", attachment: "Photo / file", goods_receipt: "Goods receipt", stock_movement: "Stock movement", cost_item: "Budget line", site_visit: "Site visit", issue: "Issue", commissioning: "Commissioning", hse: "HSE incident", warranty: "Warranty claim", client_invoice: "Client invoice" };
-const THUMB: Record<ReviewItem["kind"], string> = { document: "PDF", attachment: "IMG", goods_receipt: "GRN", stock_movement: "STK", cost_item: "₦", site_visit: "VIS", issue: "ISS", commissioning: "COM", hse: "HSE", warranty: "WTY", client_invoice: "INV" };
+const KIND_LABEL: Record<ReviewItem["kind"], string> = { document: "Document", attachment: "Photo / file", goods_receipt: "Goods receipt", stock_movement: "Stock movement", cost_item: "Budget line", site_visit: "Site visit", issue: "Issue", commissioning: "Commissioning", hse: "HSE incident", warranty: "Warranty claim", client_invoice: "Client invoice", vat_payment: "VAT payment" };
+const THUMB: Record<ReviewItem["kind"], string> = { document: "PDF", attachment: "IMG", goods_receipt: "GRN", stock_movement: "STK", cost_item: "₦", site_visit: "VIS", issue: "ISS", commissioning: "COM", hse: "HSE", warranty: "WTY", client_invoice: "INV", vat_payment: "VAT" };
 
 export function ReviewCard({ item, selected, onToggle }: { item: ReviewItem; selected?: boolean; onToggle?: () => void }) {
   const api = useApi(); const { user } = useAuth(); const safe = useSafe();
@@ -26,7 +26,7 @@ export function ReviewCard({ item, selected, onToggle }: { item: ReviewItem; sel
   const hse = item.kind === "hse" ? (item.item as HseIncident) : undefined;
   const war = item.kind === "warranty" ? (item.item as WarrantyClaim) : undefined;
   const po = grn ? api.purchaseOrders.find((p) => p.id === grn.poId) : undefined;
-  const link = !item.projectId ? "/inventory" : item.kind === "document" || item.kind === "attachment" ? `/projects/${item.projectId}/documents` : item.kind === "client_invoice" ? `/projects/${item.projectId}/money` : item.kind === "stock_movement" ? `/projects/${item.projectId}/assets` : ["site_visit", "issue", "commissioning", "hse", "warranty"].includes(item.kind) ? `/projects/${item.projectId}/field` : `/projects/${item.projectId}/money`;
+  const link = !item.projectId ? "/inventory" : item.kind === "document" || item.kind === "attachment" ? `/projects/${item.projectId}/documents` : item.kind === "client_invoice" || item.kind === "vat_payment" ? `/projects/${item.projectId}/money` : item.kind === "stock_movement" ? `/projects/${item.projectId}/assets` : ["site_visit", "issue", "commissioning", "hse", "warranty"].includes(item.kind) ? `/projects/${item.projectId}/field` : `/projects/${item.projectId}/money`;
   return (
     <article className="ns-approval ns-approval--pending">
       <div className="ns-approval__top">

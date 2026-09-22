@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { VAT_SETTLED, VAT_STATUS_LABEL, VAT_TREATMENT_LABEL, fmtDate, naira, netFromGross, relative, vatOn, type ClientInvoice, type Project, type VatStatus, type VatTreatment } from "@wyre/api";
+import { VAT_TREATMENT_LABEL, fmtDate, naira, netFromGross, relative, vatOn, type ClientInvoice, type Project, type VatTreatment } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
@@ -7,11 +7,9 @@ import { FilePick, type Pick } from "./FilePick";
 import { Thumbs } from "./Thumbs";
 import { Badge, Empty, ReviewBadge } from "./ui";
 
-const STATUS_TONE: Record<VatStatus, "warning" | "info" | "success"> = { outstanding: "warning", collected: "info", withheld_by_client: "success", remitted: "success" };
-
 /**
- * Billing & VAT: what we billed, what came in, where each invoice's VAT stands — and the four totals that
- * answer "how much VAT do we owe on this job" without arithmetic. Raise → check → receipts → settle VAT.
+ * Billing: what we billed the client and what came in against it. VAT itself is paid and tracked from the VAT cell
+ * of the money strip — invoices only say what was billed.
  */
 export function BillingCard({ p }: { p: Project }) {
   const api = useApi(); const { user } = useAuth();
@@ -23,7 +21,7 @@ export function BillingCard({ p }: { p: Project }) {
   return (
     <div className="card">
       <div className="card__head">
-        <div className="card__title">Billing & VAT</div>
+        <div className="card__title">Billing</div>
         <div className="row row--wrap sm" style={{ gap: 12 }}>
           <span className="muted">VAT {exempt ? "exempt" : `${p.vatRate}% · ${VAT_TREATMENT_LABEL[p.vatTreatment].split(" — ")[0]}`}</span>
           {canTerms && <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setMode(mode === "terms" ? "" : "terms")}>Contract terms…</button>}
@@ -34,23 +32,22 @@ export function BillingCard({ p }: { p: Project }) {
         <div className="money__cell"><div className="money__label">VAT due</div><div className="money__value">{naira(m.vatDue)}</div><div className="money__sub">on {naira(m.contractNet, true)} net{m.changeOrders ? " incl. COs" : ""}</div></div>
         <div className="money__cell"><div className="money__label">Invoiced</div><div className="money__value">{naira(m.invoicedNet)}</div><div className="money__sub">+ {naira(m.invoicedVat, true)} VAT · {m.contractNet ? Math.round(m.invoicedNet / m.contractNet * 100) : 0}% of contract</div></div>
         <div className="money__cell"><div className="money__label">Received</div><div className="money__value">{naira(m.received)}</div><div className="money__sub">of {naira(m.invoicedNet + m.invoicedVat, true)} gross invoiced</div></div>
-        <div className="money__cell"><div className="money__label">VAT outstanding</div><div className={`money__value ${m.vatOutstanding > 0 ? "warn-text" : ""}`}>{naira(m.vatOutstanding)}</div><div className="money__sub">{naira(m.vatSettled, true)} settled{m.vatCollected ? ` · ${naira(m.vatCollected, true)} collected, to remit` : ""}</div></div>
+        <div className="money__cell"><div className="money__label">VAT outstanding</div><div className={`money__value ${m.vatOutstanding > 0 ? "warn-text" : ""}`}>{naira(m.vatOutstanding)}</div><div className="money__sub">{naira(m.vatSettled, true)} paid · record payments from the VAT cell above</div></div>
       </div>
       <div className="card__body stack">
         {mode === "terms" && <TermsForm p={p} onDone={() => setMode("")} />}
         {mode === "raise" && <RaiseForm p={p} onDone={() => setMode("")} />}
         {invs.length ? <div className="table--wrap"><table className="table">
-          <thead><tr><th>Invoice</th><th>For</th><th className="num">Net</th><th className="num">VAT</th><th className="num">Gross</th><th className="num">Received</th><th>VAT status</th><th></th></tr></thead>
+          <thead><tr><th>Invoice</th><th>For</th><th className="num">Net</th><th className="num">VAT</th><th className="num">Gross</th><th className="num">Received</th><th></th></tr></thead>
           <tbody>{invs.map((i) => { const got = i.receipts.reduce((s, r) => s + r.amount, 0); const isOpen = open === i.id; return <Fragment key={i.id}>
             <tr style={{ cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : i.id)}>
               <td><b className="ns-mono">{i.invoiceNumber}</b><div className="sm muted">{fmtDate(i.issuedAt)}</div></td>
               <td>{i.description || <span className="muted">—</span>}<div style={{ marginTop: 2 }}><ReviewBadge status={i.reviewStatus} /></div></td>
               <td className="num ns-mono">{naira(i.netAmount)}</td><td className="num ns-mono">{naira(i.vatAmount)}</td><td className="num ns-mono"><b>{naira(i.grossAmount)}</b></td>
               <td className="num ns-mono">{naira(got)}{got >= i.grossAmount ? <div><Badge variant="success">paid</Badge></div> : got > 0 ? <div><Badge variant="info">part</Badge></div> : null}</td>
-              <td><Badge variant={STATUS_TONE[i.vatStatus]}>{VAT_STATUS_LABEL[i.vatStatus]}</Badge>{i.vatSettledAt && <div className="sm muted">{fmtDate(i.vatSettledAt)}</div>}</td>
               <td className="sm muted">{isOpen ? "▾" : "▸"}</td>
             </tr>
-            {isOpen && <tr><td colSpan={8} style={{ background: "var(--ns-color-surface-subtle)" }}><InvoiceDetail inv={i} canBill={canBill} /></td></tr>}
+            {isOpen && <tr><td colSpan={7} style={{ background: "var(--ns-color-surface-subtle)" }}><InvoiceDetail inv={i} canBill={canBill} /></td></tr>}
           </Fragment>; })}</tbody></table></div>
           : <Empty title="Nothing billed yet" hint={canBill ? "Raise the first invoice — VAT is worked out at the project rate." : "Finance raises invoices here."} />}
       </div>
@@ -105,9 +102,7 @@ function RaiseForm({ p, onDone }: { p: Project; onDone: () => void }) {
 function InvoiceDetail({ inv, canBill }: { inv: ClientInvoice; canBill: boolean }) {
   const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   const got = inv.receipts.reduce((s, r) => s + r.amount, 0); const left = Math.max(0, inv.grossAmount - got);
-  const settled = VAT_SETTLED.includes(inv.vatStatus);
   const [rAmt, setRAmt] = useState(String(left || "")); const [rDate, setRDate] = useState(new Date().toISOString().slice(0, 10)); const [rNote, setRNote] = useState(""); const [rFiles, setRFiles] = useState<Pick[]>([]);
-  const [vStatus, setVStatus] = useState<VatStatus>(inv.vatStatus === "collected" ? "remitted" : "withheld_by_client"); const [vDate, setVDate] = useState(new Date().toISOString().slice(0, 10)); const [vNote, setVNote] = useState(""); const [vFiles, setVFiles] = useState<Pick[]>([]);
   const checked = inv.reviewStatus === "checked";
   const canCheck = inv.reviewStatus === "pending" && api.can(user.id, "billing.manage", inv.projectId) && (inv.submittedBy !== user.id || user.roles.some((r) => r === "finance" || r === "director"));
   return <div className="stack" style={{ gap: 12, padding: "6px 0" }}>
@@ -118,7 +113,7 @@ function InvoiceDetail({ inv, canBill }: { inv: ClientInvoice; canBill: boolean 
       {inv.attachmentIds.length > 0 && <span className="row" style={{ gap: 6 }}>· invoice <Thumbs ids={inv.attachmentIds} /></span>}
       {canCheck && <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => safe(() => api.check("client_invoice", inv.id, user.id, "checked"), "Invoice checked")}>✓ Check invoice</button>}
     </div>
-    <div className="workspace" style={{ gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+    <div className="workspace" style={{ gridTemplateColumns: "2fr 1fr", gap: 16 }}>
       <div className="stack" style={{ gap: 6 }}>
         <div className="ns-overline">Receipts · {naira(got)} of {naira(inv.grossAmount)}</div>
         {inv.receipts.length ? <ul className="lines">{inv.receipts.map((r) => <li key={r.id}><span className="grow">{fmtDate(r.date)}{r.note ? ` · ${r.note}` : ""}</span><b className="ns-mono">{naira(r.amount)}</b>{r.attachmentIds.length > 0 && <Thumbs ids={r.attachmentIds} />}</li>)}</ul> : <div className="sm muted">Nothing received yet.</div>}
@@ -131,23 +126,8 @@ function InvoiceDetail({ inv, canBill }: { inv: ClientInvoice; canBill: boolean 
         {!checked && <div className="sm muted">Receipts can be recorded once the invoice is checked.</div>}
       </div>
       <div className="stack" style={{ gap: 6 }}>
-        <div className="ns-overline">VAT · {naira(inv.vatAmount)} · <Badge variant={STATUS_TONE[inv.vatStatus]}>{VAT_STATUS_LABEL[inv.vatStatus]}</Badge></div>
-        {settled ? <div className="sm">{VAT_STATUS_LABEL[inv.vatStatus]} on {fmtDate(inv.vatSettledAt)} by {api.userName(inv.vatSettledBy)}{inv.vatNote ? ` · ${inv.vatNote}` : ""}{inv.vatEvidenceIds.length > 0 && <div style={{ marginTop: 4 }}><Thumbs ids={inv.vatEvidenceIds} size="lg" /></div>}</div>
-          : canBill && checked ? <div className="stack" style={{ gap: 6 }}>
-            {inv.vatStatus === "collected" && <div className="sm">Collected from the client on {fmtDate(inv.vatSettledAt)} — still to remit to FIRS.</div>}
-            <div className="row row--wrap">
-              <select className="ns-input" value={vStatus} onChange={(e) => setVStatus(e.target.value as VatStatus)}>
-                {inv.vatStatus !== "collected" && <option value="collected">Collected from client (we still owe FIRS)</option>}
-                <option value="withheld_by_client">Withheld by client — they remitted to FIRS</option>
-                <option value="remitted">Remitted to FIRS by us</option>
-              </select>
-              <input className="ns-input" style={{ width: 150 }} type="date" value={vDate} onChange={(e) => setVDate(e.target.value)} />
-            </div>
-            <input className="ns-input" value={vNote} onChange={(e) => setVNote(e.target.value)} placeholder="Note, e.g. FIRS receipt no." />
-            <div className="row row--wrap"><FilePick picks={vFiles} onChange={setVFiles} label={vStatus === "collected" ? "Evidence (optional)" : "FIRS receipt / client credit note (required)"} />
-              <button className="ns-btn ns-btn--primary ns-btn--sm" disabled={vStatus !== "collected" && !vFiles.length} onClick={() => { if (safe(() => { const ids = vFiles.map((f) => api.addAttachment(user.id, inv.projectId, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, kind: f.file.type.startsWith("image/") ? "image" : "document", caption: `VAT · ${inv.invoiceNumber}` }).id);
-                api.settleVat(user.id, inv.id, { status: vStatus, date: vDate, note: vNote, attachmentIds: ids }); }, "VAT status updated")) { setVNote(""); setVFiles([]); } }}>Mark VAT {VAT_STATUS_LABEL[vStatus].split(" — ")[0].toLowerCase()}</button></div>
-          </div> : <div className="sm muted">{checked ? "Finance records how the VAT was settled." : "Available once the invoice is checked."}</div>}
+        <div className="ns-overline">VAT on this invoice · {naira(inv.vatAmount)}</div>
+        <div className="sm muted">VAT is paid and tracked per project, not per invoice — use the VAT cell in the money strip to record a payment and its receipts.</div>
       </div>
     </div>
   </div>;
