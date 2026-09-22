@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from . import serializers as S
 from .errors import ApiError
-from .services import accounts, approvals, extractions, documents, field, gates, money, projects, recon, review, stock
+from .services import billing, accounts, approvals, extractions, documents, field, gates, money, projects, recon, review, stock
 
 Handler = Callable[[Any, dict, Any], Any]
 
@@ -75,6 +75,10 @@ COMMANDS: dict[str, Handler] = {
     "setIssueStatus": lambda a, d, f: S.issue(field.set_issue_status(a, d.get("issueId"), d.get("status"), d.get("assigneeId"))),
     "resolveIssue": lambda a, d, f: S.issue(field.resolve_issue(a, d.get("issueId"), _in(d))),
     "addIssuePhotos": lambda a, d, f: S.issue(field.add_issue_photos(a, d.get("issueId"), _in(d))),
+    "setContractTerms": lambda a, d, f: S.project(billing.set_contract_terms(a, d.get("projectId"), _in(d))),
+    "raiseInvoice": lambda a, d, f: S.client_invoice(billing.raise_invoice(a, d.get("projectId"), _in(d))),
+    "recordReceipt": lambda a, d, f: S.client_invoice(billing.record_receipt(a, d.get("invoiceId"), _in(d))),
+    "settleVat": lambda a, d, f: S.client_invoice(billing.settle_vat(a, d.get("invoiceId"), _in(d))),
     "createCommissioning": lambda a, d, f: S.commissioning(field.create_commissioning(a, d.get("projectId"), _in(d))),
     "reportHse": lambda a, d, f: S.hse(field.report_hse(a, d.get("projectId"), _in(d))),
     "raiseWarrantyClaim": lambda a, d, f: S.warranty(field.raise_warranty_claim(a, d.get("projectId"), _in(d))),

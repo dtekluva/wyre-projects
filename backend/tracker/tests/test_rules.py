@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from tracker.errors import ApiError
 from tracker.models import Approval, Asset, CostItem, Document, Issue, Project, PurchaseOrder, StockCount, StockMovement, User
 from tracker import rbac
-from tracker.services import approvals, documents, field, gates, money, projects, recon, review, stock
+from tracker.services import approvals, billing, documents, field, gates, money, projects, recon, review, stock
 from tracker.services.base import dec
 
 
@@ -375,6 +375,64 @@ class VisitPhotoTest(TestCase):
         self.assertEqual(i.review_status, "pending", "a checked record that is edited goes back for review")
         self.assertEqual(i.review_version, 2); self.assertIsNone(i.checked_by)
         self.assertTrue(any("re-entered review" in e.summary for e in i.project.events.all()))
+
+    # ---------------------------------------------------------------- VAT & client billing
+    def test_contract_is_net_and_vat_is_derived(self):
+        u = self.u
+        p = Project.objects.get(pk="p1")
+        self.assertEqual(dec(p.contract_value), dec(p.contract_value_net) + p.vat_amount, "gross = net + VAT")
+        self.assertEqual(p.vat_amount, (dec(p.contract_value_net) * Decimal("7.5") / 100).quantize(Decimal("0.01")))
+        np_ = projects.create_project(u["u_pm1"], {"name": "VAT job", "clientName": "Acme", "branchName": "HQ", "location": "Lagos", "projectType": "solar_battery",
+                                                  "contractValueNet": 1_000_000, "pmId": "u_pm1", "leadEngineerId": "u_pm2"})
+        self.assertEqual(dec(np_.contract_value_net), 1_000_000); self.assertEqual(np_.vat_amount, Decimal("75000.00")); self.assertEqual(dec(np_.contract_value), Decimal("1075000.00"))
+        ex = projects.create_project(u["u_pm1"], {"name": "Exempt job", "clientName": "NGO", "branchName": "S", "location": "Abuja", "projectType": "solar_battery",
+                                                 "contractValueNet": 500_000, "vatTreatment": "exempt", "pmId": "u_pm1", "leadEngineerId": "u_pm2"})
+        self.assertEqual(ex.vat_amount, 0); self.assertEqual(dec(ex.contract_value), 500_000)
+        self.err("invalid", projects.create_project, u["u_pm1"], {"name": "Bad", "clientName": "x", "branchName": "x", "location": "x", "projectType": "solar_battery",
+                                                                    "contractValueNet": 100, "approvedBudget": 200, "pmId": "u_pm1", "leadEngineerId": "u_pm2"})
+        m = money.money(np_.id)
+        self.assertEqual(m["contractNet"], 1_000_000); self.assertEqual(m["vatDue"], 75_000); self.assertEqual(m["vatOutstanding"], 75_000)
+        self.err("forbidden", billing.set_contract_terms, u["u_pm1"], np_.id, {"contractValueNet": 2_000_000})
+        np_ = billing.set_contract_terms(u["u_fin"], np_.id, {"contractValueNet": 2_000_000, "vatTreatment": "withheld_by_client"})
+        self.assertEqual(np_.vat_amount, Decimal("150000.00")); self.assertEqual(dec(np_.contract_value), Decimal("2150000.00"))
+        self.assertTrue(np_.events.filter(event_type="contract_updated").exists())
+        # retention on net
+        p4 = Project.objects.get(pk="p4")
+        self.assertEqual(money.retention(p4)["amountHeld"], float((dec(p4.contract_value_net) * dec(p4.retention_percent) / 100).to_integral_value()))
+
+    def test_invoice_receipt_and_vat_settlement(self):
+        u = self.u
+        np_ = projects.create_project(u["u_pm1"], {"name": "Billing job", "clientName": "Acme", "branchName": "HQ", "location": "Lagos", "projectType": "solar_battery",
+                                                  "contractValueNet": 2_000_000, "pmId": "u_pm1", "leadEngineerId": "u_pm2"})
+        self.err("forbidden", billing.raise_invoice, u["u_ft1"], np_.id, {"invoiceNumber": "INV-1", "netAmount": 100})
+        self.err("invalid", billing.raise_invoice, u["u_fin"], np_.id, {"invoiceNumber": "", "netAmount": 100})
+        inv = billing.raise_invoice(u["u_fin"], np_.id, {"invoiceNumber": "INV-1", "description": "Mobilisation", "netAmount": 800_000})
+        self.assertEqual(dec(inv.vat_amount), Decimal("60000.00")); self.assertEqual(dec(inv.gross_amount), Decimal("860000.00"))
+        self.assertEqual(inv.review_status, "pending"); self.assertEqual(inv.vat_status, "outstanding")
+        self.err("conflict", billing.raise_invoice, u["u_fin"], np_.id, {"invoiceNumber": "inv-1", "netAmount": 1})
+        self.assertEqual(money.money(np_.id)["invoicedNet"], 0, "pending invoices do not count")
+        self.err("conflict", billing.record_receipt, u["u_fin"], inv.id, {"amount": 100})
+        self.assertTrue(any(q["kind"] == "client_invoice" and q["id"] == inv.id for q in review.review_queue(u["u_dir"])))
+        review.check(u["u_dir"], "client_invoice", inv.id, "checked")
+        self.assertEqual(money.money(np_.id)["invoicedNet"], 800_000)
+        self.err("invalid", billing.record_receipt, u["u_fin"], inv.id, {"amount": 900_000})
+        inv = billing.record_receipt(u["u_fin"], inv.id, {"amount": 800_000, "note": "net paid, VAT withheld"})
+        self.assertEqual(money.money(np_.id)["received"], 800_000)
+        self.err("invalid", billing.settle_vat, u["u_fin"], inv.id, {"status": "withheld_by_client"})
+        self.err("invalid", billing.settle_vat, u["u_fin"], inv.id, {"status": "outstanding"})
+        cn = self.photo(u["u_fin"], np_.id, caption="VAT credit note")
+        inv = billing.settle_vat(u["u_fin"], inv.id, {"status": "withheld_by_client", "attachmentIds": [cn], "note": "client remits"})
+        m = money.money(np_.id)
+        self.assertEqual(inv.vat_status, "withheld_by_client"); self.assertEqual(m["vatSettled"], 60_000); self.assertEqual(m["vatOutstanding"], 90_000)
+        self.err("conflict", billing.settle_vat, u["u_fin"], inv.id, {"status": "remitted", "attachmentIds": [cn]})
+        inv2 = billing.raise_invoice(u["u_fin"], np_.id, {"invoiceNumber": "INV-2", "description": "Balance", "netAmount": 1_200_000})
+        review.check(u["u_dir"], "client_invoice", inv2.id, "checked")
+        inv2 = billing.settle_vat(u["u_fin"], inv2.id, {"status": "collected"})
+        m = money.money(np_.id)
+        self.assertEqual(m["vatCollected"], 90_000); self.assertEqual(m["vatOutstanding"], 90_000, "collected is not settled")
+        billing.settle_vat(u["u_fin"], inv2.id, {"status": "remitted", "attachmentIds": [self.photo(u["u_fin"], np_.id, caption="FIRS receipt")]})
+        m = money.money(np_.id)
+        self.assertEqual(m["vatOutstanding"], 0); self.assertEqual(m["vatCollected"], 0)
 
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u

@@ -176,7 +176,7 @@ class Seeder:
             at = d(p["created"])
             Project.objects.create(id=p["id"], code=p["code"], name=p["name"], client_name=p["client"], branch_name=p["branch"], location=p["location"], project_type=p["type"],
                                    system_capacity_kwp=Decimal(p["kwp"]) if p["kwp"] else None, stage=p["stage"], rag=p["rag"], rag_reason=p["reason"], pm=self.u(p["pm"]), lead_engineer=self.u(p["le"]),
-                                   contract_value=p["contract"], approved_budget=p["budget"], committed=p["committed"], actual=p["actual"], stage_planned=p["planned"],
+                                   contract_value_net=p["contract"], approved_budget=p["budget"], committed=p["committed"], actual=p["actual"], stage_planned=p["planned"],
                                    stage_actual={k: iso(v) for k, v in p["actual_dates"].items()}, defects_liability_end=p.get("dlp"), retention_percent=5,
                                    created_at=at, created_by=self.u(p["by"]), updated_at=at, updated_by=self.u(p["by"]))
         for i, (pid, uid, role) in enumerate(MEMBERSHIPS, 1):

@@ -18,7 +18,8 @@ export type Permission =
   | "visit.create" | "visit.check" | "issue.create" | "issue.update" | "issue.check"
   | "commissioning.create" | "commissioning.check" | "hse.create" | "hse.check" | "warranty.create" | "warranty.check"
   | "stockcount.create" | "stockcount.approve"
-  | "dashboard.read";
+  | "dashboard.read"
+  | "billing.manage" | "contract.manage";
 
 const R = (...p: Permission[]) => p;
 
@@ -31,7 +32,7 @@ export const MATRIX: Record<RoleCode, Permission[]> = {
               "attachment.create","attachment.read","po.read","po.approve","writeoff.approve",
               "stockcount.approve","commissioning.check","approval.read","membership.manage","users.manage",
               "thresholds.read","thresholds.manage","money.read","inventory.read","asset.read",
-              "recon.read","dashboard.read","catalogue.manage"),
+              "recon.read","dashboard.read","catalogue.manage","billing.manage","contract.manage"),
   // Checker and project owner — the old pm and lead_engineer merged. Holds gate.request AND gate.approve,
   // which is safe because segregation of duties is enforced per person, not per role: you cannot approve
   // your own request or check your own submission.
@@ -49,9 +50,9 @@ export const MATRIX: Record<RoleCode, Permission[]> = {
           "attachment.create","attachment.read","goods_receipt.create",
           "inventory.read","inventory.request","asset.read","asset.write",
           "visit.create","issue.create","issue.update","hse.create","dashboard.read"),
-  finance: R("stockcount.approve","warranty.check","project.read","gate.request","gate.approve","chronology.read","document.read","attachment.read","po.read","po.approve","writeoff.approve",
+  finance: R("stockcount.approve","warranty.check","project.read","gate.request","gate.approve","chronology.read","document.read","attachment.read","attachment.create","po.read","po.approve","writeoff.approve",
              "approval.read","thresholds.read","money.read","money.write","cost.create","cost.check","goods_receipt.check","inventory.read",
-             "inventory.check","retention.request","asset.read","recon.read","recon.write","dashboard.read"),
+             "inventory.check","retention.request","asset.read","recon.read","recon.write","dashboard.read","billing.manage","contract.manage"),
   store_keeper: R("stockcount.create","project.read","chronology.read","attachment.create","attachment.read","po.read","goods_receipt.create",
                   "inventory.read","inventory.write","asset.read","asset.write","thresholds.read","dashboard.read","catalogue.manage"),
   auditor: R("project.read","chronology.read","document.read","attachment.read","po.read","approval.read","thresholds.read",

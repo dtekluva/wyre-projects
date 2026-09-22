@@ -15,7 +15,7 @@ MATRIX: dict[str, list[str]] = {
                  "attachment.create", "attachment.read", "po.read", "po.approve", "writeoff.approve",
                  "stockcount.approve", "commissioning.check", "approval.read", "membership.manage", "users.manage",
                  "thresholds.read", "thresholds.manage", "money.read", "inventory.read", "asset.read",
-                 "recon.read", "dashboard.read", "catalogue.manage"],
+                 "recon.read", "dashboard.read", "catalogue.manage", "billing.manage", "contract.manage"],
     # Checker and project owner — the old pm and lead_engineer, merged. It holds both gate.request and
     # gate.approve, which is safe because segregation of duties is enforced per *person*
     # (approvals.py and review.py refuse your own request or your own submission), not per role.
@@ -33,10 +33,10 @@ MATRIX: dict[str, list[str]] = {
              "attachment.create", "attachment.read", "goods_receipt.create",
              "inventory.read", "inventory.request", "asset.read", "asset.write",
              "visit.create", "issue.create", "issue.update", "hse.create", "dashboard.read"],
-    "finance": ["stockcount.approve", "warranty.check", "project.read", "gate.request", "gate.approve", "chronology.read", "document.read", "attachment.read",
+    "finance": ["stockcount.approve", "warranty.check", "project.read", "gate.request", "gate.approve", "chronology.read", "document.read", "attachment.read", "attachment.create",
                 "po.read", "po.approve", "writeoff.approve", "approval.read", "thresholds.read", "money.read", "money.write", "cost.create",
                 "cost.check", "goods_receipt.check", "inventory.read", "inventory.check", "retention.request", "asset.read", "recon.read",
-                "recon.write", "dashboard.read"],
+                "recon.write", "dashboard.read", "billing.manage", "contract.manage"],
     "store_keeper": ["stockcount.create", "project.read", "chronology.read", "attachment.create", "attachment.read", "po.read",
                      "goods_receipt.create", "inventory.read", "inventory.write", "asset.read", "asset.write", "thresholds.read", "dashboard.read", "catalogue.manage"],
     "auditor": ["project.read", "chronology.read", "document.read", "attachment.read", "po.read", "approval.read", "thresholds.read",
@@ -57,7 +57,7 @@ def may_self_review(user) -> bool:
 CHECK_PERM = {
     "document": "document.check", "attachment": "attachment.check", "goods_receipt": "goods_receipt.check", "stock_movement": "inventory.check",
     "cost_item": "cost.check", "site_visit": "visit.check", "issue": "issue.check", "commissioning": "commissioning.check",
-    "hse": "hse.check", "warranty": "warranty.check",
+    "hse": "hse.check", "warranty": "warranty.check", "client_invoice": "billing.manage",
 }
 
 _cache: Optional[dict[str, set[str]]] = None

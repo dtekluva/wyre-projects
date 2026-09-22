@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { PROJECT_TYPE_LABEL, ROLE_LABEL, type ProjectType } from "@wyre/api";
+import { DEFAULT_VAT_RATE, PROJECT_TYPE_LABEL, ROLE_LABEL, VAT_TREATMENT_LABEL, naira, netFromGross, vatOn, type ProjectType, type VatTreatment } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
@@ -15,7 +15,14 @@ export function ProjectNew() {
   const les = pms;
   const [name, setName] = useState(""); const [client, setClient] = useState(""); const [branch, setBranch] = useState(""); const [loc, setLoc] = useState("");
   const [type, setType] = useState<ProjectType>("solar_battery"); const [kwp, setKwp] = useState("");
-  const [contract, setContract] = useState(""); const [budget, setBudget] = useState("");
+  // The contract is written NET of VAT. People hold either number, so a toggle lets them type the gross and
+  // we back out the net — forcing the arithmetic on them is how a gross figure ended up in a net field before.
+  const [contract, setContract] = useState(""); const [haveGross, setHaveGross] = useState(false);
+  const [vatRate, setVatRate] = useState(String(DEFAULT_VAT_RATE)); const [treatment, setTreatment] = useState<VatTreatment>("standard");
+  const [budget, setBudget] = useState("");
+  const rate = Number(vatRate) || 0; const typed = Number(contract) || 0;
+  const net = haveGross ? netFromGross(typed, rate, treatment) : typed;
+  const vat = vatOn(net, rate, treatment); const gross = net + vat;
   const [retention, setRetention] = useState(String(api.thresholdNum("retention.percent", 5)));
   const [pmId, setPmId] = useState(user.roles.includes("techlead") ? user.id : pms[0]?.id ?? ""); const [leId, setLeId] = useState(les[0]?.id ?? "");
   const [due, setDue] = useState("");
@@ -29,7 +36,7 @@ export function ProjectNew() {
       const p = api.createProject(user.id, {
         name, clientName: client, branchName: branch, location: loc, projectType: type,
         systemCapacityKwp: kwp.trim() ? Number(kwp) : undefined,
-        contractValue: Number(contract || 0), approvedBudget: Number(budget || 0), retentionPercent: Number(retention),
+        contractValueNet: net, vatRate: rate, vatTreatment: treatment, approvedBudget: Number(budget || 0), retentionPercent: Number(retention),
         pmId, leadEngineerId: leId, proposalDueDate: due || undefined,
       });
       id = p.id;
@@ -68,9 +75,20 @@ export function ProjectNew() {
         <div className="card">
           <div className="card__head"><b>Commercials</b><span className="sm muted">Budget lines, POs and actuals are added later under Money</span></div>
           <div className="card__body form">
-            <label className="ns-field"><span className="ns-field__label">Contract value (₦, VAT inclusive)</span>
+            <label className="ns-field"><span className="ns-field__label">Contract value (₦, {haveGross ? "gross — VAT inclusive" : "net of VAT"})</span>
               <input className="ns-input" type="number" min="0" step="1" required value={contract} onChange={(e) => setContract(e.target.value)} placeholder="0" /></label>
-            <label className="ns-field"><span className="ns-field__label">Approved cost budget (₦)</span>
+            <label className="ns-field"><span className="ns-field__label">VAT rate (%)</span>
+              <input className="ns-input" type="number" min="0" max="100" step="0.5" value={vatRate} onChange={(e) => setVatRate(e.target.value)} disabled={treatment === "exempt"} /></label>
+            <label className="ns-field"><span className="ns-field__label">VAT treatment</span>
+              <select className="ns-input" value={treatment} onChange={(e) => setTreatment(e.target.value as VatTreatment)}>{(Object.keys(VAT_TREATMENT_LABEL) as VatTreatment[]).map((t) => <option key={t} value={t}>{VAT_TREATMENT_LABEL[t]}</option>)}</select></label>
+            <div className="ns-field" style={{ gridColumn: "1 / -1" }}>
+              <label className="row sm" style={{ gap: 8, cursor: "pointer" }}><input type="checkbox" checked={haveGross} onChange={(e) => setHaveGross(e.target.checked)} /> I only have the gross (VAT-inclusive) figure — work out the net for me</label>
+              <div className="note note--info sm" style={{ marginTop: 6 }}>
+                {treatment === "exempt" ? <>Net <b className="ns-mono">{naira(net)}</b> · no VAT (exempt / zero-rated)</>
+                  : <>Net <b className="ns-mono">{naira(net)}</b> + VAT {rate}% <b className="ns-mono">{naira(vat)}</b> = gross <b className="ns-mono">{naira(gross)}</b>{treatment === "withheld_by_client" && <> · the client withholds the VAT and remits it to FIRS</>}</>}
+              </div>
+            </div>
+            <label className="ns-field"><span className="ns-field__label">Approved cost budget (₦, net)</span>
               <input className="ns-input" type="number" min="0" step="1" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="0 until approved" /></label>
             <label className="ns-field"><span className="ns-field__label">Retention (%)</span>
               <input className="ns-input" type="number" min="0" max="20" step="0.5" value={retention} onChange={(e) => setRetention(e.target.value)} /></label>

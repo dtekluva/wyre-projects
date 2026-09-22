@@ -605,3 +605,13 @@ button.frow { text-align: left; font: inherit; cursor: pointer; }
 .issue--btn { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .issue--btn:hover { border-color: var(--ns-color-primary); }
 .issue--btn:focus-visible { outline: 2px solid var(--ns-color-primary); outline-offset: 2px; }
+
+/* ---------- money strip: five cells ---------- */
+.money--5 { grid-template-columns: repeat(5, 1fr); }
+.money--5 .money__cell--wide { grid-column: span 4; }
+.warn-text { color: var(--ns-amber-700, #B45309); }
+@media (max-width: 1150px) { .money--5 { grid-template-columns: repeat(3, 1fr); } .money--5 .money__cell--wide { grid-column: span 2; } }
+@media (max-width: 700px) { .money--5 { grid-template-columns: repeat(2, 1fr); } .money--5 .money__cell--wide { grid-column: span 1; } }
+.vat-chip { display: inline-flex; align-items: center; gap: 4px; }
+.money--4b { grid-template-columns: repeat(4, 1fr); border-bottom: var(--ns-border-hairline) solid var(--ns-color-border-default); }
+@media (max-width: 700px) { .money--4b { grid-template-columns: repeat(2, 1fr); } }

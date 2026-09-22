@@ -67,9 +67,12 @@ def create_project(actor: User, input: dict) -> Project:
             raise ApiError(f"{label} must be zero or more", "invalid")
         return b.round2(n)
 
-    contract_value = money("contractValue", "Contract value"); approved_budget = money("approvedBudget", "Approved budget")
-    if approved_budget > contract_value and contract_value > 0:
-        raise ApiError("Approved budget cannot exceed contract value", "invalid")
+    # NET of VAT — `contractValue` is accepted as an alias and treated as net; VAT and the gross are derived
+    contract_value_net = money("contractValueNet" if input.get("contractValueNet") not in (None, "") else "contractValue", "Contract value"); approved_budget = money("approvedBudget", "Approved budget")
+    if approved_budget > contract_value_net and contract_value_net > 0:
+        raise ApiError("Approved budget cannot exceed the net contract value", "invalid")
+    from . import billing
+    vat_rate = billing._rate(input.get("vatRate"), b.dec("7.5")); vat_treatment = billing._treatment(input.get("vatTreatment"), "standard")
     rp = input.get("retentionPercent")
     retention = b.threshold_num("retention.percent", 5) if rp in (None, "") else b.dec(rp)
     if retention < 0 or retention > 20:
@@ -92,11 +95,11 @@ def create_project(actor: User, input: dict) -> Project:
     p = Project.objects.create(
         **b.maybe_id(input, Project, "p"), code=next_project_code(), name=name, client_name=client_name, branch_name=branch_name, location=location,
         project_type=ptype, system_capacity_kwp=b.dec(kwp) if kwp not in (None, "") else None,
-        stage=0, rag="green", pm=pm, lead_engineer=le, contract_value=contract_value, approved_budget=approved_budget,
+        stage=0, rag="green", pm=pm, lead_engineer=le, contract_value_net=contract_value_net, vat_rate=vat_rate, vat_treatment=vat_treatment, approved_budget=approved_budget,
         committed=0, actual=0, stage_planned={"0": due} if due else {}, stage_actual={}, retention_percent=retention,
         created_at=at, created_by=actor, updated_at=at, updated_by=actor,
     )
-    b.log(p.id, actor, "project_created", f"Project created — {p.code} · {PROJECT_TYPE_LABEL[ptype]} · {b.fmt(contract_value)}", None, {"model": "Project", "id": p.id})
+    b.log(p.id, actor, "project_created", f"Project created — {p.code} · {PROJECT_TYPE_LABEL[ptype]} · {b.fmt(contract_value_net)} net of VAT", None, {"model": "Project", "id": p.id})
     for u, role in ((pm, "techlead"), (le, "techlead")):
         ProjectMembership.objects.create(project=p, user=u, role=role, granted_by=actor, granted_at=at)
         b.log(p.id, actor, "role_granted", f"{u.name} granted {role}")

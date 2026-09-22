@@ -7,6 +7,7 @@ import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { MoneyStrip } from "../components/MoneyStrip";
+import { BillingCard } from "../components/BillingCard";
 import { Badge, Empty, Note, ReviewBadge } from "../components/ui";
 
 const CATS: CostCategory[] = ["equipment", "civil", "labour", "logistics", "permits", "contingency", "om"];
@@ -133,9 +134,11 @@ export function ProjectMoney() {
           <tbody>{acts.map((a) => <tr key={a.id}><td className="sm">{fmtDate(a.date)}</td><td><Badge variant="neutral">{a.source.replace("_", " ")}</Badge></td><td>{a.sourceRef.label}{a.vendorId && <div className="sm muted">{api.vendorName(a.vendorId)}</div>}</td><td className="sm">{COST_CATEGORY_LABEL[a.category]}</td>
             <td className={`num ns-mono ${a.amount < 0 ? "warn-cell" : ""}`}>{naira(a.amount)}</td><td><Thumbs ids={a.attachmentIds} /></td></tr>)}</tbody></table> : <div className="card__body"><Empty title="No actuals yet" hint="Actuals appear when goods receipts, stock issues or change orders are checked / approved." /></div>}</div>
 
+      <BillingCard p={p} />
+
       <div className="workspace" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <div className="card"><div className="card__head"><div className="card__title">Retention</div>{ret.releasedAt ? <Badge variant="success">released</Badge> : ret.amountHeld ? <Badge variant="warning">held</Badge> : <Badge variant="neutral">not yet</Badge>}</div>
-          <div className="card__body stack" style={{ gap: 6 }}><div className="sm">{ret.percent}% of contract · <b className="ns-mono">{naira(ret.amountHeld)}</b></div><div className="sm muted">{ret.releaseConditions}</div>
+          <div className="card__body stack" style={{ gap: 6 }}><div className="sm">{ret.percent}% of <b>net</b> contract · <b className="ns-mono">{naira(ret.amountHeld)}</b></div><div className="sm muted">{ret.releaseConditions}</div>
             {ret.releasedAt && <div className="sm">Released {fmtDate(ret.releasedAt)} by {api.userName(ret.releasedBy)}</div>}
             {!ret.releasedAt && ret.amountHeld > 0 && api.can(user.id, "retention.request", p.id) && <div><button className="ns-btn ns-btn--secondary ns-btn--sm" onClick={() => safe(() => { api.requestRetentionRelease(user.id, p.id); }, "Retention release requested")}>Request release</button></div>}</div></div>
         <div className="card"><div className="card__head"><div className="card__title">QuickBooks bills</div><Link to="/finance/reconciliation" className="sm link">Reconciliation →</Link></div>

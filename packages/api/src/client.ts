@@ -2,6 +2,8 @@
 // Enforces: RBAC (§2), stage gates (§3), actor capture (§4), maker-checker + segregation of duties (§4.13, §5),
 // money & stock rules (§0, §4.4, §4.10, §4.15, §11).
 import { can as canFn, maySelfReview, rolesOn as rolesOnFn, type Permission } from "./rbac";
+import { VAT_SETTLED, VAT_TREATMENT_LABEL, type ClientInvoice, type InvoiceReceipt, type VatStatus, type VatTreatment } from "./types";
+import { DEFAULT_VAT_RATE, vatOn } from "./vat";
 import { STAGES } from "./gates";
 import * as seed from "./mock/data";
 import * as seed2 from "./mock/data2";
@@ -20,18 +22,20 @@ export class ApiError extends Error {
   constructor(message: string, public code: "forbidden" | "invalid" | "not_found" | "conflict") { super(message); }
 }
 
-export type ReviewKind = "document" | "attachment" | "goods_receipt" | "stock_movement" | "cost_item" | "site_visit" | "issue" | "commissioning" | "hse" | "warranty";
+export type ReviewKind = "document" | "attachment" | "goods_receipt" | "stock_movement" | "cost_item" | "site_visit" | "issue" | "commissioning" | "hse" | "warranty" | "client_invoice";
 export interface ReviewItem {
   kind: ReviewKind; id: string; projectId?: string; title: string; subtitle: string; amount?: number;
   submittedBy: string; submittedAt: string; ageDays: number; overdue: boolean;
-  item: Document | Attachment | GoodsReceipt | StockMovement | CostItem | SiteVisit | Issue | CommissioningRecord | HseIncident | WarrantyClaim;
+  item: Document | Attachment | GoodsReceipt | StockMovement | CostItem | SiteVisit | Issue | CommissioningRecord | HseIncident | WarrantyClaim | ClientInvoice;
 }
 
 /** Spec §4.1 — fields captured when a project is opened (stage 0, RAG green, nothing committed yet) */
 export interface NewProjectInput {
   name: string; clientName: string; branchName: string; location: string;
   projectType: ProjectType; systemCapacityKwp?: number;
-  contractValue: number; approvedBudget?: number; retentionPercent?: number;
+  /** net of VAT — the number the contract is written in. `contractValue` is accepted as an alias and treated as NET */
+  contractValueNet?: number; contractValue?: number; vatRate?: number; vatTreatment?: VatTreatment;
+  approvedBudget?: number; retentionPercent?: number;
   pmId: string; leadEngineerId: string;
   /** planned completion date of stage 0 (proposal sign-off), YYYY-MM-DD */
   proposalDueDate?: string;
@@ -64,6 +68,7 @@ export class MockApi {
   actuals: Actual[] = clone(seed2.actuals);
   changeOrders: ChangeOrder[] = clone(seed2.changeOrders);
   retentions: Retention[] = clone(seed2.retentions);
+  clientInvoices: ClientInvoice[] = clone(seed3.clientInvoices);
   qbBills: QbBill[] = clone(seed2.qbBills);
   // phase 3
   visits: SiteVisit[] = clone(seed3.visits);
@@ -77,7 +82,7 @@ export class MockApi {
   private seq = 1000;
   private static KEY = "wyre.tracker.state.v3";
   private static PERSISTED = ["projects","memberships","documents","attachments","events","approvals","thresholds",
-    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","extractions","seq"] as const;
+    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","extractions","clientInvoices","seq"] as const;
 
   /** Synchronous key-value storage (web: localStorage). Native apps hydrate asynchronously via serialize()/hydrate() instead. */
   private storage: { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void } | null =
@@ -113,7 +118,7 @@ export class MockApi {
       events: clone(seed.events), approvals: clone(seed.approvals), thresholds: clone(seed.thresholds),
       vendors: clone(seed2.vendors), locations: clone([...seed2.locations, ...seed3.locations]), items: clone(seed2.items), costItems: clone(seed2.costItems), purchaseOrders: clone(seed2.purchaseOrders),
       goodsReceipts: clone(seed2.goodsReceipts), assets: clone(seed2.assets), movements: clone([...seed2.movements, ...seed3.movements]), actuals: clone(seed2.actuals),
-      changeOrders: clone(seed2.changeOrders), retentions: clone(seed2.retentions), qbBills: clone(seed2.qbBills),
+      changeOrders: clone(seed2.changeOrders), retentions: clone(seed2.retentions), clientInvoices: clone(seed3.clientInvoices), qbBills: clone(seed2.qbBills),
       visits: clone(seed3.visits), issues: clone(seed3.issues), commissionings: clone(seed3.commissionings), hseIncidents: clone(seed3.hseIncidents), warrantyClaims: clone(seed3.warrantyClaims), stockCounts: clone(seed3.stockCounts), seq: 1000 });
     this.emit();
   }
@@ -197,8 +202,13 @@ export class MockApi {
     const name = req(input.name, "Project name"), clientName = req(input.clientName, "Client"), branchName = req(input.branchName, "Branch / site"), location = req(input.location, "Location");
     if (!(input.projectType in PROJECT_TYPE_LABEL)) throw new ApiError("Unknown project type", "invalid");
     const money = (v: number | undefined, label: string, fallback = 0) => { const n = v === undefined || v === null || Number.isNaN(v) ? fallback : Number(v); if (!Number.isFinite(n) || n < 0) throw new ApiError(`${label} must be zero or more`, "invalid"); return round(n); };
-    const contractValue = money(input.contractValue, "Contract value"); const approvedBudget = money(input.approvedBudget, "Approved budget");
-    if (approvedBudget > contractValue && contractValue > 0) throw new ApiError("Approved budget cannot exceed contract value", "invalid");
+    const contractValueNet = money(input.contractValueNet ?? input.contractValue, "Contract value"); const approvedBudget = money(input.approvedBudget, "Approved budget");
+    if (approvedBudget > contractValueNet && contractValueNet > 0) throw new ApiError("Approved budget cannot exceed the net contract value", "invalid");
+    const vatRate = input.vatRate === undefined || input.vatRate === null ? DEFAULT_VAT_RATE : Number(input.vatRate);
+    if (!Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100) throw new ApiError("VAT rate must be between 0 and 100 %", "invalid");
+    const vatTreatment: VatTreatment = input.vatTreatment ?? "standard";
+    if (!(vatTreatment in VAT_TREATMENT_LABEL)) throw new ApiError("Unknown VAT treatment", "invalid");
+    const vatAmount = vatOn(contractValueNet, vatRate, vatTreatment); const contractValue = contractValueNet + vatAmount;
     const retentionPercent = input.retentionPercent === undefined ? this.thresholdNum("retention.percent", 5) : Number(input.retentionPercent);
     if (!Number.isFinite(retentionPercent) || retentionPercent < 0 || retentionPercent > 20) throw new ApiError("Retention must be between 0 and 20 %", "invalid");
     if (input.systemCapacityKwp !== undefined && !(Number(input.systemCapacityKwp) > 0)) throw new ApiError("System capacity must be a positive number of kWp", "invalid");
@@ -211,13 +221,13 @@ export class MockApi {
       id: this.id("p"), code: this.nextProjectCode(), name, clientName, branchName, location,
       projectType: input.projectType, systemCapacityKwp: input.systemCapacityKwp ? Number(input.systemCapacityKwp) : undefined,
       stage: 0, rag: "green", pmId: pm.id, leadEngineerId: le.id,
-      contractValue, approvedBudget, committed: 0, actual: 0,
+      contractValueNet, vatRate, vatTreatment, vatAmount, contractValue, approvedBudget, committed: 0, actual: 0,
       stagePlanned: input.proposalDueDate ? { 0: input.proposalDueDate } : {}, stageActual: {},
       retentionPercent, openIssues: { critical: 0, high: 0, medium: 0, low: 0 },
       createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId,
     };
     this.projects.push(p);
-    this.log(p.id, actorId, "project_created", `Project created — ${p.code} · ${PROJECT_TYPE_LABEL[p.projectType]} · ${this.fmt(contractValue)}`, undefined, { model: "Project", id: p.id });
+    this.log(p.id, actorId, "project_created", `Project created — ${p.code} · ${PROJECT_TYPE_LABEL[p.projectType]} · ${this.fmt(contractValueNet)} net of VAT`, undefined, { model: "Project", id: p.id });
     for (const [uid, role] of [[pm.id, "techlead"], [le.id, "techlead"]] as const) {
       this.memberships.push({ id: this.id("m"), projectId: p.id, userId: uid, role, grantedBy: actorId, grantedAt: at });
       this.log(p.id, actorId, "role_granted", `${this.userName(uid)} granted ${role}`);
@@ -285,11 +295,11 @@ export class MockApi {
   // ---------- maker-checker ----------
   private checkPerm(kind: ReviewKind): Permission {
     return ({ document: "document.check", attachment: "attachment.check", goods_receipt: "goods_receipt.check", stock_movement: "inventory.check", cost_item: "cost.check",
-      site_visit: "visit.check", issue: "issue.check", commissioning: "commissioning.check", hse: "hse.check", warranty: "warranty.check" } as const)[kind];
+      site_visit: "visit.check", issue: "issue.check", commissioning: "commissioning.check", hse: "hse.check", warranty: "warranty.check", client_invoice: "billing.manage" } as const)[kind];
   }
   private findReviewable(kind: ReviewKind, id: string) {
     const list = ({ document: this.documents, attachment: this.attachments, goods_receipt: this.goodsReceipts, stock_movement: this.movements, cost_item: this.costItems,
-      site_visit: this.visits, issue: this.issues, commissioning: this.commissionings, hse: this.hseIncidents, warranty: this.warrantyClaims } as Record<ReviewKind, { id: string }[]>)[kind];
+      site_visit: this.visits, issue: this.issues, commissioning: this.commissionings, hse: this.hseIncidents, warranty: this.warrantyClaims, client_invoice: this.clientInvoices } as Record<ReviewKind, { id: string }[]>)[kind];
     const it = list.find((x) => x.id === id); if (!it) throw new ApiError("Item not found", "not_found");
     return it as ReviewItem["item"];
   }
@@ -317,6 +327,7 @@ export class MockApi {
     this.commissionings.forEach((c) => push("commissioning", c, c.projectId, `Commissioning record · ${c.result}`, `${c.items.filter((i) => i.pass).length}/${c.items.length} checklist pass · meter integrity ${Object.values(c.meter).every(Boolean) ? "pass" : "FAIL"}`));
     this.hseIncidents.forEach((h) => push("hse", h, h.projectId, `HSE · ${HSE_TYPE_LABEL[h.type]}`, `${h.severity} · ${h.description.slice(0, 70)}`));
     this.warrantyClaims.forEach((w) => push("warranty", w, w.projectId, `Warranty claim · ${this.assets.find((a) => a.id === w.assetId)?.serial ?? w.assetId}`, `${w.status} · ${this.vendorName(w.vendorId)}`, w.costRecovered || undefined));
+    this.clientInvoices.forEach((i) => push("client_invoice", i, i.projectId, `Invoice ${i.invoiceNumber} · ${this.raw(i.projectId).clientName}`, `${i.description} · net ${this.fmt(i.netAmount)} + VAT ${this.fmt(i.vatAmount)}`, i.grossAmount));
     return items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   }
   pendingChecks(projectId: string) {
@@ -329,7 +340,8 @@ export class MockApi {
       + this.issues.filter((i) => i.projectId === projectId && i.reviewStatus === "pending").length
       + this.commissionings.filter((c) => c.projectId === projectId && c.reviewStatus === "pending").length
       + this.hseIncidents.filter((h) => h.projectId === projectId && h.reviewStatus === "pending").length
-      + this.warrantyClaims.filter((w) => w.projectId === projectId && w.reviewStatus === "pending").length;
+      + this.warrantyClaims.filter((w) => w.projectId === projectId && w.reviewStatus === "pending").length
+      + this.clientInvoices.filter((i) => i.projectId === projectId && i.reviewStatus === "pending").length;
   }
 
   check(kind: ReviewKind, id: string, actorId: string, decision: Exclude<ReviewStatus, "pending">, comment?: string) {
@@ -363,12 +375,13 @@ export class MockApi {
       case "commissioning": { const c = item as CommissioningRecord; c.updatedAt = at; c.updatedBy = actorId; label = `commissioning record (${c.result})`;
         if (ok && c.result !== "fail") this.emitCommissioningEvidence(c, actorId); break; }
       case "hse": { const h = item as HseIncident; h.updatedAt = at; h.updatedBy = actorId; label = `HSE ${HSE_TYPE_LABEL[h.type]}`; break; }
+      case "client_invoice": { const i = item as ClientInvoice; i.updatedAt = at; i.updatedBy = actorId; label = `invoice ${i.invoiceNumber} · ${this.fmt(i.grossAmount)} gross`; break; }
       case "warranty": { const w = item as WarrantyClaim; w.updatedAt = at; w.updatedBy = actorId; label = `warranty claim ${this.assets.find((a) => a.id === w.assetId)?.serial ?? ""}`;
         if (ok && w.costRecovered > 0 && ["accepted", "refunded", "replaced"].includes(w.status) && !this.actuals.some((a) => a.sourceRef.id === w.id))
           this.actuals.push({ id: this.id("act"), projectId: w.projectId, category: "om", source: "warranty", sourceRef: { model: "WarrantyClaim", id: w.id, label: `Warranty recovery — ${this.vendorName(w.vendorId)}` }, amount: -w.costRecovered, date: at, attachmentIds: [], createdBy: actorId });
         break; }
     }
-    const model = { document: "Document", attachment: "Attachment", goods_receipt: "GoodsReceipt", stock_movement: "StockMovement", cost_item: "CostItem", site_visit: "SiteVisit", issue: "Issue", commissioning: "CommissioningRecord", hse: "HseIncident", warranty: "WarrantyClaim" }[kind];
+    const model = { document: "Document", attachment: "Attachment", goods_receipt: "GoodsReceipt", stock_movement: "StockMovement", cost_item: "CostItem", site_visit: "SiteVisit", issue: "Issue", commissioning: "CommissioningRecord", hse: "HseIncident", warranty: "WarrantyClaim", client_invoice: "ClientInvoice" }[kind];
     this.log(projectId, actorId, ok ? "check_passed" : "check_rejected", `${ok ? "Checked" : "Rejected"}: ${label}`, comment?.trim() || undefined, { model, id });
     this.emit();
   }
@@ -744,7 +757,7 @@ export class MockApi {
   }
   retention(projectId: string): Retention {
     const p = this.raw(projectId);
-    return this.retentions.find((r) => r.projectId === projectId) ?? { projectId, percent: p.retentionPercent, amountHeld: p.stage >= 6 ? Math.round(p.contractValue * p.retentionPercent / 100) : 0, releaseConditions: `Held from handover · released after ${this.thresholdNum("dlp.months", 12)}-month DLP` };
+    return this.retentions.find((r) => r.projectId === projectId) ?? { projectId, percent: p.retentionPercent, amountHeld: p.stage >= 6 ? Math.round(p.contractValueNet * p.retentionPercent / 100) : 0, releaseConditions: `Held from handover · released after ${this.thresholdNum("dlp.months", 12)}-month DLP` };
   }
   requestRetentionRelease(actorId: string, projectId: string) {
     this.require(actorId, "retention.request", projectId);
@@ -774,7 +787,92 @@ export class MockApi {
     ci.forEach((c) => { byCategory[c.category].planned += c.plannedAmount; });
     pos.forEach((o) => o.items.forEach((i) => { const cat = this.costItems.find((c) => c.id === i.costItemId)?.category ?? "equipment"; byCategory[cat].committed += i.lineTotal; }));
     acts.forEach((a) => { byCategory[a.category].actual += a.amount; });
-    return { planned, committed, actual, variance: planned - actual, burnPct: planned > 0 ? Math.round(actual / planned * 100) : 0, forecast: Math.max(committed, actual), byCategory, changeOrders, retentionHeld: this.retention(projectId).amountHeld };
+    const vb = this.vatBlock(p, changeOrders);
+    return { planned, committed, actual, variance: planned - actual, burnPct: planned > 0 ? Math.round(actual / planned * 100) : 0, forecast: Math.max(committed, actual), byCategory, changeOrders, retentionHeld: this.retention(projectId).amountHeld, ...vb };
+  }
+
+  // ---------- VAT & client billing ----------
+  /** The base for VAT is the NET contract plus approved change orders. Everything gross is derived from it. */
+  private vatBlock(p: Project, changeOrders: number) {
+    const contractNet = p.contractValueNet + changeOrders;
+    const vatDue = vatOn(contractNet, p.vatRate, p.vatTreatment);
+    const invs = this.clientInvoices.filter((i) => i.projectId === p.id && i.reviewStatus === "checked");
+    const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
+    const invoicedNet = sum(invs.map((i) => i.netAmount)), invoicedVat = sum(invs.map((i) => i.vatAmount));
+    const received = sum(invs.flatMap((i) => i.receipts.map((r) => r.amount)));
+    const vatCollected = sum(invs.filter((i) => i.vatStatus === "collected").map((i) => i.vatAmount));
+    const vatSettled = sum(invs.filter((i) => VAT_SETTLED.includes(i.vatStatus)).map((i) => i.vatAmount));
+    return { contractNet, vatRate: p.vatRate, vatDue, contractGross: contractNet + vatDue, invoicedNet, invoicedVat, received, vatCollected, vatSettled,
+      vatOutstanding: Math.max(0, Math.round((vatDue - vatSettled) * 100) / 100) };
+  }
+  listInvoices(projectId: string) { return this.clientInvoices.filter((i) => i.projectId === projectId).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt)); }
+
+  /** Correct the contract's commercial terms. Rare — a data fix, not a change order — so Director or Finance, and it is logged. */
+  setContractTerms(actorId: string, projectId: string, input: { contractValueNet: number; vatRate?: number; vatTreatment?: VatTreatment }): Project {
+    this.require(actorId, "contract.manage", projectId); const p = this.raw(projectId);
+    const net = Number(input.contractValueNet); if (!Number.isFinite(net) || net < 0) throw new ApiError("Contract value must be zero or more", "invalid");
+    const rate = input.vatRate === undefined || input.vatRate === null ? p.vatRate : Number(input.vatRate);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) throw new ApiError("VAT rate must be between 0 and 100 %", "invalid");
+    const treatment = input.vatTreatment ?? p.vatTreatment; if (!(treatment in VAT_TREATMENT_LABEL)) throw new ApiError("Unknown VAT treatment", "invalid");
+    if (p.approvedBudget > net && net > 0) throw new ApiError("Approved budget cannot exceed the net contract value", "invalid");
+    const was = `${this.fmt(p.contractValueNet)} net · VAT ${p.vatRate}% · ${VAT_TREATMENT_LABEL[p.vatTreatment]}`;
+    const vat = vatOn(net, rate, treatment); const at = this.now();
+    Object.assign(p, { contractValueNet: net, vatRate: rate, vatTreatment: treatment, vatAmount: vat, contractValue: net + vat, updatedAt: at, updatedBy: actorId });
+    this.log(projectId, actorId, "contract_updated", `Contract terms set — ${this.fmt(net)} net · VAT ${rate}% (${this.fmt(vat)}) · ${VAT_TREATMENT_LABEL[treatment]}`, `was ${was}`, { model: "Project", id: p.id });
+    this.emit(); return p;
+  }
+
+  /** What we billed the client. VAT defaults to the project rate; the invoice enters review like any other input. */
+  raiseInvoice(actorId: string, projectId: string, input: { invoiceNumber: string; issuedAt?: string; description: string; netAmount: number; vatAmount?: number; attachmentIds?: string[] }): ClientInvoice {
+    this.require(actorId, "billing.manage", projectId); const p = this.raw(projectId);
+    const no = (input.invoiceNumber ?? "").trim(); if (!no) throw new ApiError("Invoice number is required", "invalid");
+    if (this.clientInvoices.some((i) => i.projectId === projectId && i.invoiceNumber.toLowerCase() === no.toLowerCase())) throw new ApiError(`Invoice ${no} already exists on this project`, "conflict");
+    const net = Number(input.netAmount); if (!Number.isFinite(net) || net <= 0) throw new ApiError("Net amount must be more than zero", "invalid");
+    const vat = input.vatAmount === undefined || input.vatAmount === null || input.vatAmount === ("" as unknown) ? vatOn(net, p.vatRate, p.vatTreatment) : Number(input.vatAmount);
+    if (!Number.isFinite(vat) || vat < 0) throw new ApiError("VAT amount cannot be negative", "invalid");
+    const issuedAt = input.issuedAt || this.now().slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}/.test(issuedAt)) throw new ApiError("Invoice date must be YYYY-MM-DD", "invalid");
+    const ids = input.attachmentIds ?? [];
+    if (ids.some((id) => !this.attachments.some((a) => a.id === id && a.projectId === projectId))) throw new ApiError("File is not on this project", "invalid");
+    const at = this.now();
+    const inv: ClientInvoice = { id: this.id("inv"), projectId, invoiceNumber: no, issuedAt, description: (input.description ?? "").trim(), netAmount: net, vatAmount: vat, grossAmount: Math.round((net + vat) * 100) / 100,
+      receipts: [], vatStatus: "outstanding", vatEvidenceIds: [], attachmentIds: ids,
+      createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId, reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
+    this.clientInvoices.push(inv);
+    this.log(projectId, actorId, "invoice", `Invoice ${no} raised — ${this.fmt(net)} net + ${this.fmt(vat)} VAT (pending check)`, inv.description || undefined, { model: "ClientInvoice", id: inv.id });
+    this.emit(); return inv;
+  }
+
+  /** Money in against a checked invoice. Cannot exceed the gross — an overpayment is a different conversation. */
+  recordReceipt(actorId: string, invoiceId: string, input: { date?: string; amount: number; note?: string; attachmentIds?: string[] }): ClientInvoice {
+    const inv = this.clientInvoices.find((i) => i.id === invoiceId); if (!inv) throw new ApiError("Invoice not found", "not_found");
+    this.require(actorId, "billing.manage", inv.projectId);
+    if (inv.reviewStatus !== "checked") throw new ApiError("The invoice must be checked before receipts are recorded against it", "conflict");
+    const amount = Number(input.amount); if (!Number.isFinite(amount) || amount <= 0) throw new ApiError("Amount must be more than zero", "invalid");
+    const got = inv.receipts.reduce((s, r) => s + r.amount, 0);
+    if (got + amount > inv.grossAmount + 0.005) throw new ApiError(`Only ${this.fmt(inv.grossAmount - got)} is outstanding on ${inv.invoiceNumber}`, "invalid");
+    const ids = input.attachmentIds ?? [];
+    if (ids.some((id) => !this.attachments.some((a) => a.id === id && a.projectId === inv.projectId))) throw new ApiError("File is not on this project", "invalid");
+    const at = this.now();
+    const r: InvoiceReceipt = { id: this.id("rcpt"), date: input.date || at.slice(0, 10), amount, note: input.note?.trim() || undefined, attachmentIds: ids, recordedBy: actorId, recordedAt: at };
+    inv.receipts = [...inv.receipts, r]; inv.updatedAt = at; inv.updatedBy = actorId;
+    this.log(inv.projectId, actorId, "invoice", `${this.fmt(amount)} received against ${inv.invoiceNumber}${got + amount >= inv.grossAmount ? " — paid in full" : ""}`, r.note, { model: "ClientInvoice", id: inv.id });
+    this.emit(); return inv;
+  }
+
+  /** Where the invoice's VAT stands. Settling with FIRS — withheld by the client, or remitted by us — needs the paper that proves it. */
+  settleVat(actorId: string, invoiceId: string, input: { status: VatStatus; date?: string; note?: string; attachmentIds?: string[] }): ClientInvoice {
+    const inv = this.clientInvoices.find((i) => i.id === invoiceId); if (!inv) throw new ApiError("Invoice not found", "not_found");
+    this.require(actorId, "billing.manage", inv.projectId);
+    if (inv.reviewStatus !== "checked") throw new ApiError("The invoice must be checked first", "conflict");
+    const status = input.status; if (!status || status === "outstanding") throw new ApiError("Choose how the VAT was settled", "invalid");
+    if (VAT_SETTLED.includes(inv.vatStatus)) throw new ApiError(`VAT on ${inv.invoiceNumber} is already settled (${inv.vatStatus.replace(/_/g, " ")})`, "conflict");
+    const ids = input.attachmentIds ?? [];
+    if (VAT_SETTLED.includes(status) && !ids.length) throw new ApiError("Attach the FIRS receipt or the client's VAT credit note", "invalid");
+    if (ids.some((id) => !this.attachments.some((a) => a.id === id && a.projectId === inv.projectId))) throw new ApiError("File is not on this project", "invalid");
+    const at = this.now();
+    Object.assign(inv, { vatStatus: status, vatSettledAt: input.date || at.slice(0, 10), vatSettledBy: actorId, vatNote: input.note?.trim() || undefined, vatEvidenceIds: [...inv.vatEvidenceIds, ...ids], updatedAt: at, updatedBy: actorId });
+    this.log(inv.projectId, actorId, "invoice", `VAT on ${inv.invoiceNumber} (${this.fmt(inv.vatAmount)}) — ${status.replace(/_/g, " ")}`, inv.vatNote, { model: "ClientInvoice", id: inv.id });
+    this.emit(); return inv;
   }
 
   // ======================================================================

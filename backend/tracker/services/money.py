@@ -13,6 +13,7 @@ from ..errors import ApiError
 from ..models import (Actual, Approval, Asset, ChangeOrder, CostItem, GoodsReceipt, InventoryItem, Project, PurchaseItem, PurchaseOrder,
                       Retention, StockMovement, User, Vendor)
 from . import base as b
+from . import billing
 
 # A purchase order does not need a named vendor, but the column and everything reading it still do.
 UNNAMED_VENDOR = "Vendor not recorded"
@@ -235,7 +236,7 @@ def retention(p: Project) -> dict:
     if r:
         return {"projectId": p.id, "percent": float(r.percent), "amountHeld": float(r.amount_held), "releaseConditions": r.release_conditions,
                 "releasedAt": b.iso(r.released_at), "releasedBy": r.released_by_id, "approvalId": r.approval_id}
-    held = b.round2(b.dec(p.contract_value) * b.dec(p.retention_percent) / 100) if p.stage >= 6 else Decimal("0")
+    held = b.round2(b.dec(p.contract_value_net) * b.dec(p.retention_percent) / 100) if p.stage >= 6 else Decimal("0")
     return {"projectId": p.id, "percent": float(p.retention_percent), "amountHeld": float(held.to_integral_value()),
             "releaseConditions": f"Held from handover · released after {int(b.threshold_num('dlp.months', 12))}-month DLP", "releasedAt": None, "releasedBy": None, "approvalId": None}
 
@@ -281,4 +282,4 @@ def money(project_id: str) -> dict:
     burn = int(round(actual / planned * 100)) if planned > 0 else 0
     return {"planned": float(planned), "committed": float(committed), "actual": float(actual), "variance": float(planned - actual), "burnPct": burn,
             "forecast": float(max(committed, actual)), "byCategory": {k: {kk: float(vv) for kk, vv in v.items()} for k, v in by.items()},
-            "changeOrders": float(cos), "retentionHeld": retention(p)["amountHeld"]}
+            "changeOrders": float(cos), "retentionHeld": retention(p)["amountHeld"], **billing.vat_block(p, cos)}

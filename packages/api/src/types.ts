@@ -62,7 +62,16 @@ export interface Project extends AuditFields {
   pmId: string; leadEngineerId: string;
   /** delegated per site: this person may record commissioning here, whatever their role */
   commissioningAssigneeId?: string;
-  contractValue: number; approvedBudget: number; committed: number; actual: number;
+  /** the number the contract is written in — net of VAT. Budgets, margin and retention are measured against this */
+  contractValueNet: number;
+  /** percent, per project (7.5 by default; 0 for zero-rated work) */
+  vatRate: number;
+  vatTreatment: VatTreatment;
+  /** derived: VAT on the net contract at vatRate; 0 when exempt */
+  vatAmount: number;
+  /** derived: net + VAT. Always labelled "gross" or "incl. VAT" wherever it is shown */
+  contractValue: number;
+  approvedBudget: number; committed: number; actual: number;
   stagePlanned: Partial<Record<Stage, string>>; stageActual: Partial<Record<Stage, string>>;
   defectsLiabilityEnd?: string; retentionPercent: number;
   openIssues: { critical: number; high: number; medium: number; low: number };
@@ -119,7 +128,8 @@ export type EventType =
   | "visit" | "issue_raised" | "issue_closed" | "change_order"
   | "role_granted" | "role_revoked" | "commissioning_assigned" | "note"
   | "stock_movement" | "cost_item" | "retention" | "reconciliation"
-  | "issue" | "commissioning" | "hse" | "warranty" | "stock_count";
+  | "issue" | "commissioning" | "hse" | "warranty" | "stock_count"
+  | "contract_updated" | "invoice";
 
 export interface ChronologyEvent {
   id: string; projectId: string; occurredAt: string; actorId: string; eventType: EventType;
@@ -231,6 +241,25 @@ export interface ChangeOrder extends AuditFields {
 }
 export interface Retention { projectId: string; percent: number; amountHeld: number; releaseConditions: string; releasedAt?: string; releasedBy?: string; approvalId?: string }
 
+// ---------- VAT & client billing ----------
+/** standard: we collect VAT and remit it · withheld_by_client: the client (oil & gas, MDAs) remits it on our behalf · exempt: zero-rated */
+export type VatTreatment = "standard" | "withheld_by_client" | "exempt";
+export const VAT_TREATMENT_LABEL: Record<VatTreatment, string> = { standard: "Standard — we collect and remit", withheld_by_client: "Withheld by client — they remit to FIRS", exempt: "Exempt / zero-rated" };
+/** outstanding: nothing settled · collected: client paid it to us, we still owe FIRS · withheld_by_client / remitted: settled with FIRS */
+export type VatStatus = "outstanding" | "collected" | "withheld_by_client" | "remitted";
+export const VAT_STATUS_LABEL: Record<VatStatus, string> = { outstanding: "Outstanding", collected: "Collected — to remit", withheld_by_client: "Withheld by client", remitted: "Remitted to FIRS" };
+export const VAT_SETTLED: readonly VatStatus[] = ["withheld_by_client", "remitted"];
+export interface InvoiceReceipt { id: string; date: string; amount: number; note?: string; attachmentIds: string[]; recordedBy: string; recordedAt: string }
+/** What we billed the client, what came in against it, and where its VAT stands. Maker-checked like everything else. */
+export interface ClientInvoice extends AuditFields, ReviewFields {
+  id: string; projectId: string; invoiceNumber: string; issuedAt: string; description: string;
+  netAmount: number; vatAmount: number; grossAmount: number;
+  receipts: InvoiceReceipt[];
+  vatStatus: VatStatus; vatSettledAt?: string; vatSettledBy?: string; vatNote?: string; vatEvidenceIds: string[];
+  /** the invoice itself */
+  attachmentIds: string[];
+}
+
 export interface QbBill {
   id: string; docNumber: string; vendorName: string; txnDate: string; dueDate: string; totalAmount: number; balance: number;
   currency: string; projectId?: string; matchedPoId?: string; matchStatus: "matched" | "suggested" | "unmatched"; syncedAt: string;
@@ -240,6 +269,10 @@ export interface ProjectMoney {
   planned: number; committed: number; actual: number; variance: number; burnPct: number; forecast: number;
   byCategory: Record<CostCategory, { planned: number; committed: number; actual: number }>;
   changeOrders: number; retentionHeld: number;
+  /** VAT & billing — net contract (+ approved COs) is the base; gross is derived; everything is labelled */
+  contractNet: number; vatRate: number; vatDue: number; contractGross: number;
+  invoicedNet: number; invoicedVat: number; received: number;
+  vatCollected: number; vatSettled: number; vatOutstanding: number;
 }
 
 // ============================ Phase 3 — field & quality (spec §4.6, §4.8, §4.9, §4.14, §4.15 phase 3) ============================

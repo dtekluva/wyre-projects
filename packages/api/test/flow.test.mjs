@@ -142,6 +142,54 @@ const q3 = api.addAttachment("u_ft1", "p1", { fileName: "late.jpg", caption: "La
 api.addIssuePhotos("u_ft1", isu2.id, { attachmentIds: [q3.id] });
 ok(isu2.reviewStatus === "pending" && isu2.reviewVersion === 2 && !isu2.checkedBy, "adding to a checked issue re-enters review (§4.13)");
 ok(api.listEvents("p1").some((e) => /re-entered review/.test(e.summary)), "chronology records the re-entry");
+
+// ---- VAT & billing: net is the number, gross is derived, and the liability is tracked per invoice ----
+const vtPj = api.raw ? api.raw("p1") : api.projects.find((x) => x.id === "p1");
+ok(vtPj.contractValueNet > 0 && Math.abs(vtPj.contractValue - (vtPj.contractValueNet + vtPj.vatAmount)) < 0.01, `seed project: gross = net + VAT (${vtPj.contractValueNet} + ${vtPj.vatAmount})`);
+ok(Math.abs(vtPj.vatAmount - Math.round(vtPj.contractValueNet * 7.5) / 100) < 0.01, "VAT is 7.5% of net");
+const vtP = api.createProject("u_pm1", { name: "VAT test job", clientName: "Acme", branchName: "HQ", location: "Lagos", projectType: "solar_battery", contractValueNet: 1_000_000, pmId: "u_pm1", leadEngineerId: "u_pm2" });
+ok(vtP.contractValueNet === 1_000_000 && vtP.vatAmount === 75_000 && vtP.contractValue === 1_075_000 && vtP.vatRate === 7.5 && vtP.vatTreatment === "standard", "createProject: net in, VAT and gross derived");
+const vtEx = api.createProject("u_pm1", { name: "Exempt job", clientName: "NGO", branchName: "Site", location: "Abuja", projectType: "solar_battery", contractValueNet: 500_000, vatTreatment: "exempt", pmId: "u_pm1", leadEngineerId: "u_pm2" });
+ok(vtEx.vatAmount === 0 && vtEx.contractValue === 500_000, "exempt project carries no VAT");
+expectErr(() => api.createProject("u_pm1", { name: "Bad budget", clientName: "x", branchName: "x", location: "x", projectType: "solar_battery", contractValueNet: 100, approvedBudget: 200, pmId: "u_pm1", leadEngineerId: "u_pm2" }), "invalid", "budget is checked against the NET contract");
+let vtM = api.money(vtP.id);
+ok(vtM.contractNet === 1_000_000 && vtM.vatDue === 75_000 && vtM.contractGross === 1_075_000 && vtM.vatOutstanding === 75_000 && vtM.vatSettled === 0, "money(): VAT due on net, nothing settled yet");
+expectErr(() => api.setContractTerms("u_pm1", vtP.id, { contractValueNet: 2_000_000 }), "forbidden", "a tech lead cannot rewrite contract terms");
+api.setContractTerms("u_fin", vtP.id, { contractValueNet: 2_000_000, vatTreatment: "withheld_by_client" });
+ok(vtP.contractValueNet === 2_000_000 && vtP.vatAmount === 150_000 && vtP.contractValue === 2_150_000, "setContractTerms recomputes VAT and gross");
+ok(api.listEvents(vtP.id).some((e) => e.eventType === "contract_updated"), "contract change is in the chronology");
+// invoices
+expectErr(() => api.raiseInvoice("u_ft1", vtP.id, { invoiceNumber: "INV-1", description: "x", netAmount: 100 }), "forbidden", "a tech cannot raise a client invoice");
+expectErr(() => api.raiseInvoice("u_fin", vtP.id, { invoiceNumber: "", description: "x", netAmount: 100 }), "invalid", "invoice number is required");
+const vtInv = api.raiseInvoice("u_fin", vtP.id, { invoiceNumber: "INV-1", description: "Mobilisation 40%", netAmount: 800_000 });
+ok(vtInv.vatAmount === 60_000 && vtInv.grossAmount === 860_000 && vtInv.reviewStatus === "pending" && vtInv.vatStatus === "outstanding", "invoice: VAT at the project rate, pending check");
+expectErr(() => api.raiseInvoice("u_fin", vtP.id, { invoiceNumber: "inv-1", description: "dup", netAmount: 1 }), "conflict", "invoice numbers are unique per project, case-insensitively");
+ok(api.money(vtP.id).invoicedNet === 0, "a pending invoice does not count as invoiced");
+expectErr(() => api.recordReceipt("u_fin", vtInv.id, { amount: 100 }), "conflict", "no receipts against an unchecked invoice");
+ok(api.reviewQueue("u_dir").some((q) => q.kind === "client_invoice" && q.id === vtInv.id), "the invoice is in the Director's review queue");
+api.check("client_invoice", vtInv.id, "u_dir", "checked");
+vtM = api.money(vtP.id);
+ok(vtM.invoicedNet === 800_000 && vtM.invoicedVat === 60_000, "checked invoice counts as invoiced");
+expectErr(() => api.recordReceipt("u_fin", vtInv.id, { amount: 900_000 }), "invalid", "a receipt cannot exceed the gross");
+api.recordReceipt("u_fin", vtInv.id, { amount: 800_000, note: "net paid, VAT withheld" });
+ok(api.money(vtP.id).received === 800_000, "receipt recorded");
+expectErr(() => api.settleVat("u_fin", vtInv.id, { status: "withheld_by_client" }), "invalid", "settling VAT needs evidence");
+expectErr(() => api.settleVat("u_fin", vtInv.id, { status: "outstanding" }), "invalid", "'outstanding' is not a settlement");
+const vtCn = api.addAttachment("u_fin", vtP.id, { fileName: "credit-note.pdf", kind: "document", caption: "VAT credit note" });
+api.settleVat("u_fin", vtInv.id, { status: "withheld_by_client", attachmentIds: [vtCn.id], note: "client remits" });
+vtM = api.money(vtP.id);
+ok(vtInv.vatStatus === "withheld_by_client" && vtM.vatSettled === 60_000 && vtM.vatOutstanding === 90_000, `VAT settled on the invoice; outstanding = due − settled (${vtM.vatOutstanding})`);
+expectErr(() => api.settleVat("u_fin", vtInv.id, { status: "remitted", attachmentIds: [vtCn.id] }), "conflict", "settled VAT cannot be settled twice");
+// collected → remitted path
+const vtInv2 = api.raiseInvoice("u_fin", vtP.id, { invoiceNumber: "INV-2", description: "Balance", netAmount: 1_200_000 });
+api.check("client_invoice", vtInv2.id, "u_dir", "checked");
+api.settleVat("u_fin", vtInv2.id, { status: "collected" });
+ok(vtInv2.vatStatus === "collected" && api.money(vtP.id).vatCollected === 90_000 && api.money(vtP.id).vatOutstanding === 90_000, "collected VAT is money in but still owed to FIRS");
+const vtFirs = api.addAttachment("u_fin", vtP.id, { fileName: "vtFirs-receipt.pdf", kind: "document", caption: "FIRS receipt" });
+api.settleVat("u_fin", vtInv2.id, { status: "remitted", attachmentIds: [vtFirs.id] });
+ok(api.money(vtP.id).vatOutstanding === 0 && api.money(vtP.id).vatCollected === 0, "remitting clears the liability");
+// retention on net
+ok(api.retention("p4").amountHeld === Math.round(api.projects.find((x) => x.id === "p4").contractValueNet * api.projects.find((x) => x.id === "p4").retentionPercent / 100), "retention is held on the NET contract");
 const p1Act1 = api.money("p1").actual; api.check("issue", isu.id, "u_pm1", "checked");
 ok(isu.status === "closed" && api.money("p1").actual === p1Act1 + 5000, "checked resolution closes the issue and posts ₦5k O&M actual");
 

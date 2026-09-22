@@ -1,5 +1,5 @@
 import { STAGES, type StageDef } from "./gates";
-import { MOVEMENT_LABEL, type Actual, type Attachment, type CommissioningRecord, type DocType, type Document, type GoodsReceipt,
+import { MOVEMENT_LABEL, type Actual, type Attachment, type ClientInvoice, type CommissioningRecord, type DocType, type Document, type GoodsReceipt,
   type HseIncident, type Issue, type ReviewStatus, type SiteVisit, type StockMovement } from "./types";
 
 /**
@@ -24,7 +24,7 @@ export interface FileSection { key: string; title: string; hint?: string; stage?
 /** The slice of the store the sectioner reads. MockApi satisfies it structurally. */
 export interface FileStore {
   documents: Document[]; attachments: Attachment[]; goodsReceipts: GoodsReceipt[]; movements: StockMovement[];
-  actuals: Actual[]; visits: SiteVisit[]; commissionings: CommissioningRecord[]; hseIncidents: HseIncident[]; issues: Issue[];
+  actuals: Actual[]; visits: SiteVisit[]; commissionings: CommissioningRecord[]; hseIncidents: HseIncident[]; issues: Issue[]; clientInvoices: ClientInvoice[];
   items: { id: string; name: string }[];
 }
 export type FileScope = { projectId: string } | "warehouse";
@@ -40,15 +40,16 @@ const SECTION_META: Record<string, { title: string; hint?: string }> = {
   writeoffs: { title: "Write-offs" },
   movements: { title: "Stock movements" },
   expenses: { title: "Expenses & receipts" },
+  invoices: { title: "Invoices & receipts", hint: "what we billed, what came in, VAT evidence" },
   signoffs: { title: "Sign-offs", hint: "client signatures" },
   linked: { title: "From other records" },
 };
-const SECTION_ORDER = ["docs-other", "uploads", "deliveries", "issues", "visits", "commissioning", "hse", "writeoffs", "movements", "expenses", "signoffs", "linked"];
+const SECTION_ORDER = ["docs-other", "uploads", "deliveries", "issues", "visits", "commissioning", "hse", "writeoffs", "movements", "expenses", "invoices", "signoffs", "linked"];
 
 /** Where an attachment uploaded against a record with only `linkedTo` set should go. */
 const LINKED_MODEL_SECTION: Record<string, string> = {
   PurchaseOrder: "deliveries", GoodsReceipt: "deliveries", StockMovement: "movements", SiteVisit: "visits", Visit: "visits",
-  CommissioningRecord: "commissioning", Commissioning: "commissioning", HseIncident: "hse", Actual: "expenses", Issue: "issues",
+  CommissioningRecord: "commissioning", Commissioning: "commissioning", HseIncident: "hse", Actual: "expenses", Issue: "issues", ClientInvoice: "invoices",
 };
 
 type Hit = { section: string; via: FileVia; n: number };
@@ -84,6 +85,11 @@ function indexAttachments(s: FileStore): Map<string, Hit> {
     const section = m.movementType === "receipt" ? "deliveries" : m.movementType === "write_off" ? "writeoffs" : "movements";
     const label = m.sourceRef?.label ?? `${MOVEMENT_LABEL[m.movementType]} · ${itemName(m.itemId)} × ${m.qty}`;
     for (const id of m.attachmentIds ?? []) put(id, section, { model: "StockMovement", id: m.id, label });
+  }
+  for (const inv of s.clientInvoices) {
+    for (const id of inv.attachmentIds) put(id, "invoices", { model: "ClientInvoice", id: inv.id, label: `Invoice ${inv.invoiceNumber}` });
+    for (const r of inv.receipts) for (const id of r.attachmentIds) put(id, "invoices", { model: "ClientInvoice", id: inv.id, label: `Receipt · ${inv.invoiceNumber}` });
+    for (const id of inv.vatEvidenceIds) put(id, "invoices", { model: "ClientInvoice", id: inv.id, label: `VAT · ${inv.invoiceNumber}` });
   }
   for (const a of s.actuals) for (const id of a.attachmentIds) put(id, "expenses", { model: "Actual", id: a.id, label: a.sourceRef.label });
   return idx;

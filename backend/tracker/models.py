@@ -6,6 +6,7 @@ from __future__ import annotations
 import secrets
 
 from django.contrib.auth.models import AbstractUser
+from decimal import Decimal
 from django.db import models
 
 from .storage import attachment_path, document_path
@@ -70,6 +71,8 @@ def id_mv():
 
 def id_p():
     return _nid("p")
+def id_inv():
+    return _nid("inv")
 
 def id_pi():
     return _nid("pi")
@@ -194,6 +197,12 @@ class Project(Audit):
     # the install and holds the meter. It grants commissioning.create on THIS project only; checking is
     # unaffected, so the reading is still signed off by someone else.
     commissioning_assignee = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    # The contract is written NET of VAT. `contract_value` is the GROSS (net + VAT) and is derived in save(),
+    # kept as a column so old readers keep working — but nothing should ever write it directly.
+    contract_value_net = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("7.50"))
+    # standard: we collect and remit · withheld_by_client: the client remits to FIRS on our behalf · exempt: zero-rated
+    vat_treatment = models.CharField(max_length=20, default="standard")
     contract_value = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     approved_budget = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     committed = models.DecimalField(max_digits=18, decimal_places=2, default=0)
@@ -203,6 +212,16 @@ class Project(Audit):
     defects_liability_end = models.DateField(null=True, blank=True)
     retention_percent = models.DecimalField(max_digits=5, decimal_places=2, default=5)
     wyre_investor_project_id = models.IntegerField(null=True, blank=True, help_text="Link to investors_project in the Wyre backend (optional)")
+
+    @property
+    def vat_amount(self) -> Decimal:
+        if self.vat_treatment == "exempt" or not self.vat_rate or self.vat_rate <= 0:
+            return Decimal("0.00")
+        return (Decimal(self.contract_value_net) * Decimal(self.vat_rate) / 100).quantize(Decimal("0.01"))
+
+    def save(self, *args, **kwargs):
+        self.contract_value = (Decimal(self.contract_value_net) + self.vat_amount).quantize(Decimal("0.01"))
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.code} {self.name}"
@@ -293,6 +312,32 @@ class Attachment(Reviewable):
     linked_to = models.JSONField(null=True, blank=True)
     caption = models.CharField(max_length=300, blank=True, null=True)
     file = models.FileField(upload_to=attachment_path, null=True, blank=True)
+
+
+class ClientInvoice(Audit, Reviewable):
+    """What we billed the client, what came in against it, and where its VAT stands.
+
+    VAT status: outstanding → collected (client paid it to us; we still owe FIRS) → remitted (we paid FIRS),
+    or outstanding → withheld_by_client (an oil & gas client or MDA remits on our behalf; their credit note is
+    the evidence). Settling needs the paper that proves it."""
+    id = models.CharField(primary_key=True, max_length=40, default=id_inv)
+    project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="client_invoices")
+    invoice_number = models.CharField(max_length=40)
+    issued_at = models.DateField()
+    description = models.CharField(max_length=300, blank=True)
+    net_amount = models.DecimalField(max_digits=18, decimal_places=2)
+    vat_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    gross_amount = models.DecimalField(max_digits=18, decimal_places=2)
+    receipts = models.JSONField(default=list, blank=True)
+    vat_status = models.CharField(max_length=20, default="outstanding")
+    vat_settled_at = models.DateField(null=True, blank=True)
+    vat_settled_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    vat_note = models.CharField(max_length=300, blank=True, null=True)
+    vat_evidence_ids = models.JSONField(default=list, blank=True)
+    attachment_ids = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["project", "invoice_number"], name="uniq_invoice_number_per_project")]
 
 
 class Approval(models.Model):

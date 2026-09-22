@@ -47,5 +47,11 @@ ok(!!isec && ["att_iss_b", "att_iss_m", "att_iss_a"].every((id) => isec.entries.
 ok(lab("att_iss_b") === "Before · Loose rail" && lab("att_iss_m") === "Loose rail" && lab("att_iss_a") === "After · Loose rail", `issue tiles say what they are (${lab("att_iss_b")} / ${lab("att_iss_m")} / ${lab("att_iss_a")})`);
 ok(!sectionFiles(api, { projectId: pj }).find((s) => s.key === "uploads")?.entries.some((e) => e.id.startsWith("att_iss")), "issue photos no longer land in Photos & files");
 
+// Invoice files — the invoice itself, remittance advices, VAT evidence — file together under "Invoices & receipts".
+const isec2 = sectionFiles(api, { projectId: "p1" }).find((s) => s.key === "invoices");
+const invLabels = (isec2?.entries ?? []).map((e) => e.via?.label ?? "");
+ok(!!isec2 && isec2.entries.length >= 3, `seed invoice files land under Invoices & receipts (${isec2?.entries.length ?? 0})`);
+ok(invLabels.some((l) => l.startsWith("Invoice ")) && invLabels.some((l) => l.startsWith("Receipt · ")) && invLabels.some((l) => l.startsWith("VAT · ")), `tiles say invoice / receipt / VAT (${invLabels.join(", ")})`);
+
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED");
 process.exit(fails ? 1 : 0);

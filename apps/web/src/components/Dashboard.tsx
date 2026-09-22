@@ -29,6 +29,9 @@ export function Dashboard({ projects }: { projects: Project[] }) {
     .map((p) => ({ p, slip: daysBetween(p.stagePlanned[p.stage]!, today) })).sort((a, b) => b.slip - a.slip);
   const belowReorder = seesStock ? api.balances().filter((b) => b.belowReorder && b.qtyOnHand <= 0 === false && b.locationId === api.mainLocationId()).length : 0;
   const unmatched = seesRecon ? api.listQbBills().filter((b) => b.confidence !== "matched").length : 0;
+  // VAT the company still owes FIRS (or has not yet seen settled by a withholding client), by project.
+  const vatOpen = seesMoney ? live.map((p) => ({ p, m: api.money(p.id) })).filter((x) => x.m.vatOutstanding > 0) : [];
+  const vatOpenTotal = vatOpen.reduce((s, x) => s + x.m.vatOutstanding, 0);
 
   const attention = [
     { key: "checks", n: queue.length, sub: overdueChecks ? `${overdueChecks} over 3 days` : "none overdue", label: "Awaiting my check", to: "/work/reviews", tone: overdueChecks ? "bad" : queue.length ? "warn" : undefined },
@@ -37,6 +40,7 @@ export function Dashboard({ projects }: { projects: Project[] }) {
     { key: "sla", n: breached.length, sub: "issues past their SLA", label: "SLA breached", to: "/", tone: breached.length ? "bad" : undefined },
     { key: "exp", n: expiring.filter((e) => e.days <= 30).length, sub: "documents, next 30 days", label: "Expiring soon", to: "/", tone: expiring.some((e) => e.days < 0) ? "bad" : expiring.length ? "warn" : undefined },
     ...(seesStock ? [{ key: "stk", n: belowReorder, sub: "items below reorder level", label: "Restock", to: "/inventory", tone: belowReorder ? "warn" : undefined }] : []),
+    ...(seesMoney ? [{ key: "vat", n: vatOpen.length, sub: vatOpen.length ? `${naira(vatOpenTotal, true)} not yet settled with FIRS` : "all settled", label: "VAT outstanding", to: "/?vat=open", tone: vatOpen.length ? "warn" : undefined }] : []),
     ...(seesRecon ? [{ key: "qb", n: unmatched, sub: "bills without a purchase order", label: "Unreconciled", to: "/finance/reconciliation", tone: unmatched ? "warn" : undefined }] : []),
   ];
 

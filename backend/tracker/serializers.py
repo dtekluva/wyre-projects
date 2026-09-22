@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from . import rbac
-from .models import (Extraction, Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
+from .models import (ClientInvoice, Extraction, Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
                      InventoryItem, Issue, Project, ProjectMembership, PurchaseOrder, QbBill, Retention, SiteVisit, StockCount, StockLocation, StockMovement,
                      Threshold, User, Vendor, WarrantyClaim)
 from .services.base import iso
@@ -51,7 +51,7 @@ def project(p: Project, open_issues: Optional[dict] = None) -> dict:
     oi = (open_issues or {}).get(p.id) or {}
     return {"id": p.id, "code": p.code, "name": p.name, "clientName": p.client_name, "branchName": p.branch_name, "location": p.location, "projectType": p.project_type,
             "systemCapacityKwp": num(p.system_capacity_kwp), "stage": p.stage, "rag": p.rag, "ragReason": p.rag_reason, "pmId": p.pm_id, "leadEngineerId": p.lead_engineer_id, "commissioningAssigneeId": p.commissioning_assignee_id,
-            "contractValue": num(p.contract_value), "approvedBudget": num(p.approved_budget), "committed": num(p.committed), "actual": num(p.actual),
+            "contractValueNet": num(p.contract_value_net), "vatRate": num(p.vat_rate), "vatTreatment": p.vat_treatment, "vatAmount": num(p.vat_amount), "contractValue": num(p.contract_value), "approvedBudget": num(p.approved_budget), "committed": num(p.committed), "actual": num(p.actual),
             "stagePlanned": {str(k): v for k, v in (p.stage_planned or {}).items()}, "stageActual": {str(k): v for k, v in (p.stage_actual or {}).items()},
             "defectsLiabilityEnd": d8(p.defects_liability_end), "retentionPercent": num(p.retention_percent),
             "openIssues": {"critical": oi.get("critical", 0), "high": oi.get("high", 0), "medium": oi.get("medium", 0), "low": oi.get("low", 0)}, **audit(p)}
@@ -219,6 +219,13 @@ def open_issue_counts() -> dict:
     return out
 
 
+def client_invoice(i: ClientInvoice) -> dict:
+    return {"id": i.id, "projectId": i.project_id, "invoiceNumber": i.invoice_number, "issuedAt": d8(i.issued_at), "description": i.description,
+            "netAmount": num(i.net_amount), "vatAmount": num(i.vat_amount), "grossAmount": num(i.gross_amount), "receipts": list(i.receipts or []),
+            "vatStatus": i.vat_status, "vatSettledAt": d8(i.vat_settled_at), "vatSettledBy": i.vat_settled_by_id, "vatNote": i.vat_note,
+            "vatEvidenceIds": list(i.vat_evidence_ids or []), "attachmentIds": list(i.attachment_ids or []), **audit(i), **review(i)}
+
+
 def snapshot(u: User) -> dict:
     """Everything the web app's in-memory store needs.
 
@@ -258,6 +265,7 @@ def snapshot(u: User) -> dict:
         "actuals": [actual(a) for a in Actual.objects.all().order_by("-date")] if sees_money else [],
         "changeOrders": [change_order(c) for c in ChangeOrder.objects.all().order_by("-created_at")] if sees_money else [],
         "retentions": [retention(r) for r in Retention.objects.all()] if sees_money else [],
+        "clientInvoices": [client_invoice(i) for i in ClientInvoice.objects.all().order_by("-issued_at")] if sees_money else [],
         "qbBills": [qb_bill(q) for q in QbBill.objects.all().order_by("-txn_date")] if rbac.can(u, "recon.read") else [],
         "visits": [visit(v) for v in scoped(SiteVisit.objects.all()).order_by("-started_at")],
         "issues": [issue(i) for i in scoped(Issue.objects.all()).order_by("-raised_at")],

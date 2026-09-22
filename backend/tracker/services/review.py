@@ -9,14 +9,14 @@ from django.utils import timezone
 from .. import rbac
 from ..constants import COST_CATEGORY_LABEL, DOC_TYPE_LABEL, HSE_TYPE_LABEL, MOVEMENT_LABEL, VISIT_TYPE_LABEL
 from ..errors import ApiError
-from ..models import (Actual, Attachment, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Issue, SiteVisit, StockMovement, User, WarrantyClaim)
+from ..models import (ClientInvoice, Actual, Attachment, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Issue, SiteVisit, StockMovement, User, WarrantyClaim)
 from ..rbac import CHECK_PERM
 from . import base as b
 
 MODELS = {"document": Document, "attachment": Attachment, "goods_receipt": GoodsReceipt, "stock_movement": StockMovement, "cost_item": CostItem,
-          "site_visit": SiteVisit, "issue": Issue, "commissioning": CommissioningRecord, "hse": HseIncident, "warranty": WarrantyClaim}
+          "site_visit": SiteVisit, "issue": Issue, "commissioning": CommissioningRecord, "hse": HseIncident, "warranty": WarrantyClaim, "client_invoice": ClientInvoice}
 MODEL_NAME = {"document": "Document", "attachment": "Attachment", "goods_receipt": "GoodsReceipt", "stock_movement": "StockMovement", "cost_item": "CostItem",
-              "site_visit": "SiteVisit", "issue": "Issue", "commissioning": "CommissioningRecord", "hse": "HseIncident", "warranty": "WarrantyClaim"}
+              "site_visit": "SiteVisit", "issue": "Issue", "commissioning": "CommissioningRecord", "hse": "HseIncident", "warranty": "WarrantyClaim", "client_invoice": "ClientInvoice"}
 
 
 def pending_items() -> list[dict]:
@@ -73,6 +73,8 @@ def _collect(user: Optional[User]) -> list[dict]:
         push("hse", h, h.project_id, f"HSE · {HSE_TYPE_LABEL[h.type]}", f"{h.severity} · {h.description[:70]}")
     for w in WarrantyClaim.objects.filter(review_status="pending").select_related("asset"):
         push("warranty", w, w.project_id, f"Warranty claim · {w.asset.serial}", f"{w.status} · {b.vendor_name(w.vendor_id)}", w.cost_recovered or None)
+    for inv in ClientInvoice.objects.filter(review_status="pending").select_related("project"):
+        push("client_invoice", inv, inv.project_id, f"Invoice {inv.invoice_number} · {inv.project.client_name}", f"{inv.description} · net {b.fmt(inv.net_amount)} + VAT {b.fmt(inv.vat_amount)}", inv.gross_amount)
     return sorted(items, key=lambda x: x["submittedAt"])
 
 
@@ -152,6 +154,8 @@ def check(actor: User, kind: str, id: str, decision: str, comment: Optional[str]
         item.save()
         if ok and item.result != "fail":
             field_svc.emit_commissioning_evidence(item, actor)
+    elif kind == "client_invoice":
+        b.stamp(item, actor, at); label = f"invoice {item.invoice_number} · {b.fmt(item.gross_amount)} gross"
     elif kind == "hse":
         b.stamp(item, actor, at); label = f"HSE {HSE_TYPE_LABEL[item.type]}"
     elif kind == "warranty":
