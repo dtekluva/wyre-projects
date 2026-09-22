@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
@@ -106,7 +107,7 @@ def raise_invoice(actor: User, project_id: str, input: dict) -> ClientInvoice:
         raise ApiError("Invoice date must be YYYY-MM-DD", "invalid")
     ids = _files_on_project(input.get("attachmentIds"), project_id)
     at = b.now()
-    inv = ClientInvoice.objects.create(**b.maybe_id(input, ClientInvoice, "inv"), project=p, invoice_number=no, issued_at=issued[:10], description=b.clean(input.get("description")) or "",
+    inv = ClientInvoice.objects.create(**b.maybe_id(input, ClientInvoice, "inv"), project=p, invoice_number=no, issued_at=date.fromisoformat(issued[:10]), description=b.clean(input.get("description")) or "",
                                        net_amount=b.round2(net), vat_amount=vat, gross_amount=b.round2(net + vat), receipts=[], vat_status="outstanding", vat_evidence_ids=[], attachment_ids=ids,
                                        created_at=at, created_by=actor, updated_at=at, updated_by=actor, review_status="pending", submitted_by=actor, submitted_at=at, review_version=1)
     b.log(project_id, actor, "invoice", f"Invoice {no} raised — {b.fmt(net)} net + {b.fmt(vat)} VAT (pending check)", inv.description or None, {"model": "ClientInvoice", "id": inv.id})
@@ -155,7 +156,7 @@ def record_vat_payment(actor: User, project_id: str, input: dict) -> VatPayment:
         raise ApiError("Date must be YYYY-MM-DD", "invalid")
     ids = _files_on_project(input.get("attachmentIds"), project_id)
     at = b.now()
-    v = VatPayment.objects.create(**b.maybe_id(input, VatPayment, "vatp"), project=p, amount=b.round2(amount), paid_on=paid_on[:10], method=method,
+    v = VatPayment.objects.create(**b.maybe_id(input, VatPayment, "vatp"), project=p, amount=b.round2(amount), paid_on=date.fromisoformat(paid_on[:10]), method=method,
                                   note=b.clean(input.get("note")) or None, attachment_ids=ids,
                                   created_at=at, created_by=actor, updated_at=at, updated_by=actor, review_status="pending", submitted_by=actor, submitted_at=at, review_version=1)
     b.log(project_id, actor, "invoice", f"VAT payment recorded — {b.fmt(v.amount)} · {VAT_PAYMENT_METHODS[method]} (pending check)", v.note, {"model": "VatPayment", "id": v.id})

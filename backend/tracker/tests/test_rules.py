@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 
 from tracker.errors import ApiError
 from tracker.models import Approval, Asset, CostItem, Document, Issue, Project, PurchaseOrder, StockCount, StockMovement, User
-from tracker import rbac
+from tracker import rbac, serializers
 from tracker.services import approvals, billing, documents, field, gates, money, projects, recon, review, stock
 from tracker.services.base import dec
 
@@ -407,6 +407,7 @@ class VisitPhotoTest(TestCase):
         self.err("forbidden", billing.raise_invoice, u["u_ft1"], np_.id, {"invoiceNumber": "INV-1", "netAmount": 100})
         self.err("invalid", billing.raise_invoice, u["u_fin"], np_.id, {"invoiceNumber": "", "netAmount": 100})
         inv = billing.raise_invoice(u["u_fin"], np_.id, {"invoiceNumber": "INV-1", "description": "Mobilisation", "netAmount": 800_000})
+        serializers.client_invoice(inv)  # the HTTP path serialises what the service returns — a str date here was a 500 in production
         self.assertEqual(dec(inv.vat_amount), Decimal("60000.00")); self.assertEqual(dec(inv.gross_amount), Decimal("860000.00"))
         self.assertEqual(inv.review_status, "pending"); self.assertEqual(inv.vat_status, "outstanding")
         self.err("conflict", billing.raise_invoice, u["u_fin"], np_.id, {"invoiceNumber": "inv-1", "netAmount": 1})
@@ -423,6 +424,7 @@ class VisitPhotoTest(TestCase):
         self.err("invalid", billing.record_vat_payment, u["u_fin"], np_.id, {"amount": 0})
         cn = self.photo(u["u_fin"], np_.id, caption="VAT credit note")
         vp1 = billing.record_vat_payment(u["u_fin"], np_.id, {"amount": 60_000, "method": "withheld_by_client", "note": "INV-1 VAT", "attachmentIds": [cn]})
+        self.assertEqual(serializers.vat_payment(vp1)["paidOn"], vp1.paid_on.isoformat())
         self.assertEqual(vp1.review_status, "pending"); self.assertEqual(money.money(np_.id)["vatSettled"], 0); self.assertEqual(money.money(np_.id)["vatOutstanding"], 150_000)
         self.assertTrue(any(q["kind"] == "vat_payment" and q["id"] == vp1.id for q in review.review_queue(u["u_dir"])))
         review.check(u["u_dir"], "vat_payment", vp1.id, "checked")
