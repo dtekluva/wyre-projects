@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
 import { Link, useOutletContext } from "react-router-dom";
-import { type CostItem, COST_CATEGORY_LABEL, ROLE_LABEL, fmtDate, naira, pct, relative, type CostCategory, type Project, type PurchaseOrder } from "@wyre/api";
+import { type CostItem, COST_CATEGORY_LABEL, ROLE_LABEL, fmtDate, naira, relative, type CostCategory, type Project, type PurchaseOrder } from "@wyre/api";
 import { Thumbs } from "../components/Thumbs";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { MoneyStrip } from "../components/MoneyStrip";
+import { CategoryChart } from "../components/CategoryChart";
 import { BillingCard } from "../components/BillingCard";
 import { Badge, Empty, Note, ReviewBadge } from "../components/ui";
 
@@ -81,13 +82,8 @@ export function ProjectMoney() {
     <div className="stack" style={{ gap: 20 }}>
       <MoneyStrip p={p} />
 
-      <div className="card"><div className="card__head"><div className="card__title">Budget vs actual by category</div>
-        <div className="legend"><span><i style={{ background: "var(--ns-purple-200)" }} />committed</span><span><i style={{ background: "var(--ns-color-primary)" }} />actual</span><span>track = planned</span></div></div>
-        <div className="card__body">{CATS.filter((c) => m.byCategory[c].planned || m.byCategory[c].committed || m.byCategory[c].actual).map((c) => { const b = m.byCategory[c]; const base = Math.max(b.planned, b.committed, b.actual, 1);
-          return <div key={c} className="catbar"><span className="sm">{COST_CATEGORY_LABEL[c]}</span>
-            <div className="catbar__track"><i className="catbar__committed" style={{ width: `${pct(b.committed, base)}%` }} /><i className={`catbar__actual ${b.planned && b.actual > b.planned ? "catbar__actual--over" : ""}`} style={{ width: `${pct(b.actual, base)}%` }} /></div>
-            <span className="catbar__nums">{naira(b.actual, true)} / {naira(b.committed, true)} / <b>{naira(b.planned, true)}</b></span></div>; })}
-          {m.planned === 0 && <Empty title="No checked budget lines yet" />}</div></div>
+      <div className="card"><div className="card__head"><div className="card__title">Budget by category</div><span className="sm muted">track = budget · bars clamp at the end, the badge says how far past</span></div>
+        <div className="card__body"><CategoryChart m={m} /></div></div>
 
       <div className="card"><div className="card__head"><div className="card__title">Budget lines</div><span className="sm muted">{cost.length} lines · Finance checks</span></div>
         <div className="table--wrap"><table className="table ledger table--entry"><thead><tr><th>Line</th><th>Category</th><th className="num">Planned</th><th>Status</th><th></th></tr></thead>
