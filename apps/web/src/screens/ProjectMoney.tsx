@@ -82,7 +82,7 @@ export function ProjectMoney() {
     <div className="stack" style={{ gap: 20 }}>
       <MoneyStrip p={p} />
 
-      <div className="card"><div className="card__head"><div className="card__title">Budget by category</div><span className="sm muted">track = budget · bars clamp at the end, the badge says how far past</span></div>
+      <div className="card"><div className="card__head"><div className="card__title">Budget by category</div><span className="sm muted">track = budget</span></div>
         <div className="card__body"><CategoryChart m={m} /></div></div>
 
       <div className="card"><div className="card__head"><div className="card__title">Budget lines</div><span className="sm muted">{cost.length} lines · Finance checks</span></div>
