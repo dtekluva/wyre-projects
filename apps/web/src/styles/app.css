@@ -575,13 +575,17 @@ button.frow { text-align: left; font: inherit; cursor: pointer; }
 .gsec--closed .gsec__chev { transform: rotate(-90deg); }
 .gsec__body { padding: 0 var(--ns-space-md) var(--ns-space-md); display: flex; flex-direction: column; gap: var(--ns-space-xs); }
 
-.ftile { display: flex; flex-direction: column; gap: 2px; padding: 0; border: 0; background: none; font: inherit; text-align: left; color: inherit; cursor: pointer; min-width: 0; }
+.ftile { display: flex; flex-direction: column; gap: 2px; min-width: 0; position: relative; }
+.ftile__open { display: flex; flex-direction: column; gap: 2px; padding: 0; border: 0; background: none; font: inherit; text-align: left; color: inherit; cursor: pointer; min-width: 0; }
+.ftile__void { position: absolute; top: 6px; right: 6px; opacity: 0; transition: opacity .12s ease; }
+.ftile:hover .ftile__void, .ftile:focus-within .ftile__void { opacity: 1; }
+.ftile__void .void__btn { background: rgba(255,255,255,.92); border-radius: var(--ns-radius-full); }
 .ftile__thumb { position: relative; display: block; aspect-ratio: 4/3; border-radius: var(--ns-radius-medium); overflow: hidden; border: var(--ns-border-hairline) solid var(--ns-color-border-default); background: var(--ns-color-surface-subtle); }
 .ftile__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ftile__thumb--ph { background: linear-gradient(135deg, var(--ns-purple-100), var(--ns-yellow-100)); display: grid; place-items: center; }
 .ftile__ext { font-weight: var(--ns-weight-bold); font-size: var(--ns-size-subheading); color: var(--ns-color-primary); letter-spacing: .04em; }
-.ftile:hover .ftile__thumb { border-color: var(--ns-color-primary); }
-.ftile:focus-visible .ftile__thumb { outline: 2px solid var(--ns-color-primary); outline-offset: 2px; }
+.ftile__open:hover .ftile__thumb { border-color: var(--ns-color-primary); }
+.ftile__open:focus-visible .ftile__thumb { outline: 2px solid var(--ns-color-primary); outline-offset: 2px; }
 .ftile__pip { position: absolute; top: 6px; left: 6px; padding: 2px 7px; border-radius: var(--ns-radius-full); font-size: 10.5px; font-weight: var(--ns-weight-semibold); line-height: 1.4; color: #fff; }
 .ftile__pip--warn { background: var(--ns-amber-700, #B45309); }
 .ftile__pip--bad { background: var(--ns-chart-bad, #DC2626); }
