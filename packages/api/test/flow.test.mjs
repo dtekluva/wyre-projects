@@ -155,12 +155,12 @@ ok(vtEx.vatAmount === 0 && vtEx.contractValue === 500_000, "exempt project carri
 expectErr(() => api.createProject("u_pm1", { name: "Bad budget", clientName: "x", branchName: "x", location: "x", projectType: "solar_battery", contractValueNet: 100, approvedBudget: 200, pmId: "u_pm1", leadEngineerId: "u_pm2" }), "invalid", "budget is checked against the NET contract");
 let vtM = api.money(vtP.id);
 ok(vtM.contractNet === 1_000_000 && vtM.vatDue === 75_000 && vtM.contractGross === 1_075_000 && vtM.vatOutstanding === 75_000 && vtM.vatSettled === 0, "money(): VAT due on net, nothing settled yet");
-expectErr(() => api.updateCommercials("u_pm1", vtP.id, { contractValueNet: 2_000_000 }), "forbidden", "a tech lead cannot rewrite commercials");
+expectErr(() => api.updateCommercials("u_ft1", vtP.id, { contractValueNet: 2_000_000 }), "forbidden", "a tech cannot rewrite commercials");
 expectErr(() => api.updateCommercials("u_fin", vtP.id, { approvedBudget: 5_000_000 }), "invalid", "budget above the net contract is refused");
 expectErr(() => api.updateCommercials("u_fin", vtP.id, { retentionPercent: 25 }), "invalid", "retention over 20% is refused");
 api.updateCommercials("u_fin", vtP.id, { contractValueNet: 2_000_000, vatTreatment: "withheld_by_client", approvedBudget: 1_500_000, retentionPercent: 10 });
 ok(vtP.contractValueNet === 2_000_000 && vtP.vatAmount === 150_000 && vtP.contractValue === 2_150_000 && vtP.approvedBudget === 1_500_000 && vtP.retentionPercent === 10, "updateCommercials recomputes VAT and gross and takes budget + retention");
-expectErr(() => api.setContractStatus("u_pm1", vtP.id, { status: "received" }), "forbidden", "a tech lead cannot mark the contract received");
+expectErr(() => api.setContractStatus("u_ft1", vtP.id, { status: "received" }), "forbidden", "a tech cannot mark the contract received");
 const vtDoc = api.addDocument("u_fin", vtP.id, { docType: "contract", title: "Signed contract", fileName: "contract.pdf" });
 api.setContractStatus("u_fin", vtP.id, { status: "received", receivedOn: "2026-09-22", documentId: vtDoc.id });
 ok(vtP.contractStatus === "received" && vtP.contractReceivedOn === "2026-09-22" && vtP.contractReceivedBy === "u_fin" && vtP.contractDocumentId === vtDoc.id, "contract marked received with the signed copy filed");
