@@ -68,12 +68,12 @@ def event(e: ChronologyEvent) -> dict:
 
 def document(d: Document) -> dict:
     return {"id": d.id, "projectId": d.project_id, "docType": d.doc_type, "title": d.title, "status": d.status, "issuedAt": iso(d.issued_at), "expiresAt": d8(d.expires_at),
-            "issuer": d.issuer, "version": d.version, "fileName": d.file_name, "sizeBytes": d.size_bytes, "sha256": d.sha256, "url": url(d.file), **audit(d), **review(d)}
+            "issuer": d.issuer, "version": d.version, "fileName": d.file_name, "sizeBytes": d.size_bytes, "sha256": d.sha256, "url": url(d.file), **audit(d), **review(d), **void(d)}
 
 
 def attachment(a: Attachment) -> dict:
     return {"id": a.id, "projectId": a.project_id or "", "fileName": a.file_name, "mime": a.mime, "sizeBytes": a.size_bytes, "kind": a.kind, "capturedAt": iso(a.captured_at),
-            "gps": a.gps, "sha256": a.sha256, "uploadedBy": a.uploaded_by_id, "uploadedAt": iso(a.uploaded_at), "linkedTo": a.linked_to, "caption": a.caption, "url": url(a.file), **review(a)}
+            "gps": a.gps, "sha256": a.sha256, "uploadedBy": a.uploaded_by_id, "uploadedAt": iso(a.uploaded_at), "linkedTo": a.linked_to, "caption": a.caption, "url": url(a.file), **review(a), **void(a)}
 
 
 def approval(a: Approval) -> dict:
@@ -111,7 +111,7 @@ def location(l: StockLocation) -> dict:
 
 
 def cost_item(c: CostItem) -> dict:
-    return {"id": c.id, "projectId": c.project_id, "category": c.category, "label": c.label, "plannedAmount": num(c.planned_amount), **audit(c), **review(c)}
+    return {"id": c.id, "projectId": c.project_id, "category": c.category, "label": c.label, "plannedAmount": num(c.planned_amount), **audit(c), **review(c), **void(c)}
 
 
 def purchase_order(po: PurchaseOrder) -> dict:
@@ -135,7 +135,7 @@ def asset(a: Asset) -> dict:
 def movement(m: StockMovement) -> dict:
     return {"id": m.id, "itemId": m.item_id, "movementType": m.movement_type, "qty": num(m.qty), "locationFromId": m.location_from_id, "locationToId": m.location_to_id,
             "unitCost": num(m.unit_cost), "totalCost": num(m.total_cost), "projectId": m.project_id, "sourceRef": m.source_ref, "reason": m.reason, "serials": m.serials,
-            "attachmentIds": m.attachment_ids, "createdBy": m.created_by_id, "createdAt": iso(m.created_at), "approvalId": m.approval_id, **review(m)}
+            "attachmentIds": m.attachment_ids, "createdBy": m.created_by_id, "createdAt": iso(m.created_at), "approvalId": m.approval_id, **review(m), **void(m)}
 
 
 def actual(a: Actual) -> dict:
@@ -223,12 +223,16 @@ def client_invoice(i: ClientInvoice) -> dict:
     return {"id": i.id, "projectId": i.project_id, "invoiceNumber": i.invoice_number, "issuedAt": d8(i.issued_at), "description": i.description,
             "netAmount": num(i.net_amount), "vatAmount": num(i.vat_amount), "grossAmount": num(i.gross_amount), "receipts": list(i.receipts or []),
             "vatStatus": i.vat_status, "vatSettledAt": d8(i.vat_settled_at), "vatSettledBy": i.vat_settled_by_id, "vatNote": i.vat_note,
-            "vatEvidenceIds": list(i.vat_evidence_ids or []), "attachmentIds": list(i.attachment_ids or []), **audit(i), **review(i)}
+            "vatEvidenceIds": list(i.vat_evidence_ids or []), "attachmentIds": list(i.attachment_ids or []), **audit(i), **review(i), **void(i)}
 
 
 def vat_payment(v: VatPayment) -> dict:
     return {"id": v.id, "projectId": v.project_id, "amount": num(v.amount), "paidOn": d8(v.paid_on), "method": v.method, "note": v.note,
-            "attachmentIds": list(v.attachment_ids or []), **audit(v), **review(v)}
+            "attachmentIds": list(v.attachment_ids or []), **audit(v), **review(v), **void(v)}
+
+
+def void(x) -> dict:
+    return {"voidedAt": iso(x.voided_at), "voidedBy": x.voided_by_id, "voidReason": x.void_reason} if getattr(x, "voided_at", None) else {}
 
 
 def snapshot(u: User) -> dict:

@@ -8,6 +8,7 @@ import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { MoneyStrip } from "../components/MoneyStrip";
 import { CategoryChart } from "../components/CategoryChart";
+import { VoidControl, VoidedNote } from "../components/VoidControl";
 import { BillingCard } from "../components/BillingCard";
 import { Badge, Empty, Note, ReviewBadge } from "../components/ui";
 
@@ -159,11 +160,11 @@ function BudgetLine({ c, projectId }: { c: CostItem; projectId: string }) {
   const [cat, setCat] = useState<CostCategory>(c.category);
   const [amt, setAmt] = useState(String(c.plannedAmount));
 
-  if (!editing) return <tr>
+  if (!editing) return <tr className={c.voidedAt ? "voided" : ""}>
     <td>{c.label}<div className="sm muted">by {api.userName(c.submittedBy)} {relative(c.submittedAt)}</div></td>
     <td>{COST_CATEGORY_LABEL[c.category]}</td>
     <td className="num ns-mono">{naira(c.plannedAmount)}</td>
-    <td><ReviewBadge status={c.reviewStatus} /></td>
+    <td><ReviewBadge status={c.reviewStatus} />{!c.voidedAt && <VoidControl kind="cost_item" id={c.id} projectId={c.projectId} size="xs" />}<VoidedNote r={c} /></td>
     <td className="num">{may && <button className="ns-btn ns-btn--ghost ns-btn--sm"
       onClick={() => { setLabel(c.label); setCat(c.category); setAmt(String(c.plannedAmount)); setEditing(true); }}>Edit</button>}</td>
   </tr>;

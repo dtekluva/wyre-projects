@@ -8,7 +8,7 @@ const LABEL: Record<EventType, string> = {
   visit: "Visit", issue_raised: "Issue", issue_closed: "Issue", change_order: "Change order",
   role_granted: "Access", role_revoked: "Access", commissioning_assigned: "Assigned", note: "Note",
   stock_movement: "Stock", cost_item: "Budget", retention: "Retention", reconciliation: "Recon",
-  issue: "Issue", commissioning: "Commissioning", hse: "HSE", warranty: "Warranty", stock_count: "Count", contract_updated: "Commercials", contract_received: "Contract received", invoice: "Invoice", plan_updated: "Schedule",
+  issue: "Issue", commissioning: "Commissioning", hse: "HSE", warranty: "Warranty", stock_count: "Count", contract_updated: "Commercials", contract_received: "Contract received", invoice: "Invoice", plan_updated: "Schedule", void: "Voided",
 };
 export function variantOf(e: ChronologyEvent) {
   if (e.eventType === "check_rejected" || e.summary.startsWith("Rejected")) return "danger";

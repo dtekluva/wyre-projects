@@ -165,6 +165,17 @@ class Audit(models.Model):
         abstract = True
 
 
+class Voidable(models.Model):
+    """§4.14 void — wrong data that was entered (and maybe checked) stops counting everywhere but stays on the
+    record, struck through, with who voided it and why. Never deleted: chronology and gates keep their history."""
+    voided_at = models.DateTimeField(null=True, blank=True)
+    voided_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    void_reason = models.CharField(max_length=300, blank=True, null=True)
+
+    class Meta:
+        abstract = True
+
+
 class Reviewable(models.Model):
     """§4.13 maker-checker. Nothing is effective until a *different* user with the module's check permission verifies it."""
     REVIEW = [("pending", "Pending"), ("checked", "Checked"), ("rejected", "Rejected")]
@@ -287,7 +298,7 @@ class ChronologyEvent(models.Model):
     after = models.JSONField(null=True, blank=True)
 
 
-class Document(Audit, Reviewable):
+class Document(Audit, Reviewable, Voidable):
     id = models.CharField(primary_key=True, max_length=40, default=id_doc)
     project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="documents")
     doc_type = models.CharField(max_length=30)
@@ -303,7 +314,7 @@ class Document(Audit, Reviewable):
     file = models.FileField(upload_to=document_path, null=True, blank=True)
 
 
-class Attachment(Reviewable):
+class Attachment(Reviewable, Voidable):
     """§4.11 single generic media model. originals never overwritten; sha256 stored."""
     id = models.CharField(primary_key=True, max_length=40, default=id_att)
     project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.PROTECT, related_name="attachments")
@@ -321,7 +332,7 @@ class Attachment(Reviewable):
     file = models.FileField(upload_to=attachment_path, null=True, blank=True)
 
 
-class ClientInvoice(Audit, Reviewable):
+class ClientInvoice(Audit, Reviewable, Voidable):
     """What we billed the client, what came in against it, and where its VAT stands.
 
     VAT status: outstanding → collected (client paid it to us; we still owe FIRS) → remitted (we paid FIRS),
@@ -347,7 +358,7 @@ class ClientInvoice(Audit, Reviewable):
         constraints = [models.UniqueConstraint(fields=["project", "invoice_number"], name="uniq_invoice_number_per_project")]
 
 
-class VatPayment(Audit, Reviewable):
+class VatPayment(Audit, Reviewable, Voidable):
     """VAT paid on a project — a partial or the lot — with its receipts. Counts once Finance or a Director checks it.
     This is the only route by which VAT is settled; invoices record what was billed and received, nothing more."""
     id = models.CharField(primary_key=True, max_length=40, default=id_vatp)
@@ -406,7 +417,7 @@ class StockLocation(models.Model):
     is_active = models.BooleanField(default=True)
 
 
-class CostItem(Audit, Reviewable):
+class CostItem(Audit, Reviewable, Voidable):
     id = models.CharField(primary_key=True, max_length=40, default=id_ci)
     project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="cost_items")
     category = models.CharField(max_length=20)
@@ -477,7 +488,7 @@ class Asset(Audit):
     location = models.ForeignKey(StockLocation, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
 
 
-class StockMovement(Reviewable):
+class StockMovement(Reviewable, Voidable):
     """§4.15 append-only ledger row; qty is a magnitude, sign comes from movement_type."""
     id = models.CharField(primary_key=True, max_length=40, default=id_mv)
     item = models.ForeignKey(InventoryItem, on_delete=models.PROTECT, related_name="movements")

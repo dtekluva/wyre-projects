@@ -24,7 +24,7 @@ def add_months(d: date, months: int) -> date:
 def balances() -> list[dict]:
     """Replay every checked movement in order: item-level WAC, per-location quantities."""
     wac: dict[str, dict] = {}; loc: dict[tuple, Decimal] = {}; last: dict[str, str] = {}
-    for m in StockMovement.objects.filter(review_status="checked").order_by("created_at", "id"):
+    for m in StockMovement.objects.filter(review_status="checked", voided_at__isnull=True).order_by("created_at", "id"):
         w = wac.setdefault(m.item_id, {"qty": Decimal("0"), "wac": Decimal("0")})
         q = b.dec(m.qty); uc = b.dec(m.unit_cost)
 
@@ -88,14 +88,14 @@ def stock_value() -> dict:
 def available(item_id: str, location_id: Optional[str] = None) -> Decimal:
     """available = checked on-hand minus quantities reserved by pending issues / write-offs / transfers."""
     location_id = location_id or b.default_warehouse().id
-    pend = sum((b.dec(m.qty) for m in StockMovement.objects.filter(item_id=item_id, review_status="pending", movement_type__in=["issue", "write_off", "transfer"], location_from_id=location_id)), Decimal("0"))
+    pend = sum((b.dec(m.qty) for m in StockMovement.objects.filter(item_id=item_id, review_status="pending", voided_at__isnull=True, movement_type__in=["issue", "write_off", "transfer"], location_from_id=location_id)), Decimal("0"))
     return b.dec(balance_of(item_id, location_id)["qtyOnHand"]) - pend
 
 
 def in_stock_serials(item_id: str, location_id: Optional[str] = None) -> list[str]:
     location_id = location_id or b.default_warehouse().id
     reserved = set()
-    for m in StockMovement.objects.filter(review_status="pending", item_id=item_id):
+    for m in StockMovement.objects.filter(review_status="pending", voided_at__isnull=True, item_id=item_id):
         reserved.update(m.serials or [])
     return [a.serial for a in Asset.objects.filter(inventory_item_id=item_id, status="in_stock", location_id=location_id) if a.serial not in reserved]
 

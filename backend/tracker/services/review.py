@@ -37,7 +37,7 @@ def _collect(user: Optional[User]) -> list[dict]:
     escalation = int(b.threshold_num("check.escalation_days", 3)); now = timezone.now()
 
     def push(kind, it, project_id, title, subtitle, amount=None):
-        if it.review_status != "pending":
+        if it.review_status != "pending" or getattr(it, "voided_at", None):
             return
         own = user is not None and it.submitted_by_id == user.id and not rbac.may_self_review(user)
         if user is not None and (own or not rbac.can(user, CHECK_PERM[kind], project_id)):
@@ -85,6 +85,8 @@ def pending_checks(project_id: str) -> int:
     n = 0
     for kind, model in MODELS.items():
         qs = model.objects.filter(project_id=project_id, review_status="pending")
+        if hasattr(model, "voided_at"):
+            qs = qs.filter(voided_at__isnull=True)
         if kind == "stock_movement":
             qs = qs.exclude(movement_type="write_off")
         n += qs.count()

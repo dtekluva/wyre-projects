@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
 import { FileLink } from "../components/FileLink";
+import { VoidControl, VoidedNote } from "../components/VoidControl";
 import { useOutletContext } from "react-router-dom";
 import { DOC_TYPE_LABEL, STAGES, bytes, fmtDate, relative, sectionFiles, type Attachment, type DocType, type Document, type Project } from "@wyre/api";
 import { FileGallery } from "../components/FileGallery";
@@ -17,14 +18,16 @@ function DocRow({ d }: { d: Document }) {
   const ext = d.fileName.split(".").pop()?.toUpperCase().slice(0, 4) ?? "DOC";
   const expiring = d.expiresAt && new Date(d.expiresAt).getTime() - Date.now() < 90 * 86400000;
   return (
-    <div className="doc">
+    <div className={`doc ${d.voidedAt ? "voided" : ""}`}>
       <FileLink kind="document" id={d.id} className="doc__icon doc__icon--btn" title={`Open ${d.fileName}`}>{ext}</FileLink>
       <div className="grow" style={{ minWidth: 0 }}>
         <div className="doc__title ellipsis"><FileLink kind="document" id={d.id} title={`Open ${d.fileName}`}>{d.title}</FileLink> <span className="muted sm">v{d.version}</span></div>
         <div className="doc__meta">{DOC_TYPE_LABEL[d.docType]} · {bytes(d.sizeBytes)} · submitted by <b>{api.userName(d.submittedBy)}</b> {relative(d.submittedAt)}
           {d.checkedBy && <> · checked by <b>{api.userName(d.checkedBy)}</b></>}{d.issuer && <> · issuer {d.issuer}</>}{d.expiresAt && <> · expires {fmtDate(d.expiresAt)}</>}</div>
         {d.reviewStatus === "rejected" && d.checkComment && <div className="note note--danger" style={{ marginTop: 6 }}>Rejected: {d.checkComment}</div>}
+        <VoidedNote r={d} />
       </div>
+      {!d.voidedAt && <VoidControl kind="document" id={d.id} projectId={d.projectId} />}
       {expiring && d.reviewStatus === "checked" && <Badge variant="warning">expires soon</Badge>}
       <ReviewBadge status={d.reviewStatus} />
       <Reading doc={d} />
@@ -165,10 +168,10 @@ export function ProjectDocuments() {
         <div className="card__head"><div className="card__title">Photos & files</div><span className="sm muted">{atts.length} uploads · GPS + sha256 captured</span></div>
         <div className="card__body stack">
           {upload}
-          {atts.length ? <div className="photo-grid">{atts.map((a) => <div key={a.id} className="photo">
+          {atts.length ? <div className="photo-grid">{atts.map((a) => <div key={a.id} className={`photo ${a.voidedAt ? "voided" : ""}`}>
             <PhotoTile a={a} />
             <div className="photo__cap"><div className="ellipsis" title={a.caption}>{a.caption ?? "—"}</div>
-              <div className="sm muted">{api.userName(a.uploadedBy)} · {relative(a.uploadedAt)}{a.gps && " · GPS"}</div><div style={{ marginTop: 4 }}><ReviewBadge status={a.reviewStatus} /></div></div>
+              <div className="sm muted">{api.userName(a.uploadedBy)} · {relative(a.uploadedAt)}{a.gps && " · GPS"}</div><div style={{ marginTop: 4 }}><ReviewBadge status={a.reviewStatus} /> {!a.voidedAt && <VoidControl kind="attachment" id={a.id} projectId={a.projectId} size="xs" />}</div><VoidedNote r={a} /></div>
           </div>)}</div> : <Empty title="No uploads yet" />}
         </div>
       </div>

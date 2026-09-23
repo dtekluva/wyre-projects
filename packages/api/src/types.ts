@@ -44,6 +44,12 @@ export type Rag = "green" | "amber" | "red";
 export type ReviewStatus = "pending" | "checked" | "rejected";
 
 export interface AuditFields { createdAt: string; createdBy: string; updatedAt: string; updatedBy: string }
+/** §4.14 void — wrong data that was entered (and maybe checked) stops counting everywhere but stays on the record,
+ *  struck through, with who voided it and why. Never deleted: the chronology and gates must keep their history. */
+export interface VoidFields { voidedAt?: string; voidedBy?: string; voidReason?: string }
+export type VoidKind = "document" | "attachment" | "stock_movement" | "cost_item" | "client_invoice" | "vat_payment";
+export const VOID_KIND_LABEL: Record<VoidKind, string> = { document: "document", attachment: "file", stock_movement: "stock movement", cost_item: "budget line", client_invoice: "invoice", vat_payment: "VAT payment" };
+
 export interface ReviewFields {
   reviewStatus: ReviewStatus; submittedBy: string; submittedAt: string;
   checkedBy?: string; checkedAt?: string; checkComment?: string; reviewVersion: number;
@@ -105,7 +111,7 @@ export const DOC_TYPE_LABEL: Record<DocType, string> = {
   contract: "Contract", other: "Other",
 };
 
-export interface Document extends AuditFields, ReviewFields {
+export interface Document extends AuditFields, ReviewFields, VoidFields {
   id: string; projectId: string; docType: DocType; title: string;
   status: "draft" | "submitted" | "approved" | "expired";
   issuedAt?: string; expiresAt?: string; issuer?: string; version: number;
@@ -114,7 +120,7 @@ export interface Document extends AuditFields, ReviewFields {
   url?: string;
 }
 
-export interface Attachment extends ReviewFields {
+export interface Attachment extends ReviewFields, VoidFields {
   id: string; projectId: string; fileName: string; mime: string; sizeBytes: number;
   kind: "image" | "document"; capturedAt?: string; gps?: { lat: number; lng: number };
   sha256: string; uploadedBy: string; uploadedAt: string;
@@ -131,7 +137,7 @@ export type EventType =
   | "role_granted" | "role_revoked" | "commissioning_assigned" | "note"
   | "stock_movement" | "cost_item" | "retention" | "reconciliation"
   | "issue" | "commissioning" | "hse" | "warranty" | "stock_count"
-  | "contract_updated" | "contract_received" | "invoice" | "plan_updated";
+  | "contract_updated" | "contract_received" | "invoice" | "plan_updated" | "void";
 
 export interface ChronologyEvent {
   id: string; projectId: string; occurredAt: string; actorId: string; eventType: EventType;
@@ -179,7 +185,7 @@ export const COST_CATEGORY_LABEL: Record<CostCategory, string> = {
 };
 
 /** Budget line — maker-checked (Finance checks) */
-export interface CostItem extends AuditFields, ReviewFields { id: string; projectId: string; category: CostCategory; label: string; plannedAmount: number }
+export interface CostItem extends AuditFields, ReviewFields, VoidFields { id: string; projectId: string; category: CostCategory; label: string; plannedAmount: number }
 
 export type PoStatus = "pending_approval" | "approved" | "rejected" | "partially_delivered" | "delivered" | "closed";
 export interface PurchaseItem {
@@ -221,7 +227,7 @@ export const MOVEMENT_LABEL: Record<MovementType, string> = {
   receipt: "Receipt", issue: "Issue to project", return: "Return from site", transfer: "Transfer", adjustment: "Adjustment", write_off: "Write-off",
 };
 /** Append-only ledger row. qty is a magnitude; sign comes from movementType. */
-export interface StockMovement extends ReviewFields {
+export interface StockMovement extends ReviewFields, VoidFields {
   id: string; itemId: string; movementType: MovementType; qty: number;
   locationFromId?: string; locationToId?: string; unitCost: number; totalCost: number;
   projectId?: string; sourceRef?: { model: string; id: string; label: string }; reason?: string;
@@ -256,7 +262,7 @@ export const VAT_STATUS_LABEL: Record<VatStatus, string> = { outstanding: "Outst
 export const VAT_SETTLED: readonly VatStatus[] = ["withheld_by_client", "remitted"];
 export interface InvoiceReceipt { id: string; date: string; amount: number; note?: string; attachmentIds: string[]; recordedBy: string; recordedAt: string }
 /** What we billed the client, what came in against it, and where its VAT stands. Maker-checked like everything else. */
-export interface ClientInvoice extends AuditFields, ReviewFields {
+export interface ClientInvoice extends AuditFields, ReviewFields, VoidFields {
   id: string; projectId: string; invoiceNumber: string; issuedAt: string; description: string;
   netAmount: number; vatAmount: number; grossAmount: number;
   receipts: InvoiceReceipt[];
@@ -267,7 +273,7 @@ export interface ClientInvoice extends AuditFields, ReviewFields {
 /** VAT paid on a project — a partial or the lot — with its receipts. Checked by Finance or a Director before it counts. */
 export type VatPaymentMethod = "remitted" | "withheld_by_client";
 export const VAT_PAYMENT_METHOD_LABEL: Record<VatPaymentMethod, string> = { remitted: "Remitted to FIRS by us", withheld_by_client: "Withheld and remitted by the client" };
-export interface VatPayment extends AuditFields, ReviewFields {
+export interface VatPayment extends AuditFields, ReviewFields, VoidFields {
   id: string; projectId: string; amount: number; paidOn: string; method: VatPaymentMethod; note?: string;
   /** FIRS receipts, client credit notes — several allowed, more can be added later */
   attachmentIds: string[];

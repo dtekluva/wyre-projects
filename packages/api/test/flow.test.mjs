@@ -185,6 +185,51 @@ expectErr(() => api.setStagePlan("u_pm1", sp.id, { planned: { 5: "2027-02-01" } 
 api.setStagePlan("u_pm1", sp.id, { planned: { 4: null } });
 ok(sp.stagePlanned[4] === undefined, "a planned date can be cleared");
 
+// ---- void: wrong data stops counting everywhere but stays on the record ----
+const vj = api.createProject("u_pm1", { name: "Void job", clientName: "Acme", branchName: "HQ", location: "Lagos", projectType: "solar_battery", contractValueNet: 10_000_000, contractReceived: true, pmId: "u_pm1", leadEngineerId: "u_pm2" });
+const vdoc = api.addDocument("u_pm1", vj.id, { docType: "proposal", title: "Wrong proposal", fileName: "p.pdf" });
+api.check("document", vdoc.id, "u_dir", "checked");
+ok(api.gateStatus(vj.id).items.find((i) => i.docType === "proposal").state === "ok", "checked document satisfies the gate");
+expectErr(() => api.voidRecord("u_ft1", "document", vdoc.id, "typo"), "forbidden", "a tech cannot void");
+expectErr(() => api.voidRecord("u_fin", "document", vdoc.id, "typo"), "forbidden", "finance cannot void");
+expectErr(() => api.voidRecord("u_pm1", "document", vdoc.id, "  "), "invalid", "a reason is required");
+api.voidRecord("u_pm1", "document", vdoc.id, "uploaded to the wrong project");
+ok(vdoc.voidedAt && vdoc.voidedBy === "u_pm1" && vdoc.voidReason === "uploaded to the wrong project", "document carries who voided it and why");
+ok(api.gateStatus(vj.id).items.find((i) => i.docType === "proposal").state === "missing", "a voided document no longer satisfies the gate");
+expectErr(() => api.voidRecord("u_pm1", "document", vdoc.id, "again"), "conflict", "cannot void twice");
+ok(api.listEvents(vj.id).some((e) => e.eventType === "void"), "the void is in the chronology");
+// pending record leaves the review queue
+const vatt = api.addAttachment("u_ft1", vj.id, { fileName: "blur.jpg", caption: "Blurry" });
+ok(api.reviewQueue("u_pm1").some((q) => q.id === vatt.id), "pending photo is in the queue");
+api.voidRecord("u_dir", "attachment", vatt.id, "blurry, re-taken");
+ok(!api.reviewQueue("u_pm1").some((q) => q.id === vatt.id) && api.pendingChecks(vj.id) === 0, "a voided pending photo leaves the queue and the pending count");
+// stock: a wrong receipt, then a wrong issue
+const vit = api.items.find((i) => !i.isSerialised); const before = api.balanceOf(vit.id).qtyOnHand;
+const vnow = api.now ? api.now() : new Date().toISOString();
+const vrc = { id: "mv_void_rc", itemId: vit.id, movementType: "receipt", qty: 5, locationToId: api.mainLocationId(), unitCost: 1000, totalCost: 5000, reason: "opening balance", createdBy: "u_sk", createdAt: vnow, reviewStatus: "checked", submittedBy: "u_sk", submittedAt: vnow, checkedBy: "u_fin", checkedAt: vnow, reviewVersion: 1 };
+api.movements.push(vrc);
+ok(api.balanceOf(vit.id).qtyOnHand === before + 5, "receipt counted");
+const viss = api.issueStock("u_sk", { itemId: vit.id, projectId: vj.id, qty: 3 });
+api.check("stock_movement", viss.id, "u_pm1", "checked");
+ok(api.balanceOf(vit.id).qtyOnHand === before + 2 && api.money(vj.id).actual > 0, "issue counted and posted an actual");
+api.voidRecord("u_pm1", "stock_movement", viss.id, "issued against the wrong project");
+ok(api.balanceOf(vit.id).qtyOnHand === before + 5 && api.money(vj.id).actual === 0, "voiding the issue restores the balance and removes the actual it posted");
+api.voidRecord("u_dir", "stock_movement", vrc.id, "duplicate of GRN");
+ok(api.balanceOf(vit.id).qtyOnHand === before, "voiding the receipt takes its quantity back out");
+// money records
+const vci = api.addCostItem("u_fin", vj.id, { category: "equipment", label: "Wrong line", plannedAmount: 9_000_000 });
+api.check("cost_item", vci.id, "u_fin", "checked");
+ok(api.money(vj.id).planned === 9_000_000, "budget line counted");
+api.voidRecord("u_dir", "cost_item", vci.id, "typed in kobo");
+ok(api.money(vj.id).planned === vj.approvedBudget, "a voided budget line no longer counts");
+const vinv = api.raiseInvoice("u_fin", vj.id, { invoiceNumber: "V-1", description: "x", netAmount: 1_000_000 });
+api.check("client_invoice", vinv.id, "u_dir", "checked");
+const vvp = api.recordVatPayment("u_fin", vj.id, { amount: 75_000 }); api.check("vat_payment", vvp.id, "u_dir", "checked");
+ok(api.money(vj.id).invoicedNet === 1_000_000 && api.money(vj.id).vatSettled === 75_000, "invoice and VAT payment counted");
+api.voidRecord("u_dir", "client_invoice", vinv.id, "wrong client"); api.voidRecord("u_dir", "vat_payment", vvp.id, "paid on another project");
+ok(api.money(vj.id).invoicedNet === 0 && api.money(vj.id).vatSettled === 0, "voided invoice and VAT payment no longer count");
+
+
 ok(api.listEvents(vtP.id).some((e) => e.eventType === "contract_updated"), "contract change is in the chronology");
 // invoices
 expectErr(() => api.raiseInvoice("u_ft1", vtP.id, { invoiceNumber: "INV-1", description: "x", netAmount: 100 }), "forbidden", "a tech cannot raise a client invoice");

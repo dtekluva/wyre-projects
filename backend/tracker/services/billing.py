@@ -33,10 +33,10 @@ def vat_block(p: Project, change_orders: Decimal) -> dict:
     """The base for VAT is the NET contract plus approved change orders. Everything gross is derived from it."""
     contract_net = b.dec(p.contract_value_net) + b.dec(change_orders)
     vat_due = vat_on(contract_net, b.dec(p.vat_rate), p.vat_treatment)
-    invs = list(ClientInvoice.objects.filter(project=p, review_status="checked"))
+    invs = list(ClientInvoice.objects.filter(project=p, review_status="checked", voided_at__isnull=True))
     invoiced_net = sum((b.dec(i.net_amount) for i in invs), Decimal("0")); invoiced_vat = sum((b.dec(i.vat_amount) for i in invs), Decimal("0"))
     received = sum((b.dec(r.get("amount", 0)) for i in invs for r in (i.receipts or [])), Decimal("0"))
-    vat_settled = sum((b.dec(v.amount) for v in VatPayment.objects.filter(project=p, review_status="checked")), Decimal("0"))
+    vat_settled = sum((b.dec(v.amount) for v in VatPayment.objects.filter(project=p, review_status="checked", voided_at__isnull=True)), Decimal("0"))
     f = lambda x: float(Decimal(x).quantize(Q))  # noqa: E731
     return {"contractNet": f(contract_net), "vatRate": float(p.vat_rate), "vatDue": f(vat_due), "contractGross": f(contract_net + vat_due),
             "invoicedNet": f(invoiced_net), "invoicedVat": f(invoiced_vat), "received": f(received),

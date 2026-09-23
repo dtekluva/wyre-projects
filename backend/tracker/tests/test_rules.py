@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from tracker.errors import ApiError
 from tracker.models import Approval, Asset, CostItem, Document, Issue, Project, PurchaseOrder, StockCount, StockMovement, User
 from tracker import rbac, serializers
-from tracker.services import approvals, billing, documents, field, gates, money, projects, recon, review, stock
+from tracker.services import approvals, billing, documents, field, gates, money, projects, recon, review, stock, voiding
 from tracker.services.base import dec
 
 
@@ -474,6 +474,52 @@ class VisitPhotoTest(TestCase):
         sp = projects.set_stage_plan(u["u_pm1"], sp.id, {"planned": {"4": None}})
         self.assertNotIn("4", sp.stage_planned)
         serializers.project(sp)
+
+    def test_void_stops_counting_but_keeps_the_record(self):
+        u = self.u
+        vj = projects.create_project(u["u_pm1"], {"name": "Void job", "clientName": "Acme", "branchName": "HQ", "location": "Lagos", "projectType": "solar_battery",
+                                                 "contractValueNet": 10_000_000, "contractReceived": True, "pmId": "u_pm1", "leadEngineerId": "u_pm2"})
+        d = documents.add_document(u["u_pm1"], vj.id, {"docType": "proposal", "title": "Wrong proposal", "fileName": "p.pdf", "sizeBytes": 1})
+        review.check(u["u_dir"], "document", d.id, "checked")
+        self.assertEqual(next(i for i in gates.gate_status(vj.id)["items"] if i["docType"] == "proposal")["state"], "ok")
+        self.err("forbidden", voiding.void_record, u["u_ft1"], "document", d.id, "typo")
+        self.err("forbidden", voiding.void_record, u["u_fin"], "document", d.id, "typo")
+        self.err("invalid", voiding.void_record, u["u_pm1"], "document", d.id, "  ")
+        voiding.void_record(u["u_pm1"], "document", d.id, "uploaded to the wrong project")
+        d.refresh_from_db(); self.assertIsNotNone(d.voided_at); self.assertEqual(d.voided_by_id, "u_pm1"); self.assertEqual(d.void_reason, "uploaded to the wrong project")
+        self.assertEqual(serializers.document(d)["voidReason"], "uploaded to the wrong project")
+        self.assertEqual(next(i for i in gates.gate_status(vj.id)["items"] if i["docType"] == "proposal")["state"], "missing")
+        self.err("conflict", voiding.void_record, u["u_pm1"], "document", d.id, "again")
+        self.assertTrue(vj.events.filter(event_type="void").exists())
+        # a pending photo leaves the queue
+        a = self.photo(u["u_ft1"], vj.id, caption="Blurry")
+        self.assertTrue(any(q["id"] == a for q in review.review_queue(u["u_pm1"])))
+        voiding.void_record(u["u_dir"], "attachment", a, "blurry")
+        self.assertFalse(any(q["id"] == a for q in review.review_queue(u["u_pm1"]))); self.assertEqual(review.pending_checks(vj.id), 0)
+        # stock: wrong receipt then wrong issue
+        it = stock.find_or_create_item("Void test cable", "m")
+        before = stock.balance_of(it.id)["qtyOnHand"]
+        rc = stock.receive_stock(u["u_sk"], {"reason": "opening balance", "lines": [{"itemId": it.id, "qty": 5, "unitCost": 1000}], "attachmentIds": [self.photo(u["u_sk"], "p1", caption="note")]})[0]
+        review.check(u["u_fin"], "stock_movement", rc.id, "checked")
+        self.assertEqual(stock.balance_of(it.id)["qtyOnHand"], before + 5)
+        iss = stock.issue_stock(u["u_sk"], {"itemId": it.id, "projectId": vj.id, "qty": 3})
+        review.check(u["u_pm1"], "stock_movement", iss.id, "checked")
+        self.assertEqual(stock.balance_of(it.id)["qtyOnHand"], before + 2); self.assertGreater(money.money(vj.id)["actual"], 0)
+        voiding.void_record(u["u_pm1"], "stock_movement", iss.id, "wrong project")
+        self.assertEqual(stock.balance_of(it.id)["qtyOnHand"], before + 5); self.assertEqual(money.money(vj.id)["actual"], 0)
+        voiding.void_record(u["u_dir"], "stock_movement", rc.id, "duplicate")
+        self.assertEqual(stock.balance_of(it.id)["qtyOnHand"], before)
+        # money records
+        ci = money.add_cost_item(u["u_fin"], vj.id, {"category": "equipment", "label": "Wrong line", "plannedAmount": 9_000_000})
+        review.check(u["u_fin"], "cost_item", ci.id, "checked")
+        self.assertEqual(money.money(vj.id)["planned"], 9_000_000)
+        voiding.void_record(u["u_dir"], "cost_item", ci.id, "kobo")
+        self.assertEqual(money.money(vj.id)["planned"], float(vj.approved_budget))
+        inv = billing.raise_invoice(u["u_fin"], vj.id, {"invoiceNumber": "V-1", "netAmount": 1_000_000}); review.check(u["u_dir"], "client_invoice", inv.id, "checked")
+        vp = billing.record_vat_payment(u["u_fin"], vj.id, {"amount": 75_000}); review.check(u["u_dir"], "vat_payment", vp.id, "checked")
+        self.assertEqual(money.money(vj.id)["invoicedNet"], 1_000_000); self.assertEqual(money.money(vj.id)["vatSettled"], 75_000)
+        voiding.void_record(u["u_dir"], "client_invoice", inv.id, "wrong client"); voiding.void_record(u["u_dir"], "vat_payment", vp.id, "other project")
+        self.assertEqual(money.money(vj.id)["invoicedNet"], 0); self.assertEqual(money.money(vj.id)["vatSettled"], 0)
 
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u

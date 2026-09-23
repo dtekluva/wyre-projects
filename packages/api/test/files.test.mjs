@@ -53,5 +53,10 @@ const invLabels = (isec2?.entries ?? []).map((e) => e.via?.label ?? "");
 ok(!!isec2 && isec2.entries.length >= 3, `seed invoice files land under Invoices & receipts (${isec2?.entries.length ?? 0})`);
 ok(invLabels.some((l) => l.startsWith("Invoice ")) && invLabels.some((l) => l.startsWith("Receipt · ")) && invLabels.some((l) => l.startsWith("VAT payment · ")), `tiles say invoice / receipt / VAT payment (${invLabels.join(", ")})`);
 
+// A voided file leaves the gallery entirely — it stays on the list view, struck through, but is not evidence.
+const gone = api.attachments.find((a) => a.projectId === "p1" && !a.voidedAt);
+gone.voidedAt = now; gone.voidedBy = "u_dir"; gone.voidReason = "test";
+ok(!flattenFiles(sectionFiles(api, { projectId: "p1" })).some((e) => e.id === gone.id), "a voided attachment is not in any gallery section");
+
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED");
 process.exit(fails ? 1 : 0);

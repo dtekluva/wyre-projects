@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
 import { MOVEMENT_LABEL, fmtDate, naira, relative, sectionFiles, type MovementType, type StockCount } from "@wyre/api";
 import { FileGallery } from "../components/FileGallery";
+import { VoidControl, VoidedNote } from "../components/VoidControl";
 import { useApi } from "../lib/useApi";
 import { useWaitFor } from "../lib/useWaitFor";
 import { useAuth } from "../lib/auth";
@@ -16,7 +17,7 @@ export function Inventory() {
   const bal = api.balances().filter((b) => b.locationId === mainLoc); const sv = api.stockValue();
   const [focus, setFocus] = useState<string>(""); const [type, setType] = useState<"" | MovementType>("");
   const mv = api.listMovements({ itemId: focus || undefined, type: type || undefined }).slice(0, 60);
-  const pending = api.listMovements({ status: "pending" }).length; const below = bal.filter((b) => b.belowReorder).length;
+  const pending = api.listMovements({ status: "pending" }).filter((m) => !m.voidedAt).length; const below = bal.filter((b) => b.belowReorder).length;
   const canWrite = api.can(user.id, "inventory.write");
   const [wItem, setWItem] = useState(api.items[0]?.id ?? ""); const [wQty, setWQty] = useState("1"); const [wSel, setWSel] = useState<string[]>([]); const [wWhy, setWWhy] = useState(""); const [wFile, setWFile] = useState<Pick[]>([]);
   const wi = wItem ? api.item(wItem) : undefined; const wVal = wi ? (wi.isSerialised ? wSel.length : Number(wQty) || 0) * api.wacOf(wi.id) : 0;
@@ -90,16 +91,17 @@ export function Inventory() {
         <div className="card table--wrap"><div className="card__head"><div className="card__title">Stock ledger {focus && <span className="muted">· {api.itemName(focus)}</span>}</div>
           <select className="ns-input" style={{ width: "auto" }} value={type} onChange={(e) => setType(e.target.value as "" | MovementType)}><option value="">All types</option>{(Object.keys(MOVEMENT_LABEL) as MovementType[]).map((t) => <option key={t} value={t}>{MOVEMENT_LABEL[t]}</option>)}</select></div>
           {mv.length ? <table className="table ledger"><thead><tr><th>When</th><th>Type</th><th>Item</th><th className="num">Qty</th><th className="num">Unit</th><th className="num">Total</th><th>Project</th><th>Ref</th><th>Status</th></tr></thead>
-            <tbody>{mv.map((m) => <tr key={m.id}><td className="sm">{relative(m.createdAt)}</td><td><Badge variant={m.movementType === "receipt" ? "success" : m.movementType === "issue" ? "info" : m.movementType === "write_off" ? "danger" : "warning"}>{MOVEMENT_LABEL[m.movementType]}</Badge></td>
+            <tbody>{mv.map((m) => <tr key={m.id} className={m.voidedAt ? "voided" : ""}><td className="sm">{relative(m.createdAt)}</td><td><Badge variant={m.movementType === "receipt" ? "success" : m.movementType === "issue" ? "info" : m.movementType === "write_off" ? "danger" : "warning"}>{MOVEMENT_LABEL[m.movementType]}</Badge></td>
               <td>{api.itemName(m.itemId)}</td><td className={`num ns-mono ${["issue", "write_off"].includes(m.movementType) ? "warn-cell" : ""}`}>{["issue", "write_off"].includes(m.movementType) ? "−" : "+"}{m.qty}</td><td className="num ns-mono">{naira(m.unitCost)}</td><td className="num ns-mono">{naira(m.totalCost)}</td>
               <td className="sm ns-mono">{api.projectCode(m.projectId)}</td><td className="sm muted">{m.sourceRef?.label}{m.reason ? ` · ${m.reason}` : ""}</td>
                 <td><span className="row" style={{ gap: 6 }}><ReviewBadge status={m.reviewStatus} />
                   {/* The ledger is where a store keeper already is. Making them find the Review queue to
                       act on a row they are looking at is a navigation puzzle, not a control. */}
-                  {m.reviewStatus === "pending" && api.can(user.id, "inventory.check", m.projectId) &&
+                  {m.reviewStatus === "pending" && !m.voidedAt && api.can(user.id, "inventory.check", m.projectId) &&
                     <button className="ns-btn ns-btn--primary ns-btn--sm"
                             onClick={() => safe(() => api.check("stock_movement", m.id, user.id, "checked"), "Checked — stock updated")}>✓ Check</button>}
-                </span></td></tr>)}</tbody></table> : <div className="card__body"><Empty title="No movements" /></div>}</div>
+                  {!m.voidedAt && <VoidControl kind="stock_movement" id={m.id} projectId={m.projectId} size="xs" />}
+                </span><VoidedNote r={m} /></td></tr>)}</tbody></table> : <div className="card__body"><Empty title="No movements" /></div>}</div>
         <div className="card"><div className="card__head"><div className="card__title">Write off stock</div><span className="sm muted">Finance approval{wVal >= dirThr ? " + Director" : ""}</span></div>
           <div className="card__body">{canWrite ? <form className="stack" onSubmit={(e) => { e.preventDefault(); if (safe(() => { const f = wFile[0]; const ev = api.addEvidence(user.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: `Write-off evidence — ${wi?.name}` }); api.writeOff(user.id, { itemId: wItem, qty: wi?.isSerialised ? wSel.length : Number(wQty), serials: wSel, reason: wWhy, attachmentIds: [ev.id] }); }, "Write-off submitted for Finance approval")) { setWSel([]); setWWhy(""); setWFile([]); } }}>
             <label className="ns-field"><span className="ns-field__label">Item</span><select className="ns-input" value={wItem} onChange={(e) => { setWItem(e.target.value); setWSel([]); }}>{api.items.map((i) => <option key={i.id} value={i.id}>{i.name} — {api.available(i.id)} free</option>)}</select></label>

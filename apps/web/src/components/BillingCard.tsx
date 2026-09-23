@@ -6,6 +6,7 @@ import { useSafe } from "../lib/toast";
 import { FilePick, type Pick } from "./FilePick";
 import { Thumbs } from "./Thumbs";
 import { Badge, Empty, ReviewBadge } from "./ui";
+import { VoidControl, VoidedNote } from "./VoidControl";
 
 /**
  * Billing: what we billed the client and what came in against it. VAT itself is paid and tracked from the VAT cell
@@ -38,7 +39,7 @@ export function BillingCard({ p }: { p: Project }) {
         {invs.length ? <div className="table--wrap"><table className="table">
           <thead><tr><th>Invoice</th><th>For</th><th className="num">Net</th><th className="num">VAT</th><th className="num">Gross</th><th className="num">Received</th><th></th></tr></thead>
           <tbody>{invs.map((i) => { const got = i.receipts.reduce((s, r) => s + r.amount, 0); const isOpen = open === i.id; return <Fragment key={i.id}>
-            <tr style={{ cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : i.id)}>
+            <tr className={i.voidedAt ? "voided" : ""} style={{ cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : i.id)}>
               <td><b className="ns-mono">{i.invoiceNumber}</b><div className="sm muted">{fmtDate(i.issuedAt)}</div></td>
               <td>{i.description || <span className="muted">—</span>}<div style={{ marginTop: 2 }}><ReviewBadge status={i.reviewStatus} /></div></td>
               <td className="num ns-mono">{naira(i.netAmount)}</td><td className="num ns-mono">{naira(i.vatAmount)}</td><td className="num ns-mono"><b>{naira(i.grossAmount)}</b></td>
@@ -89,7 +90,8 @@ function InvoiceDetail({ inv, canBill }: { inv: ClientInvoice; canBill: boolean 
       {inv.checkedBy && <span>· checked by <b>{api.userName(inv.checkedBy)}</b></span>}
       {inv.checkComment && <span>· “{inv.checkComment}”</span>}
       {inv.attachmentIds.length > 0 && <span className="row" style={{ gap: 6 }}>· invoice <Thumbs ids={inv.attachmentIds} /></span>}
-      {canCheck && <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => safe(() => api.check("client_invoice", inv.id, user.id, "checked"), "Invoice checked")}>✓ Check invoice</button>}
+      {canCheck && !inv.voidedAt && <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => safe(() => api.check("client_invoice", inv.id, user.id, "checked"), "Invoice checked")}>✓ Check invoice</button>}
+      {!inv.voidedAt && <VoidControl kind="client_invoice" id={inv.id} projectId={inv.projectId} />}<VoidedNote r={inv} />
     </div>
     <div className="workspace" style={{ gridTemplateColumns: "2fr 1fr", gap: 16 }}>
       <div className="stack" style={{ gap: 6 }}>

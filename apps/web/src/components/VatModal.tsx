@@ -6,6 +6,7 @@ import { useSafe } from "../lib/toast";
 import { FilePick, type Pick } from "./FilePick";
 import { Thumbs } from "./Thumbs";
 import { Bar, Badge, ReviewBadge } from "./ui";
+import { VoidControl, VoidedNote } from "./VoidControl";
 
 /**
  * VAT on a project, from the VAT cell of the money strip: what is due, what has been paid, and the payments
@@ -75,19 +76,21 @@ function PaymentRow({ v, canBill, upload }: { v: VatPayment; canBill: boolean; u
   const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   const [more, setMore] = useState<Pick[]>([]); const [rejecting, setRejecting] = useState(false); const [comment, setComment] = useState("");
   const canCheck = v.reviewStatus === "pending" && api.can(user.id, "billing.manage", v.projectId) && (v.submittedBy !== user.id || user.roles.some((r) => r === "finance" || r === "director"));
-  return <div className="card" style={{ padding: "10px 12px" }}>
+  return <div className={`card ${v.voidedAt ? "voided" : ""}`} style={{ padding: "10px 12px" }}>
     <div className="row row--wrap" style={{ gap: 10 }}>
       <b className="ns-mono">{naira(v.amount)}</b>
       <span className="sm">{fmtDate(v.paidOn)}</span>
       <Badge variant="neutral">{VAT_PAYMENT_METHOD_LABEL[v.method]}</Badge>
       <ReviewBadge status={v.reviewStatus} />
       <span className="sm muted grow">{api.userName(v.submittedBy)} · {relative(v.submittedAt)}{v.checkedBy && <> · checked by {api.userName(v.checkedBy)}</>}{v.checkComment && <> · “{v.checkComment}”</>}</span>
-      {canCheck && !rejecting && <><button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => safe(() => api.check("vat_payment", v.id, user.id, "checked"), "VAT payment checked")}>✓ Check</button>
+      {!v.voidedAt && <VoidControl kind="vat_payment" id={v.id} projectId={v.projectId} size="xs" />}
+      {canCheck && !v.voidedAt && !rejecting && <><button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => safe(() => api.check("vat_payment", v.id, user.id, "checked"), "VAT payment checked")}>✓ Check</button>
         <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setRejecting(true)}>Reject…</button></>}
     </div>
     {rejecting && <div className="row" style={{ marginTop: 6 }}><input className="ns-input grow" placeholder="Reason (required)" value={comment} onChange={(e) => setComment(e.target.value)} />
       <button className="ns-btn ns-btn--danger ns-btn--sm" onClick={() => { if (safe(() => api.check("vat_payment", v.id, user.id, "rejected", comment), "Rejected")) setRejecting(false); }}>Confirm</button>
       <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setRejecting(false)}>Cancel</button></div>}
+    <VoidedNote r={v} />
     {v.note && <div className="sm" style={{ marginTop: 4 }}>{v.note}</div>}
     <div className="row row--wrap" style={{ marginTop: 6, gap: 10 }}>
       <span className="sm muted">Receipts</span><Thumbs ids={v.attachmentIds} empty="none yet" size="lg" />

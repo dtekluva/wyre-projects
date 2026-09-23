@@ -106,7 +106,7 @@ export function sectionFiles(s: FileStore, scope: FileScope, opts: { keep?: stri
 
   if (pid) {
     for (const d of s.documents) {
-      if (d.projectId !== pid) continue;
+      if (d.projectId !== pid || d.voidedAt) continue;
       const st = stageOf(d.docType);
       const expiring = !!d.expiresAt && d.reviewStatus === "checked" && new Date(d.expiresAt).getTime() - now < EXPIRING_MS;
       add(st ? `stage-${st.stage}` : "docs-other", { kind: "document", id: d.id, doc: d, at: d.submittedAt, status: d.reviewStatus, expiring });
@@ -115,6 +115,7 @@ export function sectionFiles(s: FileStore, scope: FileScope, opts: { keep?: stri
 
   const idx = indexAttachments(s);
   for (const a of s.attachments) {
+    if (a.voidedAt) continue;
     const owner = a.projectId || null;
     if (owner !== pid) continue;
     const hit = idx.get(a.id);

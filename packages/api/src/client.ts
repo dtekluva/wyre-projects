@@ -2,6 +2,7 @@
 // Enforces: RBAC (§2), stage gates (§3), actor capture (§4), maker-checker + segregation of duties (§4.13, §5),
 // money & stock rules (§0, §4.4, §4.10, §4.15, §11).
 import { can as canFn, maySelfReview, rolesOn as rolesOnFn, type Permission } from "./rbac";
+import { type VoidKind } from "./types";
 import { CONTRACT_STATUS_LABEL, VAT_PAYMENT_METHOD_LABEL, VAT_TREATMENT_LABEL, type ContractStatus, type ClientInvoice, type InvoiceReceipt, type VatPayment, type VatPaymentMethod, type VatTreatment } from "./types";
 import { DEFAULT_VAT_RATE, vatOn } from "./vat";
 import { STAGES } from "./gates";
@@ -315,7 +316,7 @@ export class MockApi {
     const nowMs = Date.now(); const items: ReviewItem[] = [];
     const escalation = this.thresholdNum("check.escalation_days", 3);
     const push = (kind: ReviewKind, it: ReviewItem["item"], projectId: string | undefined, title: string, subtitle: string, amount?: number) => {
-      if (it.reviewStatus !== "pending") return;
+      if (it.reviewStatus !== "pending" || (it as { voidedAt?: string }).voidedAt) return;
       if (it.submittedBy === userId && !maySelfReview(this.userOrStub(userId))) return; // segregation of duties
       if (!this.can(userId, this.checkPerm(kind), projectId)) return;
       const ageDays = Math.floor((nowMs - new Date(it.submittedAt).getTime()) / 86400000);
@@ -340,18 +341,18 @@ export class MockApi {
     return items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   }
   pendingChecks(projectId: string) {
-    return this.documents.filter((d) => d.projectId === projectId && d.reviewStatus === "pending").length
-      + this.attachments.filter((a) => a.projectId === projectId && a.reviewStatus === "pending").length
+    return this.documents.filter((d) => d.projectId === projectId && d.reviewStatus === "pending" && !d.voidedAt).length
+      + this.attachments.filter((a) => a.projectId === projectId && a.reviewStatus === "pending" && !a.voidedAt).length
       + this.goodsReceipts.filter((g) => g.projectId === projectId && g.reviewStatus === "pending").length
-      + this.movements.filter((m) => m.projectId === projectId && m.reviewStatus === "pending" && m.movementType !== "write_off").length
-      + this.costItems.filter((c) => c.projectId === projectId && c.reviewStatus === "pending").length
+      + this.movements.filter((m) => m.projectId === projectId && m.reviewStatus === "pending" && !m.voidedAt && m.movementType !== "write_off").length
+      + this.costItems.filter((c) => c.projectId === projectId && c.reviewStatus === "pending" && !c.voidedAt).length
       + this.visits.filter((v) => v.projectId === projectId && v.reviewStatus === "pending").length
       + this.issues.filter((i) => i.projectId === projectId && i.reviewStatus === "pending").length
       + this.commissionings.filter((c) => c.projectId === projectId && c.reviewStatus === "pending").length
       + this.hseIncidents.filter((h) => h.projectId === projectId && h.reviewStatus === "pending").length
       + this.warrantyClaims.filter((w) => w.projectId === projectId && w.reviewStatus === "pending").length
-      + this.clientInvoices.filter((i) => i.projectId === projectId && i.reviewStatus === "pending").length
-      + this.vatPayments.filter((v) => v.projectId === projectId && v.reviewStatus === "pending").length;
+      + this.clientInvoices.filter((i) => i.projectId === projectId && i.reviewStatus === "pending" && !i.voidedAt).length
+      + this.vatPayments.filter((v) => v.projectId === projectId && v.reviewStatus === "pending" && !v.voidedAt).length;
   }
 
   check(kind: ReviewKind, id: string, actorId: string, decision: Exclude<ReviewStatus, "pending">, comment?: string) {
@@ -402,7 +403,7 @@ export class MockApi {
     const p = this.raw(projectId); const def = STAGES[p.stage];
     if (def.terminal) return { stage: p.stage, name: def.name, items: [], ready: false, approverRoles: [], terminal: true };
     const items = def.evidence.map((docType) => {
-      const doc = this.documents.filter((d) => d.projectId === projectId && d.docType === docType).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0];
+      const doc = this.documents.filter((d) => d.projectId === projectId && d.docType === docType && !d.voidedAt).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0];
       const state = !doc ? "missing" : doc.reviewStatus === "checked" ? "ok" : doc.reviewStatus === "pending" ? "pending" : "rejected";
       return { docType, label: DOC_TYPE_LABEL[docType], state, document: doc } as const;
     });
@@ -787,7 +788,7 @@ export class MockApi {
 
   money(projectId: string): ProjectMoney {
     const p = this.raw(projectId);
-    const ci = this.costItems.filter((c) => c.projectId === projectId && c.reviewStatus === "checked");
+    const ci = this.costItems.filter((c) => c.projectId === projectId && c.reviewStatus === "checked" && !c.voidedAt);
     const planned = ci.length ? ci.reduce((s, c) => s + c.plannedAmount, 0) : p.approvedBudget;
     const pos = this.purchaseOrders.filter((o) => o.projectId === projectId && ["approved", "partially_delivered", "delivered", "closed"].includes(o.status));
     const committed = pos.reduce((s, o) => s + o.total, 0);
@@ -802,16 +803,61 @@ export class MockApi {
     return { planned, committed, actual, variance: planned - actual, burnPct: planned > 0 ? Math.round(actual / planned * 100) : 0, forecast: Math.max(committed, actual), byCategory, changeOrders, retentionHeld: this.retention(projectId).amountHeld, ...vb };
   }
 
+  // ---------- void (§4.14) ----------
+  /** Wrong data that was entered — and maybe checked — stops counting everywhere but stays on the record with who
+   *  voided it and why. Never deleted. A movement that already posted effects has them unwound here. */
+  voidRecord(actorId: string, kind: VoidKind, id: string, reason: string): void {
+    const lists: Record<VoidKind, { id: string; projectId?: string; voidedAt?: string; voidedBy?: string; voidReason?: string }[]> = {
+      document: this.documents, attachment: this.attachments, stock_movement: this.movements, cost_item: this.costItems, client_invoice: this.clientInvoices, vat_payment: this.vatPayments };
+    if (!(kind in lists)) throw new ApiError("That kind of record cannot be voided", "invalid");
+    const rec = lists[kind].find((x) => x.id === id); if (!rec) throw new ApiError("Record not found", "not_found");
+    this.require(actorId, "record.void", rec.projectId);
+    const why = (reason ?? "").trim(); if (!why) throw new ApiError("A reason is required to void a record", "invalid");
+    if (rec.voidedAt) throw new ApiError("Already voided", "conflict");
+    const at = this.now(); let label = "";
+    switch (kind) {
+      case "document": { const d = rec as Document; label = `document ${d.title}`; break; }
+      case "attachment": { const a = rec as Attachment; label = `file ${a.caption ?? a.fileName}`; break; }
+      case "cost_item": { const c = rec as CostItem; label = `budget line ${c.label}`; break; }
+      case "client_invoice": { const i = rec as ClientInvoice; label = `invoice ${i.invoiceNumber}`; break; }
+      case "vat_payment": { const v = rec as VatPayment; label = `VAT payment ${this.fmt(v.amount)}`; break; }
+      case "stock_movement": {
+        const m = rec as StockMovement; label = `${MOVEMENT_LABEL[m.movementType]} · ${this.itemName(m.itemId)} × ${m.qty}`;
+        if (m.sourceRef && ["GoodsReceipt", "SiteVisit"].includes(m.sourceRef.model)) throw new ApiError(`This movement was posted by a ${m.sourceRef.model === "GoodsReceipt" ? "goods receipt" : "site visit"} — void that record instead`, "conflict");
+        if (m.reviewStatus === "checked") {
+          // unwind what the check posted
+          if (m.movementType === "receipt") for (const serial of m.serials ?? []) {
+            const a = this.assets.find((x) => x.serial === serial); if (!a) continue;
+            if (a.status !== "in_stock") throw new ApiError(`Serial ${serial} from this receipt has since been ${a.status.replace("_", " ")} — void that first`, "conflict");
+            this.assets.splice(this.assets.indexOf(a), 1);
+          }
+          if (m.movementType === "issue") for (const serial of m.serials ?? []) {
+            const a = this.assets.find((x) => x.serial === serial); if (!a) continue;
+            Object.assign(a, { status: "in_stock", projectId: undefined, installDate: undefined, locationId: m.locationFromId, updatedAt: at, updatedBy: actorId });
+          }
+          this.actuals = this.actuals.filter((x) => !(x.sourceRef.model === "StockMovement" && x.sourceRef.id === m.id));
+          // the balance the void leaves behind must still be non-negative
+          const it = this.items.find((x) => x.id === m.itemId);
+          const after = (() => { const save = m.voidedAt; m.voidedAt = at; const b = this.balanceOf(m.itemId, m.locationToId ?? m.locationFromId ?? this.mainLocationId() ?? ""); m.voidedAt = save; return b.qtyOnHand; })();
+          if (after < 0) throw new ApiError(`Voiding this would leave ${it?.name ?? m.itemId} at ${after} — void the later issues first`, "conflict");
+        }
+        break; }
+    }
+    Object.assign(rec, { voidedAt: at, voidedBy: actorId, voidReason: why });
+    this.log(rec.projectId, actorId, "void", `Voided ${label} — ${why}`, undefined, { model: { document: "Document", attachment: "Attachment", stock_movement: "StockMovement", cost_item: "CostItem", client_invoice: "ClientInvoice", vat_payment: "VatPayment" }[kind], id });
+    this.emit();
+  }
+
   // ---------- VAT & client billing ----------
   /** The base for VAT is the NET contract plus approved change orders. Everything gross is derived from it. */
   private vatBlock(p: Project, changeOrders: number) {
     const contractNet = p.contractValueNet + changeOrders;
     const vatDue = vatOn(contractNet, p.vatRate, p.vatTreatment);
-    const invs = this.clientInvoices.filter((i) => i.projectId === p.id && i.reviewStatus === "checked");
+    const invs = this.clientInvoices.filter((i) => i.projectId === p.id && i.reviewStatus === "checked" && !i.voidedAt);
     const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
     const invoicedNet = sum(invs.map((i) => i.netAmount)), invoicedVat = sum(invs.map((i) => i.vatAmount));
     const received = sum(invs.flatMap((i) => i.receipts.map((r) => r.amount)));
-    const vatSettled = sum(this.vatPayments.filter((v) => v.projectId === p.id && v.reviewStatus === "checked").map((v) => v.amount));
+    const vatSettled = sum(this.vatPayments.filter((v) => v.projectId === p.id && v.reviewStatus === "checked" && !v.voidedAt).map((v) => v.amount));
     return { contractNet, vatRate: p.vatRate, vatDue, contractGross: contractNet + vatDue, invoicedNet, invoicedVat, received, vatSettled,
       vatOutstanding: Math.max(0, Math.round((vatDue - vatSettled) * 100) / 100) };
   }
@@ -951,7 +997,7 @@ export class MockApi {
   // ======================================================================
   balances(): StockBalance[] {
     const wac = new Map<string, { qty: number; wac: number }>(); const loc = new Map<string, number>(); const last = new Map<string, string>();
-    const mv = this.movements.filter((m) => m.reviewStatus === "checked").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const mv = this.movements.filter((m) => m.reviewStatus === "checked" && !m.voidedAt).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     for (const m of mv) {
       const w = wac.get(m.itemId) ?? { qty: 0, wac: 0 };
       const add = (l: string | undefined, q: number) => { if (!l) return; const k = `${m.itemId}|${l}`; loc.set(k, (loc.get(k) ?? 0) + q); };
@@ -974,11 +1020,11 @@ export class MockApi {
   stockValue() { const bs = this.balances(); const byCat: Record<string, number> = {}; bs.forEach((b) => { const c = this.item(b.itemId).category; byCat[c] = (byCat[c] ?? 0) + b.value; }); return { total: round(bs.reduce((s, b) => s + b.value, 0)), byCategory: byCat }; }
   /** available = checked on-hand minus quantities reserved by pending issues / write-offs */
   available(itemId: string, locationId = this.mainLocationId() ?? "") {
-    const pend = this.movements.filter((m) => m.itemId === itemId && m.reviewStatus === "pending" && ["issue", "write_off", "transfer"].includes(m.movementType) && m.locationFromId === locationId).reduce((s, m) => s + m.qty, 0);
+    const pend = this.movements.filter((m) => m.itemId === itemId && m.reviewStatus === "pending" && !m.voidedAt && ["issue", "write_off", "transfer"].includes(m.movementType) && m.locationFromId === locationId).reduce((s, m) => s + m.qty, 0);
     return this.balanceOf(itemId, locationId).qtyOnHand - pend;
   }
   inStockSerials(itemId: string, locationId = this.mainLocationId() ?? "") {
-    const reserved = new Set(this.movements.filter((m) => m.reviewStatus === "pending" && m.itemId === itemId).flatMap((m) => m.serials ?? []));
+    const reserved = new Set(this.movements.filter((m) => m.reviewStatus === "pending" && !m.voidedAt && m.itemId === itemId).flatMap((m) => m.serials ?? []));
     return this.assets.filter((a) => a.inventoryItemId === itemId && a.status === "in_stock" && a.locationId === locationId && !reserved.has(a.serial)).map((a) => a.serial);
   }
   listMovements(f: { itemId?: string; projectId?: string; type?: StockMovement["movementType"]; status?: ReviewStatus } = {}) {
@@ -1347,7 +1393,7 @@ export class MockApi {
   private emitCommissioningEvidence(c: CommissioningRecord, checkerId: string) {
     const at = this.now(); const meterOk = Object.values(c.meter).every(Boolean);
     const mk = (docType: DocType, title: string) => {
-      if (this.documents.some((d) => d.projectId === c.projectId && d.docType === docType && d.reviewStatus === "checked")) return;
+      if (this.documents.some((d) => d.projectId === c.projectId && d.docType === docType && d.reviewStatus === "checked" && !d.voidedAt)) return;
       const prior = this.documents.filter((d) => d.projectId === c.projectId && d.docType === docType).length;
       this.documents.push({ id: this.id("doc"), projectId: c.projectId, docType, title, status: "approved", issuedAt: c.date, issuer: this.userName(c.engineerId), version: prior + 1, fileName: `${docType}-${c.date}.pdf`, sizeBytes: 240_000,
         createdAt: at, createdBy: c.engineerId, updatedAt: at, updatedBy: checkerId, reviewStatus: "checked", submittedBy: c.engineerId, submittedAt: c.submittedAt, checkedBy: checkerId, checkedAt: at, checkComment: "Generated from checked commissioning record", reviewVersion: 1 });

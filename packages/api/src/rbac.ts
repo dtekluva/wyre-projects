@@ -19,7 +19,7 @@ export type Permission =
   | "commissioning.create" | "commissioning.check" | "hse.create" | "hse.check" | "warranty.create" | "warranty.check"
   | "stockcount.create" | "stockcount.approve"
   | "dashboard.read"
-  | "billing.manage" | "contract.manage";
+  | "billing.manage" | "contract.manage" | "record.void";
 
 const R = (...p: Permission[]) => p;
 
@@ -32,7 +32,7 @@ export const MATRIX: Record<RoleCode, Permission[]> = {
               "attachment.create","attachment.read","po.read","po.approve","writeoff.approve",
               "stockcount.approve","commissioning.check","approval.read","membership.manage","users.manage",
               "thresholds.read","thresholds.manage","money.read","inventory.read","asset.read",
-              "recon.read","dashboard.read","catalogue.manage","billing.manage","contract.manage"),
+              "recon.read","dashboard.read","catalogue.manage","billing.manage","contract.manage","record.void"),
   // Checker and project owner — the old pm and lead_engineer merged. Holds gate.request AND gate.approve,
   // which is safe because segregation of duties is enforced per person, not per role: you cannot approve
   // your own request or check your own submission.
@@ -44,7 +44,7 @@ export const MATRIX: Record<RoleCode, Permission[]> = {
               "inventory.read","inventory.request","inventory.check","asset.read","asset.write",
               "visit.create","visit.check","issue.create","issue.update","issue.check",
               "commissioning.create","commissioning.check","hse.create","hse.check",
-              "warranty.create","warranty.check","dashboard.read","catalogue.manage","contract.manage","billing.manage"),
+              "warranty.create","warranty.check","dashboard.read","catalogue.manage","contract.manage","billing.manage","record.void"),
   // Field capture — the old field_tech, renamed. Creates, never checks.
   tech: R("project.read","chronology.read","document.create","document.read",
           "attachment.create","attachment.read","goods_receipt.create",

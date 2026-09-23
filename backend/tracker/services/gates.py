@@ -16,7 +16,7 @@ def gate_status(project_id: str) -> dict:
         return {"stage": p.stage, "name": d["name"], "nextStage": None, "items": [], "ready": False, "approverRoles": [], "pendingApproval": None, "terminal": True}
     items = []
     for doc_type in d["evidence"]:
-        doc = Document.objects.filter(project=p, doc_type=doc_type).order_by("-submitted_at", "-id").first()
+        doc = Document.objects.filter(project=p, doc_type=doc_type, voided_at__isnull=True).order_by("-submitted_at", "-id").first()
         state = "missing" if not doc else "ok" if doc.review_status == "checked" else "pending" if doc.review_status == "pending" else "rejected"
         items.append({"docType": doc_type, "label": DOC_TYPE_LABEL[doc_type], "state": state, "document": doc})
     pending = Approval.objects.filter(project=p, kind="gate", status="pending").first()
