@@ -2,6 +2,7 @@ import { useState } from "react";
 import { DOC_TYPE_LABEL, relative, type FileEntry } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useFileViewer, type ViewTarget } from "../lib/fileViewer";
+import { VoidControl } from "./VoidControl";
 
 const looksLikeImage = (name: string, mime?: string) => (mime ?? "").startsWith("image/") || /\.(jpe?g|png|gif|webp|avif|bmp)$/i.test(name);
 const ext = (name: string) => name.split(".").pop()?.toUpperCase().slice(0, 4) || "FILE";
@@ -35,6 +36,7 @@ export function FileTile({ e, siblings }: { e: FileEntry; siblings: ViewTarget[]
       {sub && <span className="ftile__sub ellipsis" title={sub}>{sub}</span>}
       <span className="ftile__meta ellipsis">{api.userName(by)} · {relative(e.at)}</span>
     </button>
+    <span className="ftile__void"><VoidControl kind={e.kind} id={e.id} projectId={e.kind === "document" ? e.doc.projectId : e.att.projectId} size="xs" what={title} /></span>
     </div>
   );
 }

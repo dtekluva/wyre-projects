@@ -100,7 +100,7 @@ export function Inventory() {
                   {m.reviewStatus === "pending" && !m.voidedAt && api.can(user.id, "inventory.check", m.projectId) &&
                     <button className="ns-btn ns-btn--primary ns-btn--sm"
                             onClick={() => safe(() => api.check("stock_movement", m.id, user.id, "checked"), "Checked — stock updated")}>✓ Check</button>}
-                  {!m.voidedAt && <VoidControl kind="stock_movement" id={m.id} projectId={m.projectId} size="xs" />}
+                  {!m.voidedAt && <VoidControl kind="stock_movement" id={m.id} projectId={m.projectId} size="xs" what={`${MOVEMENT_LABEL[m.movementType]} · ${api.itemName(m.itemId)} × ${m.qty}`} />}
                 </span><VoidedNote r={m} /></td></tr>)}</tbody></table> : <div className="card__body"><Empty title="No movements" /></div>}</div>
         <div className="card"><div className="card__head"><div className="card__title">Write off stock</div><span className="sm muted">Finance approval{wVal >= dirThr ? " + Director" : ""}</span></div>
           <div className="card__body">{canWrite ? <form className="stack" onSubmit={(e) => { e.preventDefault(); if (safe(() => { const f = wFile[0]; const ev = api.addEvidence(user.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, caption: `Write-off evidence — ${wi?.name}` }); api.writeOff(user.id, { itemId: wItem, qty: wi?.isSerialised ? wSel.length : Number(wQty), serials: wSel, reason: wWhy, attachmentIds: [ev.id] }); }, "Write-off submitted for Finance approval")) { setWSel([]); setWWhy(""); setWFile([]); } }}>

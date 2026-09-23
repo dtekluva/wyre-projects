@@ -93,9 +93,9 @@ function FileModal({ target, siblings, onStep, onClose }: { target: ViewTarget; 
           {siblings.length > 1 && <button className="modal__nav modal__nav--next" onClick={() => next && onStep(next)} disabled={!next} aria-label="Next file" title="Next (→)">›</button>}
         </div>
         <footer className="modal__foot">
+          {rec && !rec.voidedAt && <VoidControl kind={target.kind} id={target.id} projectId={projectId} what={`${title} · ${fileName}`} onDone={close} />}
           {url && <a className="ns-btn ns-btn--secondary ns-btn--sm" href={url} target="_blank" rel="noopener noreferrer">Open original</a>}
           {url && <a className="ns-btn ns-btn--ghost ns-btn--sm" href={url} download={fileName}>Download</a>}
-          {rec && !rec.voidedAt && <VoidControl kind={target.kind} id={target.id} projectId={projectId} onDone={close} />}
           {siblings.length > 1 && at >= 0 && <span className="sm muted modal__count">{at + 1} / {siblings.length}</span>}
           <button className="ns-btn ns-btn--primary ns-btn--sm right" onClick={close}>Close</button>
         </footer>

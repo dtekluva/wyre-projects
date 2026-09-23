@@ -27,7 +27,7 @@ function DocRow({ d }: { d: Document }) {
         {d.reviewStatus === "rejected" && d.checkComment && <div className="note note--danger" style={{ marginTop: 6 }}>Rejected: {d.checkComment}</div>}
         <VoidedNote r={d} />
       </div>
-      {!d.voidedAt && <VoidControl kind="document" id={d.id} projectId={d.projectId} />}
+      {!d.voidedAt && <VoidControl kind="document" id={d.id} projectId={d.projectId} size="xs" what={d.title} />}
       {expiring && d.reviewStatus === "checked" && <Badge variant="warning">expires soon</Badge>}
       <ReviewBadge status={d.reviewStatus} />
       <Reading doc={d} />
@@ -171,7 +171,7 @@ export function ProjectDocuments() {
           {atts.length ? <div className="photo-grid">{atts.map((a) => <div key={a.id} className={`photo ${a.voidedAt ? "voided" : ""}`}>
             <PhotoTile a={a} />
             <div className="photo__cap"><div className="ellipsis" title={a.caption}>{a.caption ?? "—"}</div>
-              <div className="sm muted">{api.userName(a.uploadedBy)} · {relative(a.uploadedAt)}{a.gps && " · GPS"}</div><div style={{ marginTop: 4 }}><ReviewBadge status={a.reviewStatus} /> {!a.voidedAt && <VoidControl kind="attachment" id={a.id} projectId={a.projectId} size="xs" />}</div><VoidedNote r={a} /></div>
+              <div className="sm muted">{api.userName(a.uploadedBy)} · {relative(a.uploadedAt)}{a.gps && " · GPS"}</div><div style={{ marginTop: 4 }}><ReviewBadge status={a.reviewStatus} /> {!a.voidedAt && <VoidControl kind="attachment" id={a.id} projectId={a.projectId} size="xs" what={a.caption ?? a.fileName} />}</div><VoidedNote r={a} /></div>
           </div>)}</div> : <Empty title="No uploads yet" />}
         </div>
       </div>

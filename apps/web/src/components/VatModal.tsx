@@ -83,7 +83,7 @@ function PaymentRow({ v, canBill, upload }: { v: VatPayment; canBill: boolean; u
       <Badge variant="neutral">{VAT_PAYMENT_METHOD_LABEL[v.method]}</Badge>
       <ReviewBadge status={v.reviewStatus} />
       <span className="sm muted grow">{api.userName(v.submittedBy)} · {relative(v.submittedAt)}{v.checkedBy && <> · checked by {api.userName(v.checkedBy)}</>}{v.checkComment && <> · “{v.checkComment}”</>}</span>
-      {!v.voidedAt && <VoidControl kind="vat_payment" id={v.id} projectId={v.projectId} size="xs" />}
+      {!v.voidedAt && <VoidControl kind="vat_payment" id={v.id} projectId={v.projectId} size="xs" what={`VAT payment · ${naira(v.amount)} · ${fmtDate(v.paidOn)}`} />}
       {canCheck && !v.voidedAt && !rejecting && <><button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => safe(() => api.check("vat_payment", v.id, user.id, "checked"), "VAT payment checked")}>✓ Check</button>
         <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setRejecting(true)}>Reject…</button></>}
     </div>

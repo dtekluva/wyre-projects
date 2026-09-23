@@ -91,7 +91,7 @@ function InvoiceDetail({ inv, canBill }: { inv: ClientInvoice; canBill: boolean 
       {inv.checkComment && <span>· “{inv.checkComment}”</span>}
       {inv.attachmentIds.length > 0 && <span className="row" style={{ gap: 6 }}>· invoice <Thumbs ids={inv.attachmentIds} /></span>}
       {canCheck && !inv.voidedAt && <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => safe(() => api.check("client_invoice", inv.id, user.id, "checked"), "Invoice checked")}>✓ Check invoice</button>}
-      {!inv.voidedAt && <VoidControl kind="client_invoice" id={inv.id} projectId={inv.projectId} />}<VoidedNote r={inv} />
+      {!inv.voidedAt && <VoidControl kind="client_invoice" id={inv.id} projectId={inv.projectId} what={`Invoice ${inv.invoiceNumber} · ${naira(inv.grossAmount)} gross`} />}<VoidedNote r={inv} />
     </div>
     <div className="workspace" style={{ gridTemplateColumns: "2fr 1fr", gap: 16 }}>
       <div className="stack" style={{ gap: 6 }}>

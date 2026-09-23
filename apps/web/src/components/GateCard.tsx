@@ -31,7 +31,7 @@ export function GateCard({ projectId }: { projectId: string }) {
           return <li key={i.docType} className={`gate__item gate__item--${i.state}`}>
             <span className={`gate__state gate__state--${i.state}`} aria-hidden>{ICON[i.state]}</span>
             <div className="gate__label ellipsis">{i.label}<small className="ellipsis" title={sub}>{sub}</small></div>
-            {d && !d.voidedAt && <VoidControl kind="document" id={d.id} projectId={d.projectId} size="xs" />}
+            {d && !d.voidedAt && <VoidControl kind="document" id={d.id} projectId={d.projectId} size="xs" what={d.title} />}
             {d ? <ReviewBadge status={d.reviewStatus} /> : <Link to="documents" className="ns-btn ns-btn--ghost ns-btn--sm">Add</Link>}
           </li>;
         })}

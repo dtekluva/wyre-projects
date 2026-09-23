@@ -577,7 +577,7 @@ button.frow { text-align: left; font: inherit; cursor: pointer; }
 
 .ftile { display: flex; flex-direction: column; gap: 2px; min-width: 0; position: relative; }
 .ftile__open { display: flex; flex-direction: column; gap: 2px; padding: 0; border: 0; background: none; font: inherit; text-align: left; color: inherit; cursor: pointer; min-width: 0; }
-.modal__foot .void__form { flex-wrap: wrap; }
+.modal__foot .remove-btn { margin-right: auto; }
 .ftile__thumb { position: relative; display: block; aspect-ratio: 4/3; border-radius: var(--ns-radius-medium); overflow: hidden; border: var(--ns-border-hairline) solid var(--ns-color-border-default); background: var(--ns-color-surface-subtle); }
 .ftile__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ftile__thumb--ph { background: linear-gradient(135deg, var(--ns-purple-100), var(--ns-yellow-100)); display: grid; place-items: center; }
@@ -671,7 +671,14 @@ button.frow { text-align: left; font: inherit; cursor: pointer; }
 .voided { opacity: .55; }
 .voided .doc__title, .voided td:not(:last-child), .voided .ns-mono, .voided b { text-decoration: line-through; text-decoration-color: var(--ns-chart-bad, #DC2626); }
 .voided__note { display: block; font-size: var(--ns-size-caption); color: var(--ns-chart-bad, #DC2626); text-decoration: none !important; }
-.void__form { display: inline-flex; gap: 6px; align-items: center; }
-.void__btn { color: var(--ns-color-text-tertiary); }
-.void__btn:hover { color: var(--ns-chart-bad, #DC2626); }
+.remove-ic { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: var(--ns-radius-full); border: 0; background: transparent; color: var(--ns-color-text-tertiary); cursor: pointer; vertical-align: middle; }
+.remove-ic:hover, .remove-ic:focus-visible { background: rgba(220,38,38,.10); color: var(--ns-chart-bad, #DC2626); outline: none; }
+.remove-btn { color: var(--ns-chart-bad, #DC2626); border-color: rgba(220,38,38,.35); background: var(--ns-color-surface); display: inline-flex; align-items: center; gap: 6px; }
+.remove-btn:hover:not(:disabled) { background: rgba(220,38,38,.08); border-color: var(--ns-chart-bad, #DC2626); }
+.modal--confirm { z-index: 1100; }
+.modal__panel--sm { width: min(100%, 460px); }
+.ftile__void { position: absolute; top: 6px; right: 6px; opacity: 0; transition: opacity .12s ease; }
+.ftile:hover .ftile__void, .ftile:focus-within .ftile__void { opacity: 1; }
+.ftile__void .remove-ic { background: rgba(255,255,255,.94); box-shadow: 0 1px 3px rgba(0,0,0,.18); color: var(--ns-color-text-secondary); }
+.ftile__void .remove-ic:hover { color: var(--ns-chart-bad, #DC2626); background: #fff; }
 .ns-btn--xs { padding: 2px 8px; font-size: 11px; min-height: 24px; }
