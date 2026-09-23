@@ -170,6 +170,21 @@ api.setContractStatus("u_fin", vtP.id, { status: "draft" });
 ok(vtP.contractStatus === "draft" && !vtP.contractReceivedBy, "and can be set back to draft");
 const vtR = api.createProject("u_pm1", { name: "Signed job", clientName: "Acme", branchName: "HQ", location: "Lagos", projectType: "solar_battery", contractValueNet: 100, contractReceived: true, pmId: "u_pm1", leadEngineerId: "u_pm2" });
 ok(vtR.contractStatus === "received" && vtR.contractReceivedBy === "u_pm1", "createProject with contractReceived opens as received");
+
+// ---- schedule: planned exit per stage, editable after creation ----
+const sp = api.createProject("u_pm1", { name: "Schedule job", clientName: "Acme", branchName: "HQ", location: "Lagos", projectType: "solar_battery", contractValueNet: 100, pmId: "u_pm1", leadEngineerId: "u_pm2", proposalDueDate: "2026-10-01", targetHandoverDate: "2027-01-15" });
+ok(sp.stagePlanned[0] === "2026-10-01" && sp.stagePlanned[6] === "2027-01-15", "createProject takes proposal due and target handover");
+expectErr(() => api.createProject("u_pm1", { name: "Backwards", clientName: "x", branchName: "x", location: "x", projectType: "solar_battery", contractValueNet: 1, pmId: "u_pm1", leadEngineerId: "u_pm2", proposalDueDate: "2026-10-01", targetHandoverDate: "2026-09-01" }), "invalid", "handover before proposal is refused");
+expectErr(() => api.setStagePlan("u_ft1", sp.id, { planned: { 1: "2026-10-20" } }), "forbidden", "a tech cannot set the schedule");
+expectErr(() => api.setStagePlan("u_pm1", sp.id, { planned: { 1: "2026-09-01" } }), "invalid", "a stage cannot be planned before the stage above it");
+expectErr(() => api.setStagePlan("u_pm1", sp.id, { planned: { 0: "2026-10-01" } }), "invalid", "saving with nothing changed is refused");
+api.setStagePlan("u_pm1", sp.id, { planned: { 1: "2026-10-20", 2: "2026-11-10", 4: "2026-12-20" } });
+ok(sp.stagePlanned[1] === "2026-10-20" && sp.stagePlanned[2] === "2026-11-10" && sp.stagePlanned[4] === "2026-12-20" && sp.stagePlanned[6] === "2027-01-15", "several stages set in one save");
+ok(api.listEvents(sp.id).filter((e) => e.eventType === "plan_updated").length === 3, "one chronology line per changed stage");
+expectErr(() => api.setStagePlan("u_pm1", sp.id, { planned: { 5: "2027-02-01" } }), "invalid", "a stage planned after the handover that follows it is refused");
+api.setStagePlan("u_pm1", sp.id, { planned: { 4: null } });
+ok(sp.stagePlanned[4] === undefined, "a planned date can be cleared");
+
 ok(api.listEvents(vtP.id).some((e) => e.eventType === "contract_updated"), "contract change is in the chronology");
 // invoices
 expectErr(() => api.raiseInvoice("u_ft1", vtP.id, { invoiceNumber: "INV-1", description: "x", netAmount: 100 }), "forbidden", "a tech cannot raise a client invoice");

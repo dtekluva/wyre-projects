@@ -76,6 +76,7 @@ COMMANDS: dict[str, Handler] = {
     "resolveIssue": lambda a, d, f: S.issue(field.resolve_issue(a, d.get("issueId"), _in(d))),
     "addIssuePhotos": lambda a, d, f: S.issue(field.add_issue_photos(a, d.get("issueId"), _in(d))),
     "updateCommercials": lambda a, d, f: S.project(billing.update_commercials(a, d.get("projectId"), _in(d))),
+    "setStagePlan": lambda a, d, f: S.project(projects.set_stage_plan(a, d.get("projectId"), _in(d))),
     "setContractStatus": lambda a, d, f: S.project(billing.set_contract_status(a, d.get("projectId"), _in(d))),
     "raiseInvoice": lambda a, d, f: S.client_invoice(billing.raise_invoice(a, d.get("projectId"), _in(d))),
     "recordReceipt": lambda a, d, f: S.client_invoice(billing.record_receipt(a, d.get("invoiceId"), _in(d))),

@@ -131,7 +131,7 @@ export type EventType =
   | "role_granted" | "role_revoked" | "commissioning_assigned" | "note"
   | "stock_movement" | "cost_item" | "retention" | "reconciliation"
   | "issue" | "commissioning" | "hse" | "warranty" | "stock_count"
-  | "contract_updated" | "contract_received" | "invoice";
+  | "contract_updated" | "contract_received" | "invoice" | "plan_updated";
 
 export interface ChronologyEvent {
   id: string; projectId: string; occurredAt: string; actorId: string; eventType: EventType;

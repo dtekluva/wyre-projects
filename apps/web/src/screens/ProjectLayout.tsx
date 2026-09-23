@@ -45,7 +45,7 @@ export function ProjectLayout() {
           <div className="card ctx__card"><div className="ctx__title">Awaiting approval</div>
             {pending.length ? <div className="stack">{pending.map((a) => <div key={a.id} className="sm"><Link to="/work/approvals" className="link">{a.title}</Link><div className="muted">needs {a.requiredRoles.filter((r) => !a.decisions.some((d) => d.role === r)).map((r) => ROLE_LABEL[r]).join(", ")}</div></div>)}</div>
               : <div className="sm muted">Nothing pending</div>}</div>
-          <div className="card ctx__card"><div className="ctx__title">Stage</div><div className="sm"><b>{STAGES[p.stage].name}</b><div className="muted">{p.stagePlanned[p.stage] ? `Planned exit ${p.stagePlanned[p.stage]}` : "No planned exit date"}</div></div></div>
+          <div className="card ctx__card"><div className="ctx__title">Stage</div><div className="sm"><b>{STAGES[p.stage].name}</b><div className="muted">{p.stagePlanned[p.stage] ? `Planned exit ${p.stagePlanned[p.stage]}` : "No planned exit date"} · <Link to={`/projects/${p.id}#schedule`} className="link">schedule</Link></div></div></div>
           <div className="card ctx__card"><div className="ctx__title">Team</div><div className="stack" style={{ gap: 6 }}>{team.map((m) => <div key={m.id} className="row sm"><Avatar user={api.userOrStub(m.userId)} sm /><span className="grow ellipsis">{api.userName(m.userId)}</span><span className="muted">{ROLE_LABEL[m.role]}</span></div>)}</div></div>
           <div className="card ctx__card"><div className="ctx__title">Recent activity</div><Timeline events={api.listEvents(p.id)} limit={5} /><Link to={`/projects/${p.id}/timeline`} className="sm link">Full timeline →</Link></div>
         </aside>

@@ -457,6 +457,24 @@ class VisitPhotoTest(TestCase):
         review.check(u["u_dir"], "vat_payment", vp2.id, "checked")
         self.assertEqual(money.money(np_.id)["vatOutstanding"], 0)
 
+    def test_schedule_is_editable_after_creation(self):
+        u = self.u
+        sp = projects.create_project(u["u_pm1"], {"name": "Schedule job", "clientName": "Acme", "branchName": "HQ", "location": "Lagos", "projectType": "solar_battery",
+                                                 "contractValueNet": 100, "pmId": "u_pm1", "leadEngineerId": "u_pm2", "proposalDueDate": "2026-10-01", "targetHandoverDate": "2027-01-15"})
+        self.assertEqual(sp.stage_planned, {"0": "2026-10-01", "6": "2027-01-15"})
+        self.err("invalid", projects.create_project, u["u_pm1"], {"name": "Backwards", "clientName": "x", "branchName": "x", "location": "x", "projectType": "solar_battery",
+                                                                    "contractValueNet": 1, "pmId": "u_pm1", "leadEngineerId": "u_pm2", "proposalDueDate": "2026-10-01", "targetHandoverDate": "2026-09-01"})
+        self.err("forbidden", projects.set_stage_plan, u["u_ft1"], sp.id, {"planned": {"1": "2026-10-20"}})
+        self.err("invalid", projects.set_stage_plan, u["u_pm1"], sp.id, {"planned": {"1": "2026-09-01"}})
+        self.err("invalid", projects.set_stage_plan, u["u_pm1"], sp.id, {"planned": {"0": "2026-10-01"}})
+        sp = projects.set_stage_plan(u["u_pm1"], sp.id, {"planned": {"1": "2026-10-20", "2": "2026-11-10", "4": "2026-12-20"}})
+        self.assertEqual(sp.stage_planned, {"0": "2026-10-01", "1": "2026-10-20", "2": "2026-11-10", "4": "2026-12-20", "6": "2027-01-15"})
+        self.assertEqual(sp.events.filter(event_type="plan_updated").count(), 3)
+        self.err("invalid", projects.set_stage_plan, u["u_pm1"], sp.id, {"planned": {"5": "2027-02-01"}})
+        sp = projects.set_stage_plan(u["u_pm1"], sp.id, {"planned": {"4": None}})
+        self.assertNotIn("4", sp.stage_planned)
+        serializers.project(sp)
+
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u
         v = field.log_visit(u["u_ft1"], "p1", {"visitType": "inspection", "startedAt": "2026-09-10T09:00:00Z", "endedAt": "2026-09-10T10:00:00Z",

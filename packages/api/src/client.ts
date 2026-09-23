@@ -41,6 +41,8 @@ export interface NewProjectInput {
   pmId: string; leadEngineerId: string;
   /** planned completion date of stage 0 (proposal sign-off), YYYY-MM-DD */
   proposalDueDate?: string;
+  /** planned handover (stage 6 exit), YYYY-MM-DD — the date people actually know at the start */
+  targetHandoverDate?: string;
 }
 
 type Listener = () => void;
@@ -216,6 +218,8 @@ export class MockApi {
     if (!Number.isFinite(retentionPercent) || retentionPercent < 0 || retentionPercent > 20) throw new ApiError("Retention must be between 0 and 20 %", "invalid");
     if (input.systemCapacityKwp !== undefined && !(Number(input.systemCapacityKwp) > 0)) throw new ApiError("System capacity must be a positive number of kWp", "invalid");
     if (input.proposalDueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.proposalDueDate)) throw new ApiError("Proposal due date must be YYYY-MM-DD", "invalid");
+    if (input.targetHandoverDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.targetHandoverDate)) throw new ApiError("Target handover must be YYYY-MM-DD", "invalid");
+    if (input.proposalDueDate && input.targetHandoverDate && input.targetHandoverDate < input.proposalDueDate) throw new ApiError("Target handover cannot be before the proposal sign-off", "invalid");
     const pm = this.getUser(input.pmId); if (!pm.roles.includes("techlead")) throw new ApiError(`${pm.name} is not a Tech Lead`, "invalid");
     const le = this.getUser(input.leadEngineerId); if (!le.roles.includes("techlead")) throw new ApiError(`${le.name} is not a Tech Lead`, "invalid");
     if (this.projects.some((p) => p.name.trim().toLowerCase() === name.toLowerCase())) throw new ApiError("A project with that name already exists", "conflict");
@@ -226,7 +230,7 @@ export class MockApi {
       stage: 0, rag: "green", pmId: pm.id, leadEngineerId: le.id,
       contractValueNet, vatRate, vatTreatment, vatAmount, contractValue, approvedBudget, committed: 0, actual: 0,
       contractStatus: input.contractReceived ? "received" : "draft", contractReceivedOn: input.contractReceived ? at.slice(0, 10) : undefined, contractReceivedBy: input.contractReceived ? actorId : undefined,
-      stagePlanned: input.proposalDueDate ? { 0: input.proposalDueDate } : {}, stageActual: {},
+      stagePlanned: { ...(input.proposalDueDate ? { 0: input.proposalDueDate } : {}), ...(input.targetHandoverDate ? { 6: input.targetHandoverDate } : {}) }, stageActual: {},
       retentionPercent, openIssues: { critical: 0, high: 0, medium: 0, low: 0 },
       createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId,
     };
@@ -812,6 +816,30 @@ export class MockApi {
       vatOutstanding: Math.max(0, Math.round((vatDue - vatSettled) * 100) / 100) };
   }
   listInvoices(projectId: string) { return this.clientInvoices.filter((i) => i.projectId === projectId).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt)); }
+
+  /** The schedule: planned exit date per stage. Stages already exited are history and stay as they were; the rest
+   *  must run in stage order. Every changed date is one chronology line, so a slipping plan leaves a trail. */
+  setStagePlan(actorId: string, projectId: string, input: { planned: Partial<Record<Stage, string | null>> }): Project {
+    this.require(actorId, "project.update", projectId); const p = this.raw(projectId);
+    const next: Partial<Record<Stage, string>> = { ...p.stagePlanned };
+    const changes: string[] = [];
+    for (const [k, v] of Object.entries(input.planned ?? {})) {
+      const st = Number(k) as Stage; if (!STAGES.some((x) => x.stage === st)) throw new ApiError(`Unknown stage ${k}`, "invalid");
+      const val = v ? String(v).slice(0, 10) : undefined;
+      if (val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) throw new ApiError(`Stage ${st} date must be YYYY-MM-DD`, "invalid");
+      if ((p.stagePlanned[st] ?? undefined) === val) continue;
+      if (st < p.stage) throw new ApiError(`Stage ${st} · ${STAGES[st].name} has already been exited — its plan is history`, "conflict");
+      if (val) next[st] = val; else delete next[st];
+      changes.push(`Stage ${st} · ${STAGES[st].name} — planned exit ${p.stagePlanned[st] ? this.fmtDate(p.stagePlanned[st]!) : "none"} → ${val ? this.fmtDate(val) : "none"}`);
+    }
+    if (!changes.length) throw new ApiError("Nothing changed", "invalid");
+    let prev: string | undefined;
+    for (const s of STAGES) { const d = next[s.stage as Stage]; if (!d) continue; if (prev && d < prev) throw new ApiError(`Stage ${s.stage} · ${s.name} cannot be planned before the stage above it`, "invalid"); prev = d; }
+    const at = this.now(); p.stagePlanned = next; p.updatedAt = at; p.updatedBy = actorId;
+    for (const c of changes) this.log(projectId, actorId, "plan_updated", c, undefined, { model: "Project", id: p.id });
+    this.emit(); return p;
+  }
+  private fmtDate(iso: string) { const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }); }
 
   /** Everything commercial on the project, editable after creation — a draft contract firms up, a budget is approved,
    *  retention is agreed. Director or Finance; every change is logged with the before figures. */

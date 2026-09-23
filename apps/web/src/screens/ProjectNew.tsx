@@ -25,7 +25,7 @@ export function ProjectNew() {
   const vat = vatOn(net, rate, treatment); const gross = net + vat;
   const [retention, setRetention] = useState(String(api.thresholdNum("retention.percent", 5)));
   const [pmId, setPmId] = useState(user.roles.includes("techlead") ? user.id : pms[0]?.id ?? ""); const [leId, setLeId] = useState(les[0]?.id ?? "");
-  const [due, setDue] = useState("");
+  const [due, setDue] = useState(""); const [handover, setHandover] = useState("");
   const allowed = api.canCreateProject(user.id);
   const nextCode = api.nextProjectCode();
 
@@ -37,7 +37,7 @@ export function ProjectNew() {
         name, clientName: client, branchName: branch, location: loc, projectType: type,
         systemCapacityKwp: kwp.trim() ? Number(kwp) : undefined,
         contractValueNet: net, vatRate: rate, vatTreatment: treatment, contractReceived: received, approvedBudget: Number(budget || 0), retentionPercent: Number(retention),
-        pmId, leadEngineerId: leId, proposalDueDate: due || undefined,
+        pmId, leadEngineerId: leId, proposalDueDate: due || undefined, targetHandoverDate: handover || undefined,
       });
       id = p.id;
     }, "Project created — now at stage 0 · Lead / Proposal");
@@ -94,6 +94,8 @@ export function ProjectNew() {
               <input className="ns-input" type="number" min="0" max="20" step="0.5" value={retention} onChange={(e) => setRetention(e.target.value)} /></label>
             <label className="ns-field"><span className="ns-field__label">Proposal sign-off due (optional)</span>
               <input className="ns-input" type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
+            <label className="ns-field"><span className="ns-field__label">Target handover (optional) <span className="muted">· the rest of the schedule is set on the Overview</span></span>
+              <input className="ns-input" type="date" value={handover} onChange={(e) => setHandover(e.target.value)} min={due || undefined} /></label>
             <div className="ns-field" style={{ gridColumn: "1 / -1" }}>
               <label className="row sm" style={{ gap: 8, cursor: "pointer" }}><input type="checkbox" checked={received} onChange={(e) => setReceived(e.target.checked)} /> The signed contract is already in hand</label>
               <div className="sm muted" style={{ marginTop: 4 }}>{received ? "The project opens with its contract received." : "The project opens as a draft — figures are provisional until Finance or a Director marks the contract received under Money."}</div>

@@ -72,6 +72,16 @@ def to_date(v: Any, label: str = "date") -> Optional[date]:
     return d
 
 
+def fmt_date(v: Any) -> str:
+    """'12 Sep 2026' for a YYYY-MM-DD string or date; 'none' when empty — for chronology lines."""
+    if not v:
+        return "none"
+    try:
+        return date.fromisoformat(str(v)[:10]).strftime("%d %b %Y")
+    except ValueError:
+        return str(v)
+
+
 def fmt(n: Any) -> str:
     return "₦" + f"{int(dec(n).to_integral_value(rounding=ROUND_HALF_UP)):,}"
 

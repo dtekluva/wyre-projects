@@ -83,6 +83,16 @@ def create_project(actor: User, input: dict) -> Project:
     due = input.get("proposalDueDate")
     if due and not re.match(r"^\d{4}-\d{2}-\d{2}$", str(due)):
         raise ApiError("Proposal due date must be YYYY-MM-DD", "invalid")
+    handover = input.get("targetHandoverDate")
+    if handover and not re.match(r"^\d{4}-\d{2}-\d{2}$", str(handover)):
+        raise ApiError("Target handover must be YYYY-MM-DD", "invalid")
+    if due and handover and str(handover) < str(due):
+        raise ApiError("Target handover cannot be before the proposal sign-off", "invalid")
+    planned = {}
+    if due:
+        planned["0"] = due
+    if handover:
+        planned["6"] = handover
     pm = b.get_user(input.get("pmId"))
     if "techlead" not in pm.role_codes():
         raise ApiError(f"{pm.name} is not a Project Manager", "invalid")
@@ -97,7 +107,7 @@ def create_project(actor: User, input: dict) -> Project:
         project_type=ptype, system_capacity_kwp=b.dec(kwp) if kwp not in (None, "") else None,
         stage=0, rag="green", pm=pm, lead_engineer=le, contract_value_net=contract_value_net, vat_rate=vat_rate, vat_treatment=vat_treatment, approved_budget=approved_budget,
         contract_status="received" if input.get("contractReceived") else "draft", contract_received_on=at.date() if input.get("contractReceived") else None, contract_received_by=actor if input.get("contractReceived") else None,
-        committed=0, actual=0, stage_planned={"0": due} if due else {}, stage_actual={}, retention_percent=retention,
+        committed=0, actual=0, stage_planned=planned, stage_actual={}, retention_percent=retention,
         created_at=at, created_by=actor, updated_at=at, updated_by=actor,
     )
     b.log(p.id, actor, "project_created", f"Project created — {p.code} · {PROJECT_TYPE_LABEL[ptype]} · {b.fmt(contract_value_net)} net of VAT", None, {"model": "Project", "id": p.id})
@@ -148,4 +158,53 @@ def assign_commissioning(actor: User, project_id: str, user_id: Optional[str]) -
         p.commissioning_assignee = None
         p.save(update_fields=["commissioning_assignee"])
         b.log(project_id, actor, "commissioning_assigned", f"{was} unassigned from commissioning")
+    return p
+
+
+# mirrors packages/api/src/gates.ts — the lifecycle is fixed, so the names live in code on both sides
+STAGE_NAMES = ["Lead / Proposal", "Site Survey", "Design & Approvals", "Procurement", "Installation", "Commissioning", "Handover", "O&M", "Closed / Decommissioned"]
+
+
+@transaction.atomic
+def set_stage_plan(actor: User, project_id: str, input: dict) -> Project:
+    """The schedule: planned exit date per stage. Stages already exited are history and stay as they were; the
+    rest must run in stage order. Every changed date is one chronology line, so a slipping plan leaves a trail."""
+    b.require(actor, "project.update", project_id)
+    p = b.project(project_id)
+    current = dict(p.stage_planned or {})
+    nxt = dict(current)
+    changes = []
+    for k, v in (input.get("planned") or {}).items():
+        try:
+            st = int(k)
+        except (TypeError, ValueError):
+            raise ApiError(f"Unknown stage {k}", "invalid")
+        if st < 0 or st > 8:
+            raise ApiError(f"Unknown stage {k}", "invalid")
+        val = str(v)[:10] if v else None
+        if val and not re.match(r"^\d{4}-\d{2}-\d{2}$", val):
+            raise ApiError(f"Stage {st} date must be YYYY-MM-DD", "invalid")
+        if current.get(str(st)) == val:
+            continue
+        if st < p.stage:
+            raise ApiError(f"Stage {st} · {STAGE_NAMES[st]} has already been exited — its plan is history", "conflict")
+        if val:
+            nxt[str(st)] = val
+        else:
+            nxt.pop(str(st), None)
+        changes.append(f"Stage {st} · {STAGE_NAMES[st]} — planned exit {b.fmt_date(current.get(str(st)))} → {b.fmt_date(val)}")
+    if not changes:
+        raise ApiError("Nothing changed", "invalid")
+    prev = None
+    for st in range(9):
+        d = nxt.get(str(st))
+        if not d:
+            continue
+        if prev and d < prev:
+            raise ApiError(f"Stage {st} · {STAGE_NAMES[st]} cannot be planned before the stage above it", "invalid")
+        prev = d
+    p.stage_planned = nxt
+    b.stamp(p, actor, b.now()); p.save()
+    for c in changes:
+        b.log(project_id, actor, "plan_updated", c, None, {"model": "Project", "id": p.id})
     return p
