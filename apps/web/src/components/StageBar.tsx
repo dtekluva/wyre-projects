@@ -1,5 +1,6 @@
+import type { ReactNode } from "react";
 import { STAGES, type Stage } from "@wyre/api";
-export function StageBar({ stage }: { stage: Stage }) {
+export function StageBar({ stage, action }: { stage: Stage; action?: ReactNode }) {
   return (
     <div className="stagebar-wrap">
       <div className="stagebar" role="list" aria-label="Lifecycle stages">
@@ -9,7 +10,7 @@ export function StageBar({ stage }: { stage: Stage }) {
             <div className="stagebar__track" /><div className="stagebar__label"><b>{s.stage}</b>{s.short}</div></div>;
         })}
       </div>
-      <div className="stagebar__caption"><b>Stage {stage}</b> · {STAGES[stage].name} · {stage} of 8</div>
+      <div className={`stagebar__caption ${action ? "stagebar__caption--action" : ""}`}><span><b>Stage {stage}</b> · {STAGES[stage].name} · {stage} of 8</span>{action && <span className="stagebar__action">{action}</span>}</div>
     </div>
   );
 }

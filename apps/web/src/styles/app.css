@@ -682,3 +682,6 @@ button.frow { text-align: left; font: inherit; cursor: pointer; }
 .ftile__void .remove-ic { background: rgba(255,255,255,.94); box-shadow: 0 1px 3px rgba(0,0,0,.18); color: var(--ns-color-text-secondary); }
 .ftile__void .remove-ic:hover { color: var(--ns-chart-bad, #DC2626); background: #fff; }
 .ns-btn--xs { padding: 2px 8px; font-size: 11px; min-height: 24px; }
+
+.stagebar__caption--action { display: flex !important; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.stagebar__action .ns-btn { white-space: nowrap; }

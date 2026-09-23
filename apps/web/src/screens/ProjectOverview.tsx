@@ -34,7 +34,7 @@ export function ProjectOverview() {
   const today = new Date().toISOString();
   return (
     <div className="stack" style={{ gap: 20 }}>
-      <div className="row" style={{ alignItems: "flex-start", gap: 12 }}><div className="grow"><StageBar stage={p.stage} /></div><RollbackControl p={p} /></div>
+      <StageBar stage={p.stage} action={<RollbackControl p={p} />} />
       <MoneyStrip p={p} />
       <GateCard projectId={p.id} />
       <div className="card">
