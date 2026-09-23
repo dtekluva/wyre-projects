@@ -577,9 +577,7 @@ button.frow { text-align: left; font: inherit; cursor: pointer; }
 
 .ftile { display: flex; flex-direction: column; gap: 2px; min-width: 0; position: relative; }
 .ftile__open { display: flex; flex-direction: column; gap: 2px; padding: 0; border: 0; background: none; font: inherit; text-align: left; color: inherit; cursor: pointer; min-width: 0; }
-.ftile__void { position: absolute; top: 6px; right: 6px; opacity: 0; transition: opacity .12s ease; }
-.ftile:hover .ftile__void, .ftile:focus-within .ftile__void { opacity: 1; }
-.ftile__void .void__btn { background: rgba(255,255,255,.92); border-radius: var(--ns-radius-full); }
+.modal__foot .void__form { flex-wrap: wrap; }
 .ftile__thumb { position: relative; display: block; aspect-ratio: 4/3; border-radius: var(--ns-radius-medium); overflow: hidden; border: var(--ns-border-hairline) solid var(--ns-color-border-default); background: var(--ns-color-surface-subtle); }
 .ftile__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ftile__thumb--ph { background: linear-gradient(135deg, var(--ns-purple-100), var(--ns-yellow-100)); display: grid; place-items: center; }

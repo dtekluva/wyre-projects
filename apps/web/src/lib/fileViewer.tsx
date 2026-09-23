@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { useApi } from "./useApi";
+import { VoidControl, VoidedNote } from "../components/VoidControl";
 
 export type ViewTarget = { kind: "document" | "attachment"; id: string };
 /** Open a file. Pass the surrounding files too and the viewer steps through them with ← → instead of closing. */
@@ -32,6 +33,7 @@ function FileModal({ target, siblings, onStep, onClose }: { target: ViewTarget; 
   const fileName = doc?.fileName ?? att?.fileName ?? "file";
   const title = doc?.title ?? att?.caption ?? fileName;
   const mime = att?.mime;
+  const rec = doc ?? att; const projectId = doc?.projectId ?? att?.projectId ?? undefined;
   const meta = doc
     ? `v${doc.version} · ${store.userName(doc.submittedBy)} · ${doc.sizeBytes ? Math.round(doc.sizeBytes / 1024) + " KB" : ""}`
     : att ? `${store.userName(att.uploadedBy)} · ${att.sizeBytes ? Math.round(att.sizeBytes / 1024) + " KB" : ""}${att.gps ? " · GPS" : ""}` : "";
@@ -71,6 +73,7 @@ function FileModal({ target, siblings, onStep, onClose }: { target: ViewTarget; 
           <div style={{ minWidth: 0 }}>
             <div className="modal__title ellipsis">{title}</div>
             <div className="sm muted ellipsis">{fileName}{meta && ` · ${meta}`}</div>
+            {rec && <VoidedNote r={rec} />}
           </div>
           <button className="modal__x" onClick={close} aria-label="Close">✕</button>
         </header>
@@ -92,6 +95,7 @@ function FileModal({ target, siblings, onStep, onClose }: { target: ViewTarget; 
         <footer className="modal__foot">
           {url && <a className="ns-btn ns-btn--secondary ns-btn--sm" href={url} target="_blank" rel="noopener noreferrer">Open original</a>}
           {url && <a className="ns-btn ns-btn--ghost ns-btn--sm" href={url} download={fileName}>Download</a>}
+          {rec && !rec.voidedAt && <VoidControl kind={target.kind} id={target.id} projectId={projectId} onDone={close} />}
           {siblings.length > 1 && at >= 0 && <span className="sm muted modal__count">{at + 1} / {siblings.length}</span>}
           <button className="ns-btn ns-btn--primary ns-btn--sm right" onClick={close}>Close</button>
         </footer>
