@@ -53,7 +53,7 @@ export function Portfolio() {
         return <Link key={p.id} to={`/projects/${p.id}`} className="card pcard">
           <div className="pcard__top"><RagDot rag={p.rag} title={p.ragReason} /><span className="pcard__name">{p.name}</span><StageChip stage={p.stage} /></div>
           <div className="sm muted"><span className="ns-mono">{p.code}</span> · {p.clientName} · {p.location}</div>
-          <div className="pcard__row"><span className="ns-mono">{naira(p.contractValueNet, true)} <span className="sm muted">net</span>{mo && mo.vatOutstanding > 0 && <Badge variant="warning">VAT {naira(mo.vatOutstanding, true)} open</Badge>}</span>{seesMoney && <span className="row"><Bar pct={burn} /><span className="sm ns-mono">{mo!.planned ? `${burn}%` : "—"}</span></span>}</div>
+          <div className="pcard__row"><span className="ns-mono">{naira(p.contractValueNet, true)} <span className="sm muted">net</span>{p.contractStatus === "draft" && <Badge variant="warning">draft</Badge>}{mo && mo.vatOutstanding > 0 && <Badge variant="warning">VAT {naira(mo.vatOutstanding, true)} open</Badge>}</span>{seesMoney && <span className="row"><Bar pct={burn} /><span className="sm ns-mono">{mo!.planned ? `${burn}%` : "—"}</span></span>}</div>
           <div className="pcard__row row--wrap">
             {slip > 0 ? <Badge variant={slip > 7 ? "danger" : "warning"}>+{slip} d</Badge> : p.stage !== 8 && <Badge variant="success">on track</Badge>}
             {p.openIssues.critical > 0 && <Badge variant="danger">{p.openIssues.critical} crit</Badge>}{p.openIssues.high > 0 && <Badge variant="warning">{p.openIssues.high} high</Badge>}
@@ -73,7 +73,7 @@ export function Portfolio() {
               <td><Link to={`/projects/${p.id}`} className="link">{p.name}</Link><div className="sm muted"><span className="ns-mono">{p.code}</span> · {p.clientName} · {p.location}</div></td>
               <td><StageChip stage={p.stage} /></td>
               <td><span className="row"><RagDot rag={p.rag} title={p.ragReason} /><span className="sm">{p.rag}</span></span></td>
-              <td className="num ns-mono">{naira(p.contractValueNet, true)}{mo && mo.vatOutstanding > 0 && <div><Badge variant="warning">VAT {naira(mo.vatOutstanding, true)} open</Badge></div>}</td>
+              <td className="num ns-mono">{naira(p.contractValueNet, true)}{p.contractStatus === "draft" && <div><Badge variant="warning">draft</Badge></div>}{mo && mo.vatOutstanding > 0 && <div><Badge variant="warning">VAT {naira(mo.vatOutstanding, true)} open</Badge></div>}</td>
               {seesMoney && <td><span className="row"><Bar pct={burn} /><span className="sm ns-mono">{mo!.planned ? `${burn}%` : "—"}</span></span></td>}
               <td>{slip > 0 ? <Badge variant={slip > 7 ? "danger" : "warning"}>+{slip} d</Badge> : p.stage === 8 ? <span className="sm muted">—</span> : <Badge variant="success">on track</Badge>}</td>
               <td><span className="row row--wrap">{p.openIssues.critical > 0 && <Badge variant="danger">{p.openIssues.critical} crit</Badge>}{p.openIssues.high > 0 && <Badge variant="warning">{p.openIssues.high} high</Badge>}

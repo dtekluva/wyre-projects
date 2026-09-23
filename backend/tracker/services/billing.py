@@ -14,7 +14,7 @@ from decimal import Decimal
 from django.db import transaction
 
 from ..errors import ApiError
-from ..models import Attachment, ClientInvoice, Project, User, VatPayment
+from ..models import Attachment, ClientInvoice, Document, Project, User, VatPayment
 from . import base as b
 
 VAT_TREATMENTS = {"standard": "Standard — we collect and remit", "withheld_by_client": "Withheld by client — they remit to FIRS", "exempt": "Exempt / zero-rated"}
@@ -68,21 +68,62 @@ def _files_on_project(ids, project_id: str) -> list[str]:
     return ids
 
 
+CONTRACT_STATUSES = ("draft", "received")
+
+
+def _num(v, current, label: str, maximum=None) -> Decimal:
+    if v in (None, ""):
+        return b.dec(current)
+    n = b.dec(v)
+    if n < 0 or (maximum is not None and n > maximum):
+        raise ApiError(f"{label} must be {'between 0 and ' + str(maximum) if maximum is not None else 'zero or more'}", "invalid")
+    return n
+
+
 @transaction.atomic
-def set_contract_terms(actor: User, project_id: str, input: dict) -> Project:
-    """Correct the contract's commercial terms. Rare — a data fix, not a change order — so Director or Finance, and logged."""
+def update_commercials(actor: User, project_id: str, input: dict) -> Project:
+    """Everything commercial on the project, editable after creation — a draft contract firms up, a budget is
+    approved, retention is agreed. Director or Finance; every change is logged with the before figures."""
     b.require(actor, "contract.manage", project_id)
     p = b.project(project_id)
-    net = b.dec(input.get("contractValueNet"))
-    if net < 0:
-        raise ApiError("Contract value must be zero or more", "invalid")
+    net = _num(input.get("contractValueNet"), p.contract_value_net, "Contract value")
     rate = _rate(input.get("vatRate"), p.vat_rate); treatment = _treatment(input.get("vatTreatment"), p.vat_treatment)
-    if b.dec(p.approved_budget) > net and net > 0:
+    budget = _num(input.get("approvedBudget"), p.approved_budget, "Approved budget")
+    retention = _num(input.get("retentionPercent"), p.retention_percent, "Retention", 20)
+    if budget > net and net > 0:
         raise ApiError("Approved budget cannot exceed the net contract value", "invalid")
-    was = f"{b.fmt(p.contract_value_net)} net · VAT {p.vat_rate}% · {VAT_TREATMENTS[p.vat_treatment]}"
-    p.contract_value_net = b.round2(net); p.vat_rate = rate; p.vat_treatment = treatment
+    was = f"{b.fmt(p.contract_value_net)} net · VAT {p.vat_rate}% · {VAT_TREATMENTS[p.vat_treatment]} · budget {b.fmt(p.approved_budget)} · retention {p.retention_percent}%"
+    p.contract_value_net = b.round2(net); p.vat_rate = rate; p.vat_treatment = treatment; p.approved_budget = b.round2(budget); p.retention_percent = retention
     b.stamp(p, actor, b.now()); p.save()
-    b.log(project_id, actor, "contract_updated", f"Contract terms set — {b.fmt(p.contract_value_net)} net · VAT {rate}% ({b.fmt(p.vat_amount)}) · {VAT_TREATMENTS[treatment]}", f"was {was}", {"model": "Project", "id": p.id})
+    b.log(project_id, actor, "contract_updated", f"Commercials updated — {b.fmt(p.contract_value_net)} net · VAT {rate}% ({b.fmt(p.vat_amount)}) · budget {b.fmt(p.approved_budget)} · retention {retention}%", f"was {was}", {"model": "Project", "id": p.id})
+    return p
+
+
+@transaction.atomic
+def set_contract_status(actor: User, project_id: str, input: dict) -> Project:
+    """The signed contract arrived (or turned out not to have). Optionally points at the Contract document filed for it."""
+    b.require(actor, "contract.manage", project_id)
+    p = b.project(project_id)
+    status = str(input.get("status") or "")
+    if status not in CONTRACT_STATUSES:
+        raise ApiError("Unknown contract status", "invalid")
+    if status == p.contract_status:
+        raise ApiError(f"Contract is already {status}", "conflict")
+    at = b.now()
+    if status == "received":
+        on = str(input.get("receivedOn") or at.date().isoformat())
+        if not re.match(r"^\d{4}-\d{2}-\d{2}", on):
+            raise ApiError("Date must be YYYY-MM-DD", "invalid")
+        doc_id = input.get("documentId") or None
+        if doc_id and not Document.objects.filter(pk=doc_id, project_id=project_id).exists():
+            raise ApiError("Document is not on this project", "invalid")
+        p.contract_status = "received"; p.contract_received_on = date.fromisoformat(on[:10]); p.contract_received_by = actor; p.contract_document_id = doc_id
+        b.stamp(p, actor, at); p.save()
+        b.log(project_id, actor, "contract_received", f"Contract received — {b.fmt(p.contract_value_net)} net" + (" · signed copy filed" if doc_id else ""), None, {"model": "Project", "id": p.id})
+    else:
+        p.contract_status = "draft"; p.contract_received_on = None; p.contract_received_by = None; p.contract_document = None
+        b.stamp(p, actor, at); p.save()
+        b.log(project_id, actor, "contract_updated", "Contract set back to draft", None, {"model": "Project", "id": p.id})
     return p
 
 

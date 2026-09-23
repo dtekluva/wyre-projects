@@ -71,6 +71,8 @@ export interface Project extends AuditFields {
   vatAmount: number;
   /** derived: net + VAT. Always labelled "gross" or "incl. VAT" wherever it is shown */
   contractValue: number;
+  /** draft: project opened before the final contract is in hand — figures are provisional · received: signed contract received */
+  contractStatus: ContractStatus; contractReceivedOn?: string; contractReceivedBy?: string; contractDocumentId?: string;
   approvedBudget: number; committed: number; actual: number;
   stagePlanned: Partial<Record<Stage, string>>; stageActual: Partial<Record<Stage, string>>;
   defectsLiabilityEnd?: string; retentionPercent: number;
@@ -129,7 +131,7 @@ export type EventType =
   | "role_granted" | "role_revoked" | "commissioning_assigned" | "note"
   | "stock_movement" | "cost_item" | "retention" | "reconciliation"
   | "issue" | "commissioning" | "hse" | "warranty" | "stock_count"
-  | "contract_updated" | "invoice";
+  | "contract_updated" | "contract_received" | "invoice";
 
 export interface ChronologyEvent {
   id: string; projectId: string; occurredAt: string; actorId: string; eventType: EventType;
@@ -240,6 +242,9 @@ export interface ChangeOrder extends AuditFields {
   costDelta: number; timeDeltaDays: number; status: "pending_approval" | "approved" | "rejected"; approvalId: string;
 }
 export interface Retention { projectId: string; percent: number; amountHeld: number; releaseConditions: string; releasedAt?: string; releasedBy?: string; approvalId?: string }
+
+export type ContractStatus = "draft" | "received";
+export const CONTRACT_STATUS_LABEL: Record<ContractStatus, string> = { draft: "Draft — contract not yet received", received: "Contract received" };
 
 // ---------- VAT & client billing ----------
 /** standard: we collect VAT and remit it · withheld_by_client: the client (oil & gas, MDAs) remits it on our behalf · exempt: zero-rated */

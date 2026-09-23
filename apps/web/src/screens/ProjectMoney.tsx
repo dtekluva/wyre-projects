@@ -85,7 +85,7 @@ export function ProjectMoney() {
       <div className="card"><div className="card__head"><div className="card__title">Budget by category</div><span className="sm muted">track = budget</span></div>
         <div className="card__body"><CategoryChart m={m} /></div></div>
 
-      <div className="card"><div className="card__head"><div className="card__title">Budget lines</div><span className="sm muted">{cost.length} lines · Finance checks</span></div>
+      <div id="budget-lines" className="card"><div className="card__head"><div className="card__title">Budget lines</div><span className="sm muted">{cost.length} lines · Finance checks</span></div>
         <div className="table--wrap"><table className="table ledger table--entry"><thead><tr><th>Line</th><th>Category</th><th className="num">Planned</th><th>Status</th><th></th></tr></thead>
           <tbody>{cost.map((c) => <BudgetLine key={c.id} c={c} projectId={p.id} />)}</tbody></table></div>
         {api.can(user.id, "cost.create", p.id) && <div className="card__foot"><form className="form grow" onSubmit={(e) => { e.preventDefault(); if (safe(() => { api.addCostItem(user.id, p.id, { category: ciCat, label: ciLabel, plannedAmount: Number(ciAmt) }); }, "Budget line submitted for Finance check")) { setCiLabel(""); setCiAmt(""); } }}>
@@ -94,7 +94,7 @@ export function ProjectMoney() {
           <button className="ns-btn ns-btn--secondary" type="submit">Add line</button></form></div>}
       </div>
 
-      <div className="card"><div className="card__head"><div className="card__title">Purchase orders</div><span className="sm muted">{pos.length} POs · committed {naira(m.committed, true)}</span></div>
+      <div id="purchase-orders" className="card"><div className="card__head"><div className="card__title">Purchase orders</div><span className="sm muted">{pos.length} POs · committed {naira(m.committed, true)}</span></div>
         {pos.length ? pos.map((po) => <PoRow key={po.id} po={po} p={p} />) : <div className="card__body"><Empty title="No purchase orders yet" /></div>}
         {api.can(user.id, "po.create", p.id) && <div className="card__foot" style={{ display: "block" }}>
           <div className="ns-overline" style={{ marginBottom: 8 }}>Raise a purchase order</div>
@@ -125,7 +125,7 @@ export function ProjectMoney() {
           <input className="ns-input" type="number" placeholder="Days Δ" value={coD} onChange={(e) => setCoD(e.target.value)} /><button className="ns-btn ns-btn--secondary" type="submit">Raise CO</button></form></div>}
       </div>
 
-      <div className="card table--wrap"><div className="card__head"><div className="card__title">Actuals ledger</div><span className="sm muted">only checked / approved events · {naira(m.actual, true)}</span></div>
+      <div id="actuals" className="card table--wrap"><div className="card__head"><div className="card__title">Actuals ledger</div><span className="sm muted">only checked / approved events · {naira(m.actual, true)}</span></div>
         {acts.length ? <table className="table ledger"><thead><tr><th>Date</th><th>Source</th><th>Reference</th><th>Category</th><th className="num">Amount</th><th>Evidence</th></tr></thead>
           <tbody>{acts.map((a) => <tr key={a.id}><td className="sm">{fmtDate(a.date)}</td><td><Badge variant="neutral">{a.source.replace("_", " ")}</Badge></td><td>{a.sourceRef.label}{a.vendorId && <div className="sm muted">{api.vendorName(a.vendorId)}</div>}</td><td className="sm">{COST_CATEGORY_LABEL[a.category]}</td>
             <td className={`num ns-mono ${a.amount < 0 ? "warn-cell" : ""}`}>{naira(a.amount)}</td><td><Thumbs ids={a.attachmentIds} /></td></tr>)}</tbody></table> : <div className="card__body"><Empty title="No actuals yet" hint="Actuals appear when goods receipts, stock issues or change orders are checked / approved." /></div>}</div>

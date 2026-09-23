@@ -50,7 +50,7 @@ export const MATRIX: Record<RoleCode, Permission[]> = {
           "attachment.create","attachment.read","goods_receipt.create",
           "inventory.read","inventory.request","asset.read","asset.write",
           "visit.create","issue.create","issue.update","hse.create","dashboard.read"),
-  finance: R("stockcount.approve","warranty.check","project.read","gate.request","gate.approve","chronology.read","document.read","attachment.read","attachment.create","po.read","po.approve","writeoff.approve",
+  finance: R("stockcount.approve","warranty.check","project.read","gate.request","gate.approve","chronology.read","document.read","document.create","attachment.read","attachment.create","po.read","po.approve","writeoff.approve",
              "approval.read","thresholds.read","money.read","money.write","cost.create","cost.check","goods_receipt.check","inventory.read",
              "inventory.check","retention.request","asset.read","recon.read","recon.write","dashboard.read","billing.manage","contract.manage"),
   store_keeper: R("stockcount.create","project.read","chronology.read","attachment.create","attachment.read","po.read","goods_receipt.create",

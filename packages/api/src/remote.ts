@@ -156,7 +156,8 @@ export class RemoteApi extends MockApi {
     wrap("resolveIssue", (a) => ({ name: "resolveIssue", body: { issueId: a[1], input: a[2] } }));
     wrap("addVisitPhotos", (a) => ({ name: "addVisitPhotos", body: { visitId: a[1], input: a[2] } }));
     wrap("addIssuePhotos", (a) => ({ name: "addIssuePhotos", body: { issueId: a[1], input: a[2] } }));
-    wrap("setContractTerms", (a) => ({ name: "setContractTerms", body: { projectId: a[1], input: a[2] } }));
+    wrap("updateCommercials", (a) => ({ name: "updateCommercials", body: { projectId: a[1], input: a[2] } }));
+    wrap("setContractStatus", (a) => ({ name: "setContractStatus", body: { projectId: a[1], input: a[2] } }));
     wrap("raiseInvoice", (a) => ({ name: "raiseInvoice", body: { projectId: a[1], input: a[2] } }));
     wrap("recordReceipt", (a) => ({ name: "recordReceipt", body: { invoiceId: a[1], input: a[2] } }));
     wrap("recordVatPayment", (a) => ({ name: "recordVatPayment", body: { projectId: a[1], input: a[2] } }));

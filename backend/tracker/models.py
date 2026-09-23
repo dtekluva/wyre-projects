@@ -206,6 +206,11 @@ class Project(Audit):
     # standard: we collect and remit · withheld_by_client: the client remits to FIRS on our behalf · exempt: zero-rated
     vat_treatment = models.CharField(max_length=20, default="standard")
     contract_value = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    # draft: the project is open but the final contract is not in hand — figures are provisional · received: signed contract received
+    contract_status = models.CharField(max_length=10, default="draft")
+    contract_received_on = models.DateField(null=True, blank=True)
+    contract_received_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    contract_document = models.ForeignKey("Document", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     approved_budget = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     committed = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     actual = models.DecimalField(max_digits=18, decimal_places=2, default=0)

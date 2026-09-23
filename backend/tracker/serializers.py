@@ -51,7 +51,7 @@ def project(p: Project, open_issues: Optional[dict] = None) -> dict:
     oi = (open_issues or {}).get(p.id) or {}
     return {"id": p.id, "code": p.code, "name": p.name, "clientName": p.client_name, "branchName": p.branch_name, "location": p.location, "projectType": p.project_type,
             "systemCapacityKwp": num(p.system_capacity_kwp), "stage": p.stage, "rag": p.rag, "ragReason": p.rag_reason, "pmId": p.pm_id, "leadEngineerId": p.lead_engineer_id, "commissioningAssigneeId": p.commissioning_assignee_id,
-            "contractValueNet": num(p.contract_value_net), "vatRate": num(p.vat_rate), "vatTreatment": p.vat_treatment, "vatAmount": num(p.vat_amount), "contractValue": num(p.contract_value), "approvedBudget": num(p.approved_budget), "committed": num(p.committed), "actual": num(p.actual),
+            "contractValueNet": num(p.contract_value_net), "vatRate": num(p.vat_rate), "vatTreatment": p.vat_treatment, "vatAmount": num(p.vat_amount), "contractValue": num(p.contract_value), "contractStatus": p.contract_status, "contractReceivedOn": d8(p.contract_received_on), "contractReceivedBy": p.contract_received_by_id, "contractDocumentId": p.contract_document_id, "approvedBudget": num(p.approved_budget), "committed": num(p.committed), "actual": num(p.actual),
             "stagePlanned": {str(k): v for k, v in (p.stage_planned or {}).items()}, "stageActual": {str(k): v for k, v in (p.stage_actual or {}).items()},
             "defectsLiabilityEnd": d8(p.defects_liability_end), "retentionPercent": num(p.retention_percent),
             "openIssues": {"critical": oi.get("critical", 0), "high": oi.get("high", 0), "medium": oi.get("medium", 0), "low": oi.get("low", 0)}, **audit(p)}

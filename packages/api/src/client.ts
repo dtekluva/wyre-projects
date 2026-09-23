@@ -2,7 +2,7 @@
 // Enforces: RBAC (§2), stage gates (§3), actor capture (§4), maker-checker + segregation of duties (§4.13, §5),
 // money & stock rules (§0, §4.4, §4.10, §4.15, §11).
 import { can as canFn, maySelfReview, rolesOn as rolesOnFn, type Permission } from "./rbac";
-import { VAT_PAYMENT_METHOD_LABEL, VAT_TREATMENT_LABEL, type ClientInvoice, type InvoiceReceipt, type VatPayment, type VatPaymentMethod, type VatTreatment } from "./types";
+import { CONTRACT_STATUS_LABEL, VAT_PAYMENT_METHOD_LABEL, VAT_TREATMENT_LABEL, type ContractStatus, type ClientInvoice, type InvoiceReceipt, type VatPayment, type VatPaymentMethod, type VatTreatment } from "./types";
 import { DEFAULT_VAT_RATE, vatOn } from "./vat";
 import { STAGES } from "./gates";
 import * as seed from "./mock/data";
@@ -35,6 +35,8 @@ export interface NewProjectInput {
   projectType: ProjectType; systemCapacityKwp?: number;
   /** net of VAT — the number the contract is written in. `contractValue` is accepted as an alias and treated as NET */
   contractValueNet?: number; contractValue?: number; vatRate?: number; vatTreatment?: VatTreatment;
+  /** tick when the signed contract is already in hand; otherwise the project opens as a draft */
+  contractReceived?: boolean;
   approvedBudget?: number; retentionPercent?: number;
   pmId: string; leadEngineerId: string;
   /** planned completion date of stage 0 (proposal sign-off), YYYY-MM-DD */
@@ -223,6 +225,7 @@ export class MockApi {
       projectType: input.projectType, systemCapacityKwp: input.systemCapacityKwp ? Number(input.systemCapacityKwp) : undefined,
       stage: 0, rag: "green", pmId: pm.id, leadEngineerId: le.id,
       contractValueNet, vatRate, vatTreatment, vatAmount, contractValue, approvedBudget, committed: 0, actual: 0,
+      contractStatus: input.contractReceived ? "received" : "draft", contractReceivedOn: input.contractReceived ? at.slice(0, 10) : undefined, contractReceivedBy: input.contractReceived ? actorId : undefined,
       stagePlanned: input.proposalDueDate ? { 0: input.proposalDueDate } : {}, stageActual: {},
       retentionPercent, openIssues: { critical: 0, high: 0, medium: 0, low: 0 },
       createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId,
@@ -810,18 +813,39 @@ export class MockApi {
   }
   listInvoices(projectId: string) { return this.clientInvoices.filter((i) => i.projectId === projectId).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt)); }
 
-  /** Correct the contract's commercial terms. Rare — a data fix, not a change order — so Director or Finance, and it is logged. */
-  setContractTerms(actorId: string, projectId: string, input: { contractValueNet: number; vatRate?: number; vatTreatment?: VatTreatment }): Project {
+  /** Everything commercial on the project, editable after creation — a draft contract firms up, a budget is approved,
+   *  retention is agreed. Director or Finance; every change is logged with the before figures. */
+  updateCommercials(actorId: string, projectId: string, input: { contractValueNet?: number; vatRate?: number; vatTreatment?: VatTreatment; approvedBudget?: number; retentionPercent?: number }): Project {
     this.require(actorId, "contract.manage", projectId); const p = this.raw(projectId);
-    const net = Number(input.contractValueNet); if (!Number.isFinite(net) || net < 0) throw new ApiError("Contract value must be zero or more", "invalid");
-    const rate = input.vatRate === undefined || input.vatRate === null ? p.vatRate : Number(input.vatRate);
-    if (!Number.isFinite(rate) || rate < 0 || rate > 100) throw new ApiError("VAT rate must be between 0 and 100 %", "invalid");
+    const num = (v: number | undefined, cur: number, label: string, max?: number) => { if (v === undefined || v === null) return cur; const n = Number(v); if (!Number.isFinite(n) || n < 0 || (max !== undefined && n > max)) throw new ApiError(`${label} must be ${max !== undefined ? `between 0 and ${max}` : "zero or more"}`, "invalid"); return n; };
+    const net = num(input.contractValueNet, p.contractValueNet, "Contract value");
+    const rate = num(input.vatRate, p.vatRate, "VAT rate", 100);
     const treatment = input.vatTreatment ?? p.vatTreatment; if (!(treatment in VAT_TREATMENT_LABEL)) throw new ApiError("Unknown VAT treatment", "invalid");
-    if (p.approvedBudget > net && net > 0) throw new ApiError("Approved budget cannot exceed the net contract value", "invalid");
-    const was = `${this.fmt(p.contractValueNet)} net · VAT ${p.vatRate}% · ${VAT_TREATMENT_LABEL[p.vatTreatment]}`;
+    const budget = num(input.approvedBudget, p.approvedBudget, "Approved budget");
+    const retention = num(input.retentionPercent, p.retentionPercent, "Retention", 20);
+    if (budget > net && net > 0) throw new ApiError("Approved budget cannot exceed the net contract value", "invalid");
+    const was = `${this.fmt(p.contractValueNet)} net · VAT ${p.vatRate}% · ${VAT_TREATMENT_LABEL[p.vatTreatment]} · budget ${this.fmt(p.approvedBudget)} · retention ${p.retentionPercent}%`;
     const vat = vatOn(net, rate, treatment); const at = this.now();
-    Object.assign(p, { contractValueNet: net, vatRate: rate, vatTreatment: treatment, vatAmount: vat, contractValue: net + vat, updatedAt: at, updatedBy: actorId });
-    this.log(projectId, actorId, "contract_updated", `Contract terms set — ${this.fmt(net)} net · VAT ${rate}% (${this.fmt(vat)}) · ${VAT_TREATMENT_LABEL[treatment]}`, `was ${was}`, { model: "Project", id: p.id });
+    Object.assign(p, { contractValueNet: net, vatRate: rate, vatTreatment: treatment, vatAmount: vat, contractValue: net + vat, approvedBudget: budget, retentionPercent: retention, updatedAt: at, updatedBy: actorId });
+    this.log(projectId, actorId, "contract_updated", `Commercials updated — ${this.fmt(net)} net · VAT ${rate}% (${this.fmt(vat)}) · budget ${this.fmt(budget)} · retention ${retention}%`, `was ${was}`, { model: "Project", id: p.id });
+    this.emit(); return p;
+  }
+
+  /** The signed contract arrived (or turned out not to have). Optionally points at the Contract document filed for it. */
+  setContractStatus(actorId: string, projectId: string, input: { status: ContractStatus; receivedOn?: string; documentId?: string }): Project {
+    this.require(actorId, "contract.manage", projectId); const p = this.raw(projectId);
+    if (!(input.status in CONTRACT_STATUS_LABEL)) throw new ApiError("Unknown contract status", "invalid");
+    if (input.status === p.contractStatus) throw new ApiError(`Contract is already ${input.status}`, "conflict");
+    const at = this.now();
+    if (input.status === "received") {
+      const on = input.receivedOn || at.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}/.test(on)) throw new ApiError("Date must be YYYY-MM-DD", "invalid");
+      if (input.documentId && !this.documents.some((d) => d.id === input.documentId && d.projectId === projectId)) throw new ApiError("Document is not on this project", "invalid");
+      Object.assign(p, { contractStatus: "received", contractReceivedOn: on, contractReceivedBy: actorId, contractDocumentId: input.documentId, updatedAt: at, updatedBy: actorId });
+      this.log(projectId, actorId, "contract_received", `Contract received — ${this.fmt(p.contractValueNet)} net${input.documentId ? " · signed copy filed" : ""}`, undefined, { model: "Project", id: p.id });
+    } else {
+      Object.assign(p, { contractStatus: "draft", contractReceivedOn: undefined, contractReceivedBy: undefined, contractDocumentId: undefined, updatedAt: at, updatedBy: actorId });
+      this.log(projectId, actorId, "contract_updated", "Contract set back to draft", undefined, { model: "Project", id: p.id });
+    }
     this.emit(); return p;
   }
 

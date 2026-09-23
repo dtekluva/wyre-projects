@@ -96,6 +96,7 @@ def create_project(actor: User, input: dict) -> Project:
         **b.maybe_id(input, Project, "p"), code=next_project_code(), name=name, client_name=client_name, branch_name=branch_name, location=location,
         project_type=ptype, system_capacity_kwp=b.dec(kwp) if kwp not in (None, "") else None,
         stage=0, rag="green", pm=pm, lead_engineer=le, contract_value_net=contract_value_net, vat_rate=vat_rate, vat_treatment=vat_treatment, approved_budget=approved_budget,
+        contract_status="received" if input.get("contractReceived") else "draft", contract_received_on=at.date() if input.get("contractReceived") else None, contract_received_by=actor if input.get("contractReceived") else None,
         committed=0, actual=0, stage_planned={"0": due} if due else {}, stage_actual={}, retention_percent=retention,
         created_at=at, created_by=actor, updated_at=at, updated_by=actor,
     )

@@ -19,7 +19,7 @@ export function ProjectNew() {
   // we back out the net — forcing the arithmetic on them is how a gross figure ended up in a net field before.
   const [contract, setContract] = useState(""); const [haveGross, setHaveGross] = useState(false);
   const [vatRate, setVatRate] = useState(String(DEFAULT_VAT_RATE)); const [treatment, setTreatment] = useState<VatTreatment>("standard");
-  const [budget, setBudget] = useState("");
+  const [budget, setBudget] = useState(""); const [received, setReceived] = useState(false);
   const rate = Number(vatRate) || 0; const typed = Number(contract) || 0;
   const net = haveGross ? netFromGross(typed, rate, treatment) : typed;
   const vat = vatOn(net, rate, treatment); const gross = net + vat;
@@ -36,7 +36,7 @@ export function ProjectNew() {
       const p = api.createProject(user.id, {
         name, clientName: client, branchName: branch, location: loc, projectType: type,
         systemCapacityKwp: kwp.trim() ? Number(kwp) : undefined,
-        contractValueNet: net, vatRate: rate, vatTreatment: treatment, approvedBudget: Number(budget || 0), retentionPercent: Number(retention),
+        contractValueNet: net, vatRate: rate, vatTreatment: treatment, contractReceived: received, approvedBudget: Number(budget || 0), retentionPercent: Number(retention),
         pmId, leadEngineerId: leId, proposalDueDate: due || undefined,
       });
       id = p.id;
@@ -94,6 +94,10 @@ export function ProjectNew() {
               <input className="ns-input" type="number" min="0" max="20" step="0.5" value={retention} onChange={(e) => setRetention(e.target.value)} /></label>
             <label className="ns-field"><span className="ns-field__label">Proposal sign-off due (optional)</span>
               <input className="ns-input" type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
+            <div className="ns-field" style={{ gridColumn: "1 / -1" }}>
+              <label className="row sm" style={{ gap: 8, cursor: "pointer" }}><input type="checkbox" checked={received} onChange={(e) => setReceived(e.target.checked)} /> The signed contract is already in hand</label>
+              <div className="sm muted" style={{ marginTop: 4 }}>{received ? "The project opens with its contract received." : "The project opens as a draft — figures are provisional until Finance or a Director marks the contract received under Money."}</div>
+            </div>
           </div>
         </div>
         <div className="card">

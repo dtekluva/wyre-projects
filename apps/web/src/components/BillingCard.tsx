@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { VAT_TREATMENT_LABEL, fmtDate, naira, netFromGross, relative, vatOn, type ClientInvoice, type Project, type VatTreatment } from "@wyre/api";
+import { VAT_TREATMENT_LABEL, fmtDate, naira, relative, vatOn, type ClientInvoice, type Project } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
@@ -14,8 +14,8 @@ import { Badge, Empty, ReviewBadge } from "./ui";
 export function BillingCard({ p }: { p: Project }) {
   const api = useApi(); const { user } = useAuth();
   const m = api.money(p.id); const invs = api.listInvoices(p.id);
-  const canBill = api.can(user.id, "billing.manage", p.id); const canTerms = api.can(user.id, "contract.manage", p.id);
-  const [mode, setMode] = useState<"" | "raise" | "terms">("");
+  const canBill = api.can(user.id, "billing.manage", p.id);
+  const [mode, setMode] = useState<"" | "raise">("");
   const [open, setOpen] = useState<string | null>(null);
   const exempt = p.vatTreatment === "exempt";
   return (
@@ -24,7 +24,6 @@ export function BillingCard({ p }: { p: Project }) {
         <div className="card__title">Billing</div>
         <div className="row row--wrap sm" style={{ gap: 12 }}>
           <span className="muted">VAT {exempt ? "exempt" : `${p.vatRate}% · ${VAT_TREATMENT_LABEL[p.vatTreatment].split(" — ")[0]}`}</span>
-          {canTerms && <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setMode(mode === "terms" ? "" : "terms")}>Contract terms…</button>}
           {canBill && <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => setMode(mode === "raise" ? "" : "raise")}>＋ Raise invoice</button>}
         </div>
       </div>
@@ -35,7 +34,6 @@ export function BillingCard({ p }: { p: Project }) {
         <div className="money__cell"><div className="money__label">VAT outstanding</div><div className={`money__value ${m.vatOutstanding > 0 ? "warn-text" : ""}`}>{naira(m.vatOutstanding)}</div><div className="money__sub">{naira(m.vatSettled, true)} paid · record payments from the VAT cell above</div></div>
       </div>
       <div className="card__body stack">
-        {mode === "terms" && <TermsForm p={p} onDone={() => setMode("")} />}
         {mode === "raise" && <RaiseForm p={p} onDone={() => setMode("")} />}
         {invs.length ? <div className="table--wrap"><table className="table">
           <thead><tr><th>Invoice</th><th>For</th><th className="num">Net</th><th className="num">VAT</th><th className="num">Gross</th><th className="num">Received</th><th></th></tr></thead>
@@ -53,26 +51,6 @@ export function BillingCard({ p }: { p: Project }) {
       </div>
     </div>
   );
-}
-
-function TermsForm({ p, onDone }: { p: Project; onDone: () => void }) {
-  const api = useApi(); const { user } = useAuth(); const safe = useSafe();
-  const [haveGross, setHaveGross] = useState(false); const [val, setVal] = useState(String(p.contractValueNet));
-  const [rate, setRate] = useState(String(p.vatRate)); const [treatment, setTreatment] = useState<VatTreatment>(p.vatTreatment);
-  const r = Number(rate) || 0; const typed = Number(val) || 0; const net = haveGross ? netFromGross(typed, r, treatment) : typed; const vat = vatOn(net, r, treatment);
-  return <div className="note note--info stack" style={{ gap: 8 }}>
-    <b>Contract terms</b>
-    <div className="sm muted">A data correction, not a change order — use a change order for agreed scope changes. This is logged in the chronology.</div>
-    <div className="form">
-      <label className="ns-field"><span className="ns-field__label">Contract value (₦, {haveGross ? "gross" : "net of VAT"})</span><input className="ns-input" type="number" min="0" value={val} onChange={(e) => setVal(e.target.value)} /></label>
-      <label className="ns-field"><span className="ns-field__label">VAT rate (%)</span><input className="ns-input" type="number" min="0" max="100" step="0.5" value={rate} onChange={(e) => setRate(e.target.value)} disabled={treatment === "exempt"} /></label>
-      <label className="ns-field"><span className="ns-field__label">VAT treatment</span><select className="ns-input" value={treatment} onChange={(e) => setTreatment(e.target.value as VatTreatment)}>{(Object.keys(VAT_TREATMENT_LABEL) as VatTreatment[]).map((t) => <option key={t} value={t}>{VAT_TREATMENT_LABEL[t]}</option>)}</select></label>
-    </div>
-    <label className="row sm" style={{ gap: 8, cursor: "pointer" }}><input type="checkbox" checked={haveGross} onChange={(e) => setHaveGross(e.target.checked)} /> I only have the gross figure — work out the net</label>
-    <div className="sm">Net <b className="ns-mono">{naira(net)}</b>{treatment !== "exempt" && <> + VAT {r}% <b className="ns-mono">{naira(vat)}</b> = gross <b className="ns-mono">{naira(net + vat)}</b></>}</div>
-    <div className="row"><button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => { if (safe(() => api.setContractTerms(user.id, p.id, { contractValueNet: net, vatRate: r, vatTreatment: treatment }), "Contract terms updated")) onDone(); }}>Save terms</button>
-      <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={onDone}>Cancel</button></div>
-  </div>;
 }
 
 function RaiseForm({ p, onDone }: { p: Project; onDone: () => void }) {

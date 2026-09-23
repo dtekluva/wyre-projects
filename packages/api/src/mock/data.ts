@@ -31,10 +31,14 @@ export const users: User[] = [
 
 const audit = (by: string, at: string) => ({ createdAt: at, createdBy: by, updatedAt: at, updatedBy: by });
 
-type PSeed = Omit<Project, "contractValueNet" | "vatRate" | "vatTreatment" | "vatAmount" | keyof ReturnType<typeof audit>> & { createdBy: string; createdAt: string };
+type PSeed = Omit<Project, "contractValueNet" | "vatRate" | "vatTreatment" | "vatAmount" | "contractStatus" | "contractReceivedOn" | "contractReceivedBy" | "contractDocumentId" | keyof ReturnType<typeof audit>> & { createdBy: string; createdAt: string };
 // Seed contract figures are NET; VAT and the gross are derived, exactly as the engine does for a real project.
 const P = (p: PSeed): Project => { const vat = vatOn(p.contractValue, DEFAULT_VAT_RATE, "standard");
-  return { ...p, contractValueNet: p.contractValue, vatRate: DEFAULT_VAT_RATE, vatTreatment: "standard", vatAmount: vat, contractValue: p.contractValue + vat, ...audit(p.createdBy, p.createdAt) }; };
+  // stage-0 leads are still drafts; everything further along has its contract in hand
+  const received = p.stage > 0;
+  return { ...p, contractValueNet: p.contractValue, vatRate: DEFAULT_VAT_RATE, vatTreatment: "standard", vatAmount: vat, contractValue: p.contractValue + vat,
+    contractStatus: received ? "received" : "draft", contractReceivedOn: received ? p.createdAt.slice(0, 10) : undefined, contractReceivedBy: received ? p.createdBy : undefined,
+    ...audit(p.createdBy, p.createdAt) }; };
 
 export const projects: Project[] = [
   P({ id: "p1", code: "WYR-2026-001", name: "Sweet Sensation Sango — Solar + Battery", clientName: "Sweet Sensation", branchName: "Sango",

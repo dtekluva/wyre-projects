@@ -33,7 +33,7 @@ MATRIX: dict[str, list[str]] = {
              "attachment.create", "attachment.read", "goods_receipt.create",
              "inventory.read", "inventory.request", "asset.read", "asset.write",
              "visit.create", "issue.create", "issue.update", "hse.create", "dashboard.read"],
-    "finance": ["stockcount.approve", "warranty.check", "project.read", "gate.request", "gate.approve", "chronology.read", "document.read", "attachment.read", "attachment.create",
+    "finance": ["stockcount.approve", "warranty.check", "project.read", "gate.request", "gate.approve", "chronology.read", "document.read", "document.create", "attachment.read", "attachment.create",
                 "po.read", "po.approve", "writeoff.approve", "approval.read", "thresholds.read", "money.read", "money.write", "cost.create",
                 "cost.check", "goods_receipt.check", "inventory.read", "inventory.check", "retention.request", "asset.read", "recon.read",
                 "recon.write", "dashboard.read", "billing.manage", "contract.manage"],

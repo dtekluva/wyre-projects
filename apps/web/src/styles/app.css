@@ -663,3 +663,4 @@ button.frow { text-align: left; font: inherit; cursor: pointer; }
   .catrow__num::before { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--ns-color-text-tertiary); }
   .catrow .catrow__pct::before { display: none; }
 }
+.money__pip { display: inline-block; padding: 1px 7px; border-radius: var(--ns-radius-full); background: var(--ns-amber-100, #FEF3C7); color: var(--ns-amber-700, #B45309); font-size: 10px; font-weight: var(--ns-weight-semibold); text-transform: uppercase; letter-spacing: .04em; margin-left: 4px; vertical-align: 1px; }
