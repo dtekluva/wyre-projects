@@ -5,6 +5,7 @@ import { useSafe } from "../lib/toast";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { StageBar } from "../components/StageBar";
+import { RollbackControl } from "../components/RollbackControl";
 import { MoneyStrip } from "../components/MoneyStrip";
 import { GateCard } from "../components/GateCard";
 import { Badge } from "../components/ui";
@@ -33,7 +34,7 @@ export function ProjectOverview() {
   const today = new Date().toISOString();
   return (
     <div className="stack" style={{ gap: 20 }}>
-      <StageBar stage={p.stage} />
+      <div className="row" style={{ alignItems: "flex-start", gap: 12 }}><div className="grow"><StageBar stage={p.stage} /></div><RollbackControl p={p} /></div>
       <MoneyStrip p={p} />
       <GateCard projectId={p.id} />
       <div className="card">

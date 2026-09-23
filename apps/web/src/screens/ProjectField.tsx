@@ -22,7 +22,7 @@ const COLS: { key: string; label: string; statuses: IssueStatus[] }[] = [
 function IssueCard({ i, onOpen }: { i: Issue; onOpen: () => void }) {
   const api = useApi(); const sla = api.issueSla(i);
   const extra = i.attachmentIds.length;
-  return <div className="issue issue--btn" role="button" tabIndex={0} title="Open issue" onClick={onOpen}
+  return <div className={`issue issue--btn ${i.voidedAt ? "voided" : ""}`} role="button" tabIndex={0} title="Open issue" onClick={onOpen}
     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}>
     <div className="row" style={{ justifyContent: "space-between" }}><b className="ellipsis">{i.title}</b><Badge variant={SEV[i.severity]}>{i.severity}</Badge></div>
     <div className="row row--wrap sm muted">{i.category}{i.isSnag && <Badge variant="info">snag</Badge>}<ReviewBadge status={i.reviewStatus} />{sla.open && (sla.breached ? <Badge variant="danger">SLA −{Math.abs(sla.hoursLeft)} h</Badge> : <span>SLA {sla.hoursLeft} h</span>)}</div>
@@ -72,7 +72,7 @@ export function ProjectField() {
     </>}
 
     {tab === "visits" && <>
-      {visits.length ? visits.map((v) => <div key={v.id} className="card"><div className="card__head"><button className="card__title link" onClick={() => setOpenVisit(v.id)} title="Open visit">{VISIT_TYPE_LABEL[v.visitType]} · {fmtDate(v.startedAt)} · {v.durationHrs} h</button><ReviewBadge status={v.reviewStatus} /></div>
+      {visits.length ? visits.map((v) => <div key={v.id} className={`card ${v.voidedAt ? "voided" : ""}`}><div className="card__head"><button className="card__title link" onClick={() => setOpenVisit(v.id)} title="Open visit">{VISIT_TYPE_LABEL[v.visitType]} · {fmtDate(v.startedAt)} · {v.durationHrs} h</button><ReviewBadge status={v.reviewStatus} /></div>
         <div className="card__body stack" style={{ gap: 6 }}>
           <div className="sm muted">{v.technicianIds.map((t) => api.userName(t)).join(", ")}{v.gps ? ` · 📍 ${v.gps.lat.toFixed(3)}, ${v.gps.lng.toFixed(3)}` : ""}{v.clientSignoff ? ` · signed: ${v.clientSignoff.name}${v.clientSignoff.rating ? " " + "★".repeat(v.clientSignoff.rating) : ""}` : ""}</div>
           <div className="row row--wrap" style={{ marginTop: 6, gap: 10 }}><Thumbs ids={v.attachmentIds} empty="no photos" />

@@ -229,6 +229,49 @@ ok(api.money(vj.id).invoicedNet === 1_000_000 && api.money(vj.id).vatSettled ===
 api.voidRecord("u_dir", "client_invoice", vinv.id, "wrong client"); api.voidRecord("u_dir", "vat_payment", vvp.id, "paid on another project");
 ok(api.money(vj.id).invoicedNet === 0 && api.money(vj.id).vatSettled === 0, "voided invoice and VAT payment no longer count");
 
+// ---- second pass: POs, receipts, visits, issues ----
+const p2 = api.createProject("u_pm1", { name: "Void pass two", clientName: "Acme", branchName: "HQ", location: "Lagos", projectType: "solar_battery", contractValueNet: 50_000_000, contractReceived: true, pmId: "u_pm1", leadEngineerId: "u_pm2" });
+const p2po = api.createPO("u_pm1", p2.id, { vendorId: "v_dixsen", items: [{ inventoryItemId: "it_mccb", description: "MCCB", qty: 4, unitCost: 100_000 }] });
+api.decide(api.approvals.find((a) => a.id === p2po.approvalId).id, "u_fin", "approved");
+const p2mb = api.balanceOf("it_mccb").qtyOnHand;
+const p2grn = api.receiveGoods("u_sk", p2po.id, { attachmentIds: [api.addAttachment("u_sk", p2.id, { fileName: "dn.jpg", caption: "Delivery note" }).id], lines: [{ purchaseItemId: p2po.items[0].id, qty: 4 }] });
+api.check("goods_receipt", p2grn.id, "u_pm1", "checked");
+ok(api.balanceOf("it_mccb").qtyOnHand === p2mb + 4 && p2po.status === "delivered", "receipt put stock in and delivered the PO (stock value, not project spend, until issued)");
+expectErr(() => api.voidRecord("u_dir", "purchase_order", p2po.id, "dup"), "conflict", "a PO with receipts against it cannot be removed first");
+api.voidRecord("u_dir", "goods_receipt", p2grn.id, "wrong quantities on the note");
+ok(p2grn.voidedAt && api.balanceOf("it_mccb").qtyOnHand === p2mb && p2po.status === "approved" && p2po.items[0].qtyReceived === 0, "removing the receipt takes back the stock and the PO's delivered state");
+ok(api.movements.filter((m) => m.sourceRef?.id === p2grn.id).every((m) => m.voidedAt), "the receipt's movements are removed with it");
+ok(api.attachments.find((a) => a.id === p2grn.attachmentIds[0]).voidedAt, "the delivery note goes with the receipt");
+api.voidRecord("u_dir", "purchase_order", p2po.id, "raised in error");
+ok(p2po.voidedAt && api.money(p2.id).committed === 0, "removing the PO drops it from committed");
+// visit with parts and cost
+const p2v = api.logVisit("u_ft1", p2.id, { visitType: "routine", startedAt: "2026-09-10T09:00:00Z", endedAt: "2026-09-10T11:00:00Z", findings: "ok", actionsTaken: "", costTravel: 5_000, costLabour: 10_000, attachmentIds: [api.addAttachment("u_ft1", p2.id, { fileName: "v.jpg", caption: "Site" }).id] });
+api.check("site_visit", p2v.id, "u_pm1", "checked");
+ok(api.money(p2.id).actual === 15_000, "visit posted its travel and labour");
+api.voidRecord("u_pm1", "site_visit", p2v.id, "logged on the wrong project");
+ok(p2v.voidedAt && api.money(p2.id).actual === 0 && api.attachments.find((a) => a.id === p2v.attachmentIds[0]).voidedAt, "removing the visit takes back its cost and its photos");
+// issue closed with a cost
+const p2i = api.raiseIssue("u_ft1", p2.id, { category: "electrical", severity: "low", title: "Loose lug", description: "d", beforeAttachmentIds: [api.addAttachment("u_ft1", p2.id, { fileName: "b.jpg", caption: "Before" }).id] });
+api.check("issue", p2i.id, "u_pm1", "checked");
+api.resolveIssue("u_ft1", p2i.id, { rootCause: "r", resolution: "torqued", afterAttachmentIds: [api.addAttachment("u_ft1", p2.id, { fileName: "a.jpg", caption: "After" }).id], costToResolve: 2_500 });
+api.check("issue", p2i.id, "u_pm1", "checked");
+ok(p2i.status === "closed" && api.money(p2.id).actual === 2_500, "closed issue posted its cost");
+ok(api.listIssues({ projectId: p2.id }).some((x) => x.id === p2i.id), "issue listed");
+api.voidRecord("u_dir", "issue", p2i.id, "duplicate of another ticket");
+ok(p2i.voidedAt && api.money(p2.id).actual === 0 && api.attachments.find((a) => a.id === p2i.beforeAttachmentIds[0]).voidedAt && api.attachments.find((a) => a.id === p2i.afterAttachmentIds[0]).voidedAt, "removing the issue takes back its cost and photos");
+ok(!api.listIssues({ projectId: p2.id, openOnly: true }).some((x) => x.id === p2i.id), "a removed issue is not an open issue");
+
+// ---- stage rollback ----
+const rb = api.projects.find((x) => x.id === "p1"); const rbFrom = rb.stage;
+ok(rbFrom >= 2 && rb.stageActual[rbFrom - 1], "p1 is a few stages in with actual exit dates");
+expectErr(() => api.rollbackStage("u_fin", rb.id, { toStage: 2, reason: "x" }), "forbidden", "finance cannot move a project back");
+expectErr(() => api.rollbackStage("u_pm1", rb.id, { toStage: rbFrom, reason: "x" }), "invalid", "must be an earlier stage");
+expectErr(() => api.rollbackStage("u_pm1", rb.id, { toStage: 2, reason: " " }), "invalid", "a reason is required");
+api.rollbackStage("u_pm1", rb.id, { toStage: 2, reason: "DISCO letter never actually arrived" });
+ok(rb.stage === 2 && !rb.stageActual[2] && !rb.stageActual[3] && rb.stageActual[1], "stage back to 2; actual exits from 2 onward cleared, earlier kept");
+ok(api.listEvents(rb.id).some((e) => e.eventType === "stage_rollback"), "rollback is in the chronology");
+
+
 
 ok(api.listEvents(vtP.id).some((e) => e.eventType === "contract_updated"), "contract change is in the chronology");
 // invoices

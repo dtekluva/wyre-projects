@@ -425,7 +425,7 @@ class CostItem(Audit, Reviewable, Voidable):
     planned_amount = models.DecimalField(max_digits=18, decimal_places=2)
 
 
-class PurchaseOrder(Audit):
+class PurchaseOrder(Audit, Voidable):
     id = models.CharField(primary_key=True, max_length=40, default=id_po)
     project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="purchase_orders")
     po_number = models.CharField(max_length=30)
@@ -454,7 +454,7 @@ class PurchaseItem(models.Model):
         ordering = ["position", "id"]
 
 
-class GoodsReceipt(Audit, Reviewable):
+class GoodsReceipt(Audit, Reviewable, Voidable):
     id = models.CharField(primary_key=True, max_length=40, default=id_grn)
     project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="goods_receipts")
     po = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, related_name="goods_receipts")
@@ -564,7 +564,7 @@ class QbBill(models.Model):
 
 
 # ------------------------------------------------------------------ Phase 3: field & quality
-class SiteVisit(Audit, Reviewable):
+class SiteVisit(Audit, Reviewable, Voidable):
     id = models.CharField(primary_key=True, max_length=40, default=id_vis)
     project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="visits")
     station_id = models.CharField(max_length=40, null=True, blank=True)
@@ -588,7 +588,7 @@ class SiteVisit(Audit, Reviewable):
     offline_captured_at = models.DateTimeField(null=True, blank=True)
 
 
-class Issue(Audit, Reviewable):
+class Issue(Audit, Reviewable, Voidable):
     id = models.CharField(primary_key=True, max_length=40, default=id_iss)
     project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="issues")
     station_id = models.CharField(max_length=40, null=True, blank=True)

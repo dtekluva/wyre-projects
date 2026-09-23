@@ -343,11 +343,11 @@ export class MockApi {
   pendingChecks(projectId: string) {
     return this.documents.filter((d) => d.projectId === projectId && d.reviewStatus === "pending" && !d.voidedAt).length
       + this.attachments.filter((a) => a.projectId === projectId && a.reviewStatus === "pending" && !a.voidedAt).length
-      + this.goodsReceipts.filter((g) => g.projectId === projectId && g.reviewStatus === "pending").length
+      + this.goodsReceipts.filter((g) => g.projectId === projectId && g.reviewStatus === "pending" && !g.voidedAt).length
       + this.movements.filter((m) => m.projectId === projectId && m.reviewStatus === "pending" && !m.voidedAt && m.movementType !== "write_off").length
       + this.costItems.filter((c) => c.projectId === projectId && c.reviewStatus === "pending" && !c.voidedAt).length
-      + this.visits.filter((v) => v.projectId === projectId && v.reviewStatus === "pending").length
-      + this.issues.filter((i) => i.projectId === projectId && i.reviewStatus === "pending").length
+      + this.visits.filter((v) => v.projectId === projectId && v.reviewStatus === "pending" && !v.voidedAt).length
+      + this.issues.filter((i) => i.projectId === projectId && i.reviewStatus === "pending" && !i.voidedAt).length
       + this.commissionings.filter((c) => c.projectId === projectId && c.reviewStatus === "pending").length
       + this.hseIncidents.filter((h) => h.projectId === projectId && h.reviewStatus === "pending").length
       + this.warrantyClaims.filter((w) => w.projectId === projectId && w.reviewStatus === "pending").length
@@ -790,7 +790,7 @@ export class MockApi {
     const p = this.raw(projectId);
     const ci = this.costItems.filter((c) => c.projectId === projectId && c.reviewStatus === "checked" && !c.voidedAt);
     const planned = ci.length ? ci.reduce((s, c) => s + c.plannedAmount, 0) : p.approvedBudget;
-    const pos = this.purchaseOrders.filter((o) => o.projectId === projectId && ["approved", "partially_delivered", "delivered", "closed"].includes(o.status));
+    const pos = this.purchaseOrders.filter((o) => o.projectId === projectId && !o.voidedAt && ["approved", "partially_delivered", "delivered", "closed"].includes(o.status));
     const committed = pos.reduce((s, o) => s + o.total, 0);
     const acts = this.actuals.filter((a) => a.projectId === projectId);
     const actual = acts.reduce((s, a) => s + a.amount, 0);
@@ -808,7 +808,8 @@ export class MockApi {
    *  voided it and why. Never deleted. A movement that already posted effects has them unwound here. */
   voidRecord(actorId: string, kind: VoidKind, id: string, reason: string): void {
     const lists: Record<VoidKind, { id: string; projectId?: string; voidedAt?: string; voidedBy?: string; voidReason?: string }[]> = {
-      document: this.documents, attachment: this.attachments, stock_movement: this.movements, cost_item: this.costItems, client_invoice: this.clientInvoices, vat_payment: this.vatPayments };
+      document: this.documents, attachment: this.attachments, stock_movement: this.movements, cost_item: this.costItems, client_invoice: this.clientInvoices, vat_payment: this.vatPayments,
+      purchase_order: this.purchaseOrders, goods_receipt: this.goodsReceipts, site_visit: this.visits, issue: this.issues };
     if (!(kind in lists)) throw new ApiError("That kind of record cannot be voided", "invalid");
     const rec = lists[kind].find((x) => x.id === id); if (!rec) throw new ApiError("Record not found", "not_found");
     this.require(actorId, "record.void", rec.projectId);
@@ -821,6 +822,28 @@ export class MockApi {
       case "cost_item": { const c = rec as CostItem; label = `budget line ${c.label}`; break; }
       case "client_invoice": { const i = rec as ClientInvoice; label = `invoice ${i.invoiceNumber}`; break; }
       case "vat_payment": { const v = rec as VatPayment; label = `VAT payment ${this.fmt(v.amount)}`; break; }
+      case "purchase_order": {
+        const po = rec as PurchaseOrder; label = `purchase order ${po.poNumber}`;
+        if (this.goodsReceipts.some((g) => g.poId === po.id && !g.voidedAt)) throw new ApiError(`${po.poNumber} has goods receipts against it — remove those first`, "conflict");
+        const ap = this.approvals.find((a) => a.id === po.approvalId); if (ap && ap.status === "pending") ap.status = "cancelled";
+        break; }
+      case "goods_receipt": {
+        const g = rec as GoodsReceipt; label = `goods receipt ${g.grnNumber}`;
+        if (g.reviewStatus === "checked") this.unwindGoodsReceipt(g, actorId, at, why);
+        this.cascadeVoidAttachments(g.attachmentIds, actorId, at, `removed with ${g.grnNumber}`);
+        break; }
+      case "site_visit": {
+        const v = rec as SiteVisit; label = `${VISIT_TYPE_LABEL[v.visitType]} visit ${v.startedAt.slice(0, 10)}`;
+        for (const m of this.movements.filter((x) => x.sourceRef?.model === "SiteVisit" && x.sourceRef.id === v.id && !x.voidedAt)) this.unwindMovement(m, actorId, at, `removed with the visit`);
+        this.actuals = this.actuals.filter((x) => !(x.sourceRef.model === "SiteVisit" && x.sourceRef.id === v.id));
+        this.cascadeVoidAttachments([...v.attachmentIds, ...(v.clientSignoff?.signatureAttachmentId ? [v.clientSignoff.signatureAttachmentId] : [])], actorId, at, "removed with the visit");
+        for (const i of this.issues) if (i.linkedVisitId === v.id) i.linkedVisitId = undefined;
+        break; }
+      case "issue": {
+        const i = rec as Issue; label = `issue ${i.title}`;
+        this.actuals = this.actuals.filter((x) => !(x.sourceRef.model === "Issue" && x.sourceRef.id === i.id));
+        this.cascadeVoidAttachments([...i.beforeAttachmentIds, ...i.attachmentIds, ...i.afterAttachmentIds], actorId, at, `removed with the issue`);
+        break; }
       case "stock_movement": {
         const m = rec as StockMovement; label = `${MOVEMENT_LABEL[m.movementType]} · ${this.itemName(m.itemId)} × ${m.qty}`;
         if (m.sourceRef && ["GoodsReceipt", "SiteVisit"].includes(m.sourceRef.model)) throw new ApiError(`This movement was posted by a ${m.sourceRef.model === "GoodsReceipt" ? "goods receipt" : "site visit"} — void that record instead`, "conflict");
@@ -844,8 +867,54 @@ export class MockApi {
         break; }
     }
     Object.assign(rec, { voidedAt: at, voidedBy: actorId, voidReason: why });
-    this.log(rec.projectId, actorId, "void", `Voided ${label} — ${why}`, undefined, { model: { document: "Document", attachment: "Attachment", stock_movement: "StockMovement", cost_item: "CostItem", client_invoice: "ClientInvoice", vat_payment: "VatPayment" }[kind], id });
+    this.log(rec.projectId, actorId, "void", `Voided ${label} — ${why}`, undefined, { model: { document: "Document", attachment: "Attachment", stock_movement: "StockMovement", cost_item: "CostItem", client_invoice: "ClientInvoice", vat_payment: "VatPayment", purchase_order: "PurchaseOrder", goods_receipt: "GoodsReceipt", site_visit: "SiteVisit", issue: "Issue" }[kind], id });
     this.emit();
+  }
+
+  /** Cascade: the files that belonged to a removed record go with it. */
+  private cascadeVoidAttachments(ids: readonly string[], actorId: string, at: string, why: string) {
+    for (const id of ids) { const a = this.attachments.find((x) => x.id === id); if (a && !a.voidedAt) Object.assign(a, { voidedAt: at, voidedBy: actorId, voidReason: why }); }
+  }
+  /** Unwind one checked movement's effects and mark it removed. Shared by the movement, receipt and visit paths. */
+  private unwindMovement(m: StockMovement, actorId: string, at: string, why: string) {
+    if (m.reviewStatus === "checked") {
+      if (m.movementType === "receipt") for (const serial of m.serials ?? []) {
+        const a = this.assets.find((x) => x.serial === serial); if (!a) continue;
+        if (a.status !== "in_stock") throw new ApiError(`Serial ${serial} has since been ${a.status.replace("_", " ")} — remove that first`, "conflict");
+        this.assets.splice(this.assets.indexOf(a), 1);
+      }
+      if (m.movementType === "issue") for (const serial of m.serials ?? []) {
+        const a = this.assets.find((x) => x.serial === serial); if (a) Object.assign(a, { status: "in_stock", projectId: undefined, installDate: undefined, locationId: m.locationFromId, updatedAt: at, updatedBy: actorId });
+      }
+      this.actuals = this.actuals.filter((x) => !(x.sourceRef.model === "StockMovement" && x.sourceRef.id === m.id));
+    }
+    Object.assign(m, { voidedAt: at, voidedBy: actorId, voidReason: why });
+    const bal = this.balanceOf(m.itemId, m.locationToId ?? m.locationFromId ?? this.mainLocationId() ?? "").qtyOnHand;
+    if (bal < 0) throw new ApiError(`Removing this would leave ${this.itemName(m.itemId)} at ${bal} — remove the later issues first`, "conflict");
+  }
+  /** A checked goods receipt: its movements and assets go, the cost it posted goes, the PO's received quantities and status step back. */
+  private unwindGoodsReceipt(g: GoodsReceipt, actorId: string, at: string, why: string) {
+    for (const m of this.movements.filter((x) => x.sourceRef?.model === "GoodsReceipt" && x.sourceRef.id === g.id && !x.voidedAt)) this.unwindMovement(m, actorId, at, `removed with ${g.grnNumber}: ${why}`);
+    this.actuals = this.actuals.filter((x) => !(x.sourceRef.model === "GoodsReceipt" && x.sourceRef.id === g.id));
+    const po = this.purchaseOrders.find((p) => p.id === g.poId); if (!po) return;
+    for (const l of g.lines) { const it = po.items.find((i) => i.id === l.purchaseItemId); if (it) it.qtyReceived = Math.max(0, it.qtyReceived - l.qty); }
+    po.status = po.items.every((i) => i.qtyReceived >= i.qty) ? "delivered" : po.items.some((i) => i.qtyReceived > 0) ? "partially_delivered" : "approved";
+    po.updatedAt = at; po.updatedBy = actorId;
+  }
+
+  /** Take a project back to an earlier stage so the schedule can be corrected and the gates exited again properly.
+   *  Actual exit dates from the target stage onward are cleared; planned dates, documents, money and stock stay. */
+  rollbackStage(actorId: string, projectId: string, input: { toStage: Stage; reason: string }): Project {
+    this.require(actorId, "stage.rollback", projectId); const p = this.raw(projectId);
+    const to = Number(input.toStage) as Stage; if (!STAGES.some((x) => x.stage === to)) throw new ApiError("Unknown stage", "invalid");
+    if (to >= p.stage) throw new ApiError(`The project is at stage ${p.stage} — pick an earlier stage`, "invalid");
+    const why = (input.reason ?? "").trim(); if (!why) throw new ApiError("A reason is required", "invalid");
+    const from = p.stage; const at = this.now();
+    for (const s of STAGES) if (s.stage >= to) delete p.stageActual[s.stage as Stage];
+    for (const ap of this.approvals) if (ap.projectId === projectId && ap.kind === "gate" && ap.status === "pending") ap.status = "cancelled";
+    p.stage = to; p.updatedAt = at; p.updatedBy = actorId;
+    this.log(projectId, actorId, "stage_rollback", `Stage rolled back ${from} · ${STAGES[from].name} → ${to} · ${STAGES[to].name} — ${why}`, undefined, { model: "Project", id: p.id });
+    this.emit(); return p;
   }
 
   // ---------- VAT & client billing ----------
@@ -1319,7 +1388,7 @@ export class MockApi {
   slaHours(sev: IssueSeverity) { const t = this.thresholds.find((x) => x.key === `sla.${sev}`); if (!t) return { critical: 24, high: 72, medium: 168, low: 720 }[sev]; return t.unit === "d" ? Number(t.value) * 24 : Number(t.value); }
   issueSla(i: Issue) { const due = new Date(i.slaDueAt).getTime(); const open = !["closed", "wont_fix"].includes(i.status); const left = (due - Date.now()) / 3600000; return { dueAt: i.slaDueAt, breached: open && left < 0, hoursLeft: Math.round(left), open }; }
   listIssues(f: { projectId?: string; status?: IssueStatus; openOnly?: boolean } = {}) {
-    return this.issues.filter((i) => (!f.projectId || i.projectId === f.projectId) && (!f.status || i.status === f.status) && (!f.openOnly || !["closed", "wont_fix"].includes(i.status)))
+    return this.issues.filter((i) => (!f.projectId || i.projectId === f.projectId) && (!f.status || i.status === f.status) && (!f.openOnly || (!i.voidedAt && !["closed", "wont_fix"].includes(i.status))))
       .sort((a, b) => b.raisedAt.localeCompare(a.raisedAt));
   }
   raiseIssue(actorId: string, projectId: string, input: { category: IssueCategory; severity: IssueSeverity; title: string; description: string; assetId?: string; beforeAttachmentIds: string[]; isSnag?: boolean; source?: Issue["source"]; linkedVisitId?: string }): Issue {

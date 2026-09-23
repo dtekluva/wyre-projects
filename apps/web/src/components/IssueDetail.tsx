@@ -6,6 +6,7 @@ import { useSafe } from "../lib/toast";
 import { Badge, ReviewBadge } from "./ui";
 import { Thumbs } from "./Thumbs";
 import { FilePick, type Pick } from "./FilePick";
+import { VoidControl, VoidedNote } from "./VoidControl";
 
 const SEV: Record<Issue["severity"], "danger" | "warning" | "info" | "neutral"> = { critical: "danger", high: "warning", medium: "info", low: "neutral" };
 
@@ -53,6 +54,7 @@ export function IssueDetail({ issue, onClose }: { issue: Issue; onClose: () => v
           <ReviewBadge status={i.reviewStatus} />
           <button className="modal__x" onClick={onClose} aria-label="Close">✕</button>
         </header>
+        {i.voidedAt && <div className="note note--danger sm" style={{ margin: "8px 16px 0" }}><VoidedNote r={i} /></div>}
 
         <div className="modal__scroll">
           <div className="review__kv">
@@ -117,7 +119,8 @@ export function IssueDetail({ issue, onClose }: { issue: Issue; onClose: () => v
         </div>
 
         <footer className="modal__foot">
-          {canCheck ? (rejecting ? <>
+          {!i.voidedAt && <VoidControl kind="issue" id={i.id} projectId={i.projectId} what={i.title} onDone={onClose} />}
+          {canCheck && !i.voidedAt ? (rejecting ? <>
             <input className="ns-input grow" placeholder="Reason for rejection (required)" value={comment} onChange={(e) => setComment(e.target.value)} />
             <button className="ns-btn ns-btn--danger ns-btn--sm" onClick={() => { if (safe(() => api.check("issue", i.id, user.id, "rejected", comment), "Rejected — sent back")) onClose(); }}>Confirm reject</button>
             <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setRejecting(false)}>Cancel</button>

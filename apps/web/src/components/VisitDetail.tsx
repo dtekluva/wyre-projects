@@ -6,6 +6,7 @@ import { useSafe } from "../lib/toast";
 import { Badge, ReviewBadge } from "./ui";
 import { Thumbs } from "./Thumbs";
 import { FilePick, type Pick } from "./FilePick";
+import { VoidControl, VoidedNote } from "./VoidControl";
 
 /** Full record behind a visit: who, when, what was found, what it cost, what stock moved, and every photo
  *  with its label. A checker can act on it here rather than hunting through the review queue. */
@@ -38,6 +39,7 @@ export function VisitDetail({ visit, onClose }: { visit: SiteVisit; onClose: () 
           <ReviewBadge status={v.reviewStatus} />
           <button className="modal__x" onClick={onClose} aria-label="Close">✕</button>
         </header>
+        {v.voidedAt && <div className="note note--danger sm" style={{ margin: "8px 16px 0" }}><VoidedNote r={v} /></div>}
 
         <div className="modal__scroll">
           <div className="review__kv">
@@ -109,7 +111,8 @@ export function VisitDetail({ visit, onClose }: { visit: SiteVisit; onClose: () 
         </div>
 
         <footer className="modal__foot">
-          {canCheck ? (rejecting ? <>
+          {!v.voidedAt && <VoidControl kind="site_visit" id={v.id} projectId={v.projectId} what={`${VISIT_TYPE_LABEL[v.visitType]} visit · ${fmtDateTime(v.startedAt)}`} onDone={onClose} />}
+          {canCheck && !v.voidedAt ? (rejecting ? <>
             <input className="ns-input grow" placeholder="Reason for rejection (required)" value={comment} onChange={(e) => setComment(e.target.value)} />
             <button className="ns-btn ns-btn--danger ns-btn--sm" onClick={() => { if (safe(() => api.check("site_visit", v.id, user.id, "rejected", comment), "Rejected — sent back")) onClose(); }}>Confirm reject</button>
             <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setRejecting(false)}>Cancel</button>

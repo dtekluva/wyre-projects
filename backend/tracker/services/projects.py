@@ -208,3 +208,30 @@ def set_stage_plan(actor: User, project_id: str, input: dict) -> Project:
     for c in changes:
         b.log(project_id, actor, "plan_updated", c, None, {"model": "Project", "id": p.id})
     return p
+
+
+@transaction.atomic
+def rollback_stage(actor: User, project_id: str, input: dict) -> Project:
+    """Take a project back to an earlier stage so the schedule can be corrected and the gates exited again properly.
+    Actual exit dates from the target stage onward are cleared; planned dates, documents, money and stock stay."""
+    from ..models import Approval
+    b.require(actor, "stage.rollback", project_id)
+    p = b.project(project_id)
+    try:
+        to = int(input.get("toStage"))
+    except (TypeError, ValueError):
+        raise ApiError("Unknown stage", "invalid")
+    if to < 0 or to > 8:
+        raise ApiError("Unknown stage", "invalid")
+    if to >= p.stage:
+        raise ApiError(f"The project is at stage {p.stage} — pick an earlier stage", "invalid")
+    why = b.clean(input.get("reason"))
+    if not why:
+        raise ApiError("A reason is required", "invalid")
+    frm = p.stage
+    p.stage_actual = {k: v for k, v in (p.stage_actual or {}).items() if int(k) < to}
+    Approval.objects.filter(project_id=project_id, kind="gate", status="pending").update(status="cancelled")
+    p.stage = to
+    b.stamp(p, actor, b.now()); p.save()
+    b.log(project_id, actor, "stage_rollback", f"Stage rolled back {frm} · {STAGE_NAMES[frm]} → {to} · {STAGE_NAMES[to]} — {why}", None, {"model": "Project", "id": p.id})
+    return p

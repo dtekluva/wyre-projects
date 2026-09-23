@@ -8,7 +8,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from tracker.errors import ApiError
-from tracker.models import Approval, Asset, CostItem, Document, Issue, Project, PurchaseOrder, StockCount, StockMovement, User
+from tracker.models import Approval, Asset, Attachment, CostItem, Document, Issue, Project, PurchaseOrder, StockCount, StockMovement, User
 from tracker import rbac, serializers
 from tracker.services import approvals, billing, documents, field, gates, money, projects, recon, review, stock, voiding
 from tracker.services.base import dec
@@ -520,6 +520,48 @@ class VisitPhotoTest(TestCase):
         self.assertEqual(money.money(vj.id)["invoicedNet"], 1_000_000); self.assertEqual(money.money(vj.id)["vatSettled"], 75_000)
         voiding.void_record(u["u_dir"], "client_invoice", inv.id, "wrong client"); voiding.void_record(u["u_dir"], "vat_payment", vp.id, "other project")
         self.assertEqual(money.money(vj.id)["invoicedNet"], 0); self.assertEqual(money.money(vj.id)["vatSettled"], 0)
+
+    def test_void_second_pass_and_stage_rollback(self):
+        u = self.u
+        p2 = projects.create_project(u["u_pm1"], {"name": "Void pass two", "clientName": "Acme", "branchName": "HQ", "location": "Lagos", "projectType": "solar_battery",
+                                                 "contractValueNet": 50_000_000, "contractReceived": True, "pmId": "u_pm1", "leadEngineerId": "u_pm2"})
+        po = money.create_po(u["u_pm1"], p2.id, {"vendorId": "v_dixsen", "items": [{"inventoryItemId": "it_mccb", "description": "MCCB", "qty": 4, "unitCost": 100_000}]})
+        approvals.decide(u["u_fin"], po.approval_id, "approved")
+        before = stock.balance_of("it_mccb")["qtyOnHand"]
+        grn = money.receive_goods(u["u_sk"], po.id, {"attachmentIds": [self.photo(u["u_sk"], p2.id, caption="Delivery note")], "lines": [{"purchaseItemId": po.items.first().id, "qty": 4}]})
+        review.check(u["u_pm1"], "goods_receipt", grn.id, "checked")
+        po.refresh_from_db(); self.assertEqual(po.status, "delivered"); self.assertEqual(stock.balance_of("it_mccb")["qtyOnHand"], before + 4)
+        self.err("conflict", voiding.void_record, u["u_dir"], "purchase_order", po.id, "dup")
+        voiding.void_record(u["u_dir"], "goods_receipt", grn.id, "wrong quantities")
+        po.refresh_from_db(); grn.refresh_from_db()
+        self.assertIsNotNone(grn.voided_at); self.assertEqual(stock.balance_of("it_mccb")["qtyOnHand"], before)
+        self.assertEqual(po.status, "approved"); self.assertEqual(dec(po.items.first().qty_received), 0)
+        self.assertTrue(all(m.voided_at for m in StockMovement.objects.filter(source_ref__id=grn.id)))
+        voiding.void_record(u["u_dir"], "purchase_order", po.id, "raised in error")
+        self.assertEqual(money.money(p2.id)["committed"], 0)
+        v = field.log_visit(u["u_ft1"], p2.id, {"visitType": "routine", "startedAt": "2026-09-10T09:00:00Z", "endedAt": "2026-09-10T11:00:00Z", "findings": "ok", "actionsTaken": "",
+                                                "costTravel": 5000, "costLabour": 10000, "attachmentIds": [self.photo(u["u_ft1"], p2.id, caption="Site")]})
+        review.check(u["u_pm1"], "site_visit", v.id, "checked")
+        self.assertEqual(money.money(p2.id)["actual"], 15_000)
+        voiding.void_record(u["u_pm1"], "site_visit", v.id, "wrong project")
+        self.assertEqual(money.money(p2.id)["actual"], 0)
+        i = field.raise_issue(u["u_ft1"], p2.id, {"category": "electrical", "severity": "low", "title": "Loose lug", "description": "d", "beforeAttachmentIds": [self.photo(u["u_ft1"], p2.id, caption="Before")]})
+        review.check(u["u_pm1"], "issue", i.id, "checked")
+        field.resolve_issue(u["u_ft1"], i.id, {"rootCause": "r", "resolution": "torqued", "afterAttachmentIds": [self.photo(u["u_ft1"], p2.id, caption="After")], "costToResolve": 2500})
+        review.check(u["u_pm1"], "issue", i.id, "checked")
+        i.refresh_from_db(); self.assertEqual(i.status, "closed"); self.assertEqual(money.money(p2.id)["actual"], 2_500)
+        voiding.void_record(u["u_dir"], "issue", i.id, "duplicate")
+        self.assertEqual(money.money(p2.id)["actual"], 0)
+        self.assertTrue(all(a.voided_at for a in Attachment.objects.filter(pk__in=i.before_attachment_ids + i.after_attachment_ids)))
+        # rollback
+        p1 = Project.objects.get(pk="p1"); frm = p1.stage; self.assertGreaterEqual(frm, 2)
+        self.err("forbidden", projects.rollback_stage, u["u_fin"], "p1", {"toStage": 2, "reason": "x"})
+        self.err("invalid", projects.rollback_stage, u["u_pm1"], "p1", {"toStage": frm, "reason": "x"})
+        self.err("invalid", projects.rollback_stage, u["u_pm1"], "p1", {"toStage": 2, "reason": " "})
+        p1 = projects.rollback_stage(u["u_pm1"], "p1", {"toStage": 2, "reason": "DISCO letter never arrived"})
+        self.assertEqual(p1.stage, 2); self.assertNotIn("2", p1.stage_actual); self.assertNotIn("3", p1.stage_actual); self.assertIn("1", p1.stage_actual)
+        self.assertTrue(p1.events.filter(event_type="stage_rollback").exists())
+        serializers.project(p1)
 
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u

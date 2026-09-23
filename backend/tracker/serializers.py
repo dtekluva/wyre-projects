@@ -118,12 +118,12 @@ def purchase_order(po: PurchaseOrder) -> dict:
     return {"id": po.id, "projectId": po.project_id, "poNumber": po.po_number, "vendorId": po.vendor_id, "status": po.status, "raisedBy": po.raised_by_id, "raisedAt": iso(po.raised_at),
             "items": [{"id": i.id, "costItemId": i.cost_item_id, "inventoryItemId": i.inventory_item_id, "description": i.description, "qty": num(i.qty), "unitCost": num(i.unit_cost),
                        "lineTotal": num(i.line_total), "qtyReceived": num(i.qty_received)} for i in po.items.all()],
-            "total": num(po.total), "notes": po.notes, "approvalId": po.approval_id, **audit(po)}
+            "total": num(po.total), "notes": po.notes, "approvalId": po.approval_id, **audit(po), **void(po)}
 
 
 def goods_receipt(g: GoodsReceipt) -> dict:
     return {"id": g.id, "projectId": g.project_id, "poId": g.po_id, "grnNumber": g.grn_number, "receivedAt": iso(g.received_at), "receivedBy": g.received_by_id, "lines": g.lines,
-            "attachmentIds": g.attachment_ids, "locationId": g.location_id, "notes": g.notes, **audit(g), **review(g)}
+            "attachmentIds": g.attachment_ids, "locationId": g.location_id, "notes": g.notes, **audit(g), **review(g), **void(g)}
 
 
 def asset(a: Asset) -> dict:
@@ -162,7 +162,7 @@ def visit(v: SiteVisit) -> dict:
     return {"id": v.id, "projectId": v.project_id, "stationId": v.station_id, "visitType": v.visit_type, "startedAt": iso(v.started_at), "endedAt": iso(v.ended_at),
             "technicianIds": v.technician_ids, "durationHrs": num(v.duration_hrs), "findings": v.findings, "actionsTaken": v.actions_taken, "costTravel": num(v.cost_travel),
             "costLabour": num(v.cost_labour), "costParts": num(v.cost_parts), "costTotal": num(v.cost_total), "parts": v.parts, "locationId": v.location_id,
-            "attachmentIds": v.attachment_ids, "issueIds": v.issue_ids, "clientSignoff": v.client_signoff, "gps": v.gps, "offlineCapturedAt": iso(v.offline_captured_at), **audit(v), **review(v)}
+            "attachmentIds": v.attachment_ids, "issueIds": v.issue_ids, "clientSignoff": v.client_signoff, "gps": v.gps, "offlineCapturedAt": iso(v.offline_captured_at), **audit(v), **review(v), **void(v)}
 
 
 def issue(i: Issue) -> dict:
@@ -170,7 +170,7 @@ def issue(i: Issue) -> dict:
             "description": i.description, "raisedBy": i.raised_by_id, "raisedAt": iso(i.raised_at), "source": i.source, "status": i.status, "assigneeId": i.assignee_id,
             "rootCause": i.root_cause, "resolution": i.resolution, "resolvedBy": i.resolved_by_id, "resolvedAt": iso(i.resolved_at), "costToResolve": num(i.cost_to_resolve),
             "linkedVisitId": i.linked_visit_id, "warrantyClaimId": i.warranty_claim_id, "attachmentIds": list(i.attachment_ids or []), "beforeAttachmentIds": i.before_attachment_ids, "afterAttachmentIds": i.after_attachment_ids,
-            "isSnag": i.is_snag, "slaDueAt": iso(i.sla_due_at), **audit(i), **review(i)}
+            "isSnag": i.is_snag, "slaDueAt": iso(i.sla_due_at), **audit(i), **review(i), **void(i)}
 
 
 def commissioning(c: CommissioningRecord) -> dict:

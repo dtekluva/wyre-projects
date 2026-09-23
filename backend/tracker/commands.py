@@ -78,6 +78,7 @@ COMMANDS: dict[str, Handler] = {
     "updateCommercials": lambda a, d, f: S.project(billing.update_commercials(a, d.get("projectId"), _in(d))),
     "setStagePlan": lambda a, d, f: S.project(projects.set_stage_plan(a, d.get("projectId"), _in(d))),
     "voidRecord": lambda a, d, f: voiding.void_record(a, d.get("kind"), d.get("id"), d.get("reason")) or {"ok": True},
+    "rollbackStage": lambda a, d, f: S.project(projects.rollback_stage(a, d.get("projectId"), _in(d))),
     "setContractStatus": lambda a, d, f: S.project(billing.set_contract_status(a, d.get("projectId"), _in(d))),
     "raiseInvoice": lambda a, d, f: S.client_invoice(billing.raise_invoice(a, d.get("projectId"), _in(d))),
     "recordReceipt": lambda a, d, f: S.client_invoice(billing.record_receipt(a, d.get("invoiceId"), _in(d))),

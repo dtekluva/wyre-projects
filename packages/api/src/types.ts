@@ -47,8 +47,8 @@ export interface AuditFields { createdAt: string; createdBy: string; updatedAt: 
 /** §4.14 void — wrong data that was entered (and maybe checked) stops counting everywhere but stays on the record,
  *  struck through, with who voided it and why. Never deleted: the chronology and gates must keep their history. */
 export interface VoidFields { voidedAt?: string; voidedBy?: string; voidReason?: string }
-export type VoidKind = "document" | "attachment" | "stock_movement" | "cost_item" | "client_invoice" | "vat_payment";
-export const VOID_KIND_LABEL: Record<VoidKind, string> = { document: "document", attachment: "file", stock_movement: "stock movement", cost_item: "budget line", client_invoice: "invoice", vat_payment: "VAT payment" };
+export type VoidKind = "document" | "attachment" | "stock_movement" | "cost_item" | "client_invoice" | "vat_payment" | "purchase_order" | "goods_receipt" | "site_visit" | "issue";
+export const VOID_KIND_LABEL: Record<VoidKind, string> = { document: "document", attachment: "file", stock_movement: "stock movement", cost_item: "budget line", client_invoice: "invoice", vat_payment: "VAT payment", purchase_order: "purchase order", goods_receipt: "goods receipt", site_visit: "site visit", issue: "issue" };
 
 export interface ReviewFields {
   reviewStatus: ReviewStatus; submittedBy: string; submittedAt: string;
@@ -137,7 +137,7 @@ export type EventType =
   | "role_granted" | "role_revoked" | "commissioning_assigned" | "note"
   | "stock_movement" | "cost_item" | "retention" | "reconciliation"
   | "issue" | "commissioning" | "hse" | "warranty" | "stock_count"
-  | "contract_updated" | "contract_received" | "invoice" | "plan_updated" | "void";
+  | "contract_updated" | "contract_received" | "invoice" | "plan_updated" | "void" | "stage_rollback";
 
 export interface ChronologyEvent {
   id: string; projectId: string; occurredAt: string; actorId: string; eventType: EventType;
@@ -152,7 +152,7 @@ export interface Approval {
   requestedBy: string; requestedAt: string;
   /** every listed role must approve once; any rejection rejects */
   requiredRoles: RoleCode[]; decisions: ApprovalDecision[];
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "cancelled";
   amount?: number; targetStage?: Stage;
 }
 
@@ -193,14 +193,14 @@ export interface PurchaseItem {
   qty: number; unitCost: number; lineTotal: number; qtyReceived: number;
 }
 /** PO — the Approval IS its check (spec §4.13) */
-export interface PurchaseOrder extends AuditFields {
+export interface PurchaseOrder extends AuditFields, VoidFields  {
   id: string; projectId: string; poNumber: string; vendorId: string; status: PoStatus;
   raisedBy: string; raisedAt: string; items: PurchaseItem[]; total: number; notes?: string; approvalId?: string;
 }
 
 export interface GoodsReceiptLine { purchaseItemId: string; qty: number; serials?: string[]; condition: "good" | "damaged" }
 /** GRN — maker-checked (PM / Finance). On check: posts receipt movements, creates assets, recognises actuals. */
-export interface GoodsReceipt extends AuditFields, ReviewFields {
+export interface GoodsReceipt extends AuditFields, ReviewFields, VoidFields  {
   id: string; projectId: string; poId: string; grnNumber: string; receivedAt: string; receivedBy: string;
   lines: GoodsReceiptLine[]; attachmentIds: string[]; locationId: string; notes?: string;
 }
@@ -300,7 +300,7 @@ export type VisitType = "routine" | "fault" | "warranty" | "inspection" | "upgra
 export const VISIT_TYPE_LABEL: Record<VisitType, string> = { routine: "Routine maintenance", fault: "Fault call-out", warranty: "Warranty", inspection: "Inspection", upgrade: "Upgrade", commissioning: "Commissioning" };
 export interface VisitPart { movementId: string; itemId: string; qty: number; serials?: string[] }
 /** Post-commissioning site visit — maker-checked (PM / Lead Engineer). On check: parts movements post, travel+labour posts as an O&M actual. */
-export interface SiteVisit extends AuditFields, ReviewFields {
+export interface SiteVisit extends AuditFields, ReviewFields, VoidFields  {
   id: string; projectId: string; stationId?: string; visitType: VisitType; startedAt: string; endedAt: string;
   technicianIds: string[]; durationHrs: number; findings: string; actionsTaken: string;
   costTravel: number; costLabour: number; costParts: number; costTotal: number; parts: VisitPart[]; locationId: string;
@@ -313,7 +313,7 @@ export type IssueSeverity = "critical" | "high" | "medium" | "low";
 export type IssueStatus = "open" | "in_progress" | "awaiting_parts" | "resolved" | "closed" | "wont_fix";
 export const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = { open: "Open", in_progress: "In progress", awaiting_parts: "Awaiting parts", resolved: "Resolved (pending check)", closed: "Closed", wont_fix: "Won't fix" };
 /** Issue / defect. Report is maker-checked (v1); resolution re-enters review (v2) and closes on check. */
-export interface Issue extends AuditFields, ReviewFields {
+export interface Issue extends AuditFields, ReviewFields, VoidFields  {
   id: string; projectId: string; stationId?: string; assetId?: string; category: IssueCategory; severity: IssueSeverity;
   title: string; description: string; raisedBy: string; raisedAt: string; source: "manual" | "visit" | "telemetry_alert";
   status: IssueStatus; assigneeId?: string; rootCause?: string; resolution?: string; resolvedBy?: string; resolvedAt?: string;

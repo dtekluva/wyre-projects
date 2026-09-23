@@ -35,16 +35,18 @@ function PoRow({ po, p }: { po: PurchaseOrder; p: Project }) {
     if (ok) { setOpen(false); setSer({}); setFile([]); setNotes(""); }
   };
   return (
-    <div className="po">
+    <div className={`po ${po.voidedAt ? "voided" : ""}`}>
       <div className="po__head">
         <b className="ns-mono">{po.poNumber}</b><span>{api.vendorName(po.vendorId)}</span><Badge variant={bv}>{bl}</Badge>
         <span className="right ns-mono">{naira(po.total)}</span>
-        {canReceive && <button className="ns-btn ns-btn--secondary ns-btn--sm" onClick={() => setOpen((o) => !o)}>{open ? "Cancel" : "Receive goods"}</button>}
+        {canReceive && !po.voidedAt && <button className="ns-btn ns-btn--secondary ns-btn--sm" onClick={() => setOpen((o) => !o)}>{open ? "Cancel" : "Receive goods"}</button>}
+        {!po.voidedAt && <VoidControl kind="purchase_order" id={po.id} projectId={po.projectId} size="xs" what={`${po.poNumber} · ${api.vendorName(po.vendorId)} · ${naira(po.total)}`} />}
       </div>
+      <VoidedNote r={po} />
       <div className="sm muted">Raised by {api.userName(po.raisedBy)} {relative(po.raisedAt)}{ap && ap.status === "pending" && <> · awaiting {ap.requiredRoles.filter((r) => !ap.decisions.some((d) => d.role === r)).map((r) => ROLE_LABEL[r]).join(" + ")} · <Link to="/work/approvals" className="link">approvals</Link></>}</div>
       <ul className="po__lines">{po.items.map((i) => <li key={i.id}><span className="grow">{i.qty} × {i.description}{i.inventoryItemId && <span className="muted"> · stock</span>}</span><span className="ns-mono">{naira(i.unitCost)}</span><span className="ns-mono">{naira(i.lineTotal)}</span>
         <span className={`sm ${i.qtyReceived >= i.qty ? "" : "muted"}`}>{i.qtyReceived}/{i.qty} received</span></li>)}</ul>
-      {grns.length > 0 && <div className="stack sm muted" style={{ marginTop: 6, gap: 4 }}>{grns.map((g) => <span key={g.id} className="row row--wrap" style={{ gap: 8 }}>{g.grnNumber} <ReviewBadge status={g.reviewStatus} /> <Thumbs ids={g.attachmentIds} empty="no image" /></span>)}</div>}
+      {grns.length > 0 && <div className="stack sm muted" style={{ marginTop: 6, gap: 4 }}>{grns.map((g) => <span key={g.id} className={`row row--wrap ${g.voidedAt ? "voided" : ""}`} style={{ gap: 8 }}>{g.grnNumber} <ReviewBadge status={g.reviewStatus} /> <Thumbs ids={g.attachmentIds} empty="no image" />{!g.voidedAt && <VoidControl kind="goods_receipt" id={g.id} projectId={g.projectId} size="xs" what={`${g.grnNumber} · ${naira(api.grnValue(g))}`} />}<VoidedNote r={g} /></span>)}</div>}
       {open && <div className="receive">
         <div className="ns-overline">Goods receipt against {po.poNumber} → {api.mainLocationId() ? api.locationName(api.mainLocationId()!) : "the warehouse"}</div>
         {po.items.map((i) => { const rem = api.poRemaining(i, po.id); const it = i.inventoryItemId ? api.item(i.inventoryItemId) : undefined; return <div key={i.id}>

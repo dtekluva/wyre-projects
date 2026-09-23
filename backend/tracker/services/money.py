@@ -265,7 +265,7 @@ def money(project_id: str) -> dict:
     p = b.project(project_id)
     ci = list(CostItem.objects.filter(project=p, review_status="checked", voided_at__isnull=True))
     planned = sum((b.dec(c.planned_amount) for c in ci), Decimal("0")) if ci else b.dec(p.approved_budget)
-    pos = list(PurchaseOrder.objects.filter(project=p, status__in=["approved", "partially_delivered", "delivered", "closed"]).prefetch_related("items"))
+    pos = list(PurchaseOrder.objects.filter(project=p, voided_at__isnull=True, status__in=["approved", "partially_delivered", "delivered", "closed"]).prefetch_related("items"))
     committed = sum((b.dec(o.total) for o in pos), Decimal("0"))
     acts = list(Actual.objects.filter(project=p))
     actual = sum((b.dec(a.amount) for a in acts), Decimal("0"))
