@@ -956,6 +956,32 @@ export class MockApi {
   }
   private fmtDate(iso: string) { const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }); }
 
+  /** What was entered at creation — name, client, site, type, capacity, owners — editable after the fact. Same rules
+   *  as creation; a new owner is granted membership, the old one keeps theirs; every changed field is one chronology line. */
+  updateProjectDetails(actorId: string, projectId: string, input: { name?: string; clientName?: string; branchName?: string; location?: string; projectType?: ProjectType; systemCapacityKwp?: number | null; pmId?: string; leadEngineerId?: string }): Project {
+    this.require(actorId, "project.update", projectId); const p = this.raw(projectId);
+    const text = (v: string | undefined, cur: string, label: string) => { if (v === undefined) return cur; const t = v.trim(); if (!t) throw new ApiError(`${label} is required`, "invalid"); return t; };
+    const next = { name: text(input.name, p.name, "Project name"), clientName: text(input.clientName, p.clientName, "Client"), branchName: text(input.branchName, p.branchName, "Branch / site"), location: text(input.location, p.location, "Location"),
+      projectType: input.projectType ?? p.projectType, systemCapacityKwp: input.systemCapacityKwp === undefined ? p.systemCapacityKwp : input.systemCapacityKwp === null || input.systemCapacityKwp === ("" as unknown) ? undefined : Number(input.systemCapacityKwp),
+      pmId: input.pmId ?? p.pmId, leadEngineerId: input.leadEngineerId ?? p.leadEngineerId };
+    if (!(next.projectType in PROJECT_TYPE_LABEL)) throw new ApiError("Unknown project type", "invalid");
+    if (next.systemCapacityKwp !== undefined && !(next.systemCapacityKwp > 0)) throw new ApiError("System capacity must be a positive number of kWp", "invalid");
+    if (next.name.toLowerCase() !== p.name.toLowerCase() && this.projects.some((x) => x.id !== p.id && x.name.trim().toLowerCase() === next.name.toLowerCase())) throw new ApiError("A project with that name already exists", "conflict");
+    const pm = this.getUser(next.pmId); if (!pm.roles.includes("techlead")) throw new ApiError(`${pm.name} is not a Tech Lead`, "invalid");
+    const le = this.getUser(next.leadEngineerId); if (!le.roles.includes("techlead")) throw new ApiError(`${le.name} is not a Tech Lead`, "invalid");
+    const fields: [keyof typeof next, string, (v: unknown) => string][] = [
+      ["name", "Name", String], ["clientName", "Client", String], ["branchName", "Branch / site", String], ["location", "Location", String],
+      ["projectType", "Type", (v) => PROJECT_TYPE_LABEL[v as ProjectType]], ["systemCapacityKwp", "Capacity", (v) => v === undefined ? "—" : `${v} kWp`],
+      ["pmId", "Project manager", (v) => this.userName(v as string)], ["leadEngineerId", "Lead engineer", (v) => this.userName(v as string)]];
+    const changes = fields.filter(([k]) => (p[k] ?? undefined) !== (next[k] ?? undefined)).map(([k, label, f]) => `${label}: ${f(p[k])} → ${f(next[k])}`);
+    if (!changes.length) throw new ApiError("Nothing changed", "invalid");
+    const at = this.now();
+    for (const uid of [next.pmId, next.leadEngineerId]) if (!this.memberships.some((m) => m.projectId === projectId && m.userId === uid)) { this.memberships.push({ id: this.id("m"), projectId, userId: uid, role: "techlead", grantedBy: actorId, grantedAt: at }); this.log(projectId, actorId, "role_granted", `${this.userName(uid)} granted techlead`); }
+    Object.assign(p, next, { updatedAt: at, updatedBy: actorId });
+    for (const c of changes) this.log(projectId, actorId, "project_updated", c, undefined, { model: "Project", id: p.id });
+    this.emit(); return p;
+  }
+
   /** Everything commercial on the project, editable after creation — a draft contract firms up, a budget is approved,
    *  retention is agreed. Director or Finance; every change is logged with the before figures. */
   updateCommercials(actorId: string, projectId: string, input: { contractValueNet?: number; vatRate?: number; vatTreatment?: VatTreatment; approvedBudget?: number; retentionPercent?: number }): Project {

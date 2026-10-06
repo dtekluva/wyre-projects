@@ -15,6 +15,7 @@ import { ReviewQueue } from "./screens/ReviewQueue";
 import { Approvals } from "./screens/Approvals";
 import { AdminUsers, AdminThresholds } from "./screens/Admin";
 import { ProjectMoney } from "./screens/ProjectMoney";
+import { ProjectDetails } from "./screens/ProjectDetails";
 import { ProjectAssets } from "./screens/ProjectAssets";
 import { Inventory } from "./screens/Inventory";
 import { Reconciliation } from "./screens/Reconciliation";
@@ -54,6 +55,7 @@ export function App() {
             <Route path="money" element={<ProjectMoney />} />
             <Route path="assets" element={<ProjectAssets />} />
             <Route path="field" element={<ProjectField />} />
+            <Route path="details" element={<ProjectDetails />} />
           </Route>
           <Route path="work/reviews" element={<ReviewQueue />} />
           <Route path="work/approvals" element={<Approvals />} />

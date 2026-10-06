@@ -271,6 +271,24 @@ api.rollbackStage("u_pm1", rb.id, { toStage: 2, reason: "DISCO letter never actu
 ok(rb.stage === 2 && !rb.stageActual[2] && !rb.stageActual[3] && rb.stageActual[1], "stage back to 2; actual exits from 2 onward cleared, earlier kept");
 ok(api.listEvents(rb.id).some((e) => e.eventType === "stage_rollback"), "rollback is in the chronology");
 
+// ---- details editable after creation ----
+const dp = api.createProject("u_pm1", { name: "Details job", clientName: "Acme", branchName: "HQ", location: "Lagos", projectType: "solar_battery", contractValueNet: 100, pmId: "u_pm1", leadEngineerId: "u_pm1" });
+expectErr(() => api.updateProjectDetails("u_ft1", dp.id, { name: "x" }), "forbidden", "a tech cannot edit details");
+expectErr(() => api.updateProjectDetails("u_pm1", dp.id, { name: "  " }), "invalid", "name cannot be blanked");
+expectErr(() => api.updateProjectDetails("u_pm1", dp.id, { name: "Details job" }), "invalid", "nothing changed is refused");
+expectErr(() => api.updateProjectDetails("u_pm1", dp.id, { name: api.projects.find((x) => x.id === "p1").name }), "conflict", "cannot take another project's name");
+expectErr(() => api.updateProjectDetails("u_pm1", dp.id, { pmId: "u_ft1" }), "invalid", "a tech cannot be the project manager");
+expectErr(() => api.updateProjectDetails("u_pm1", dp.id, { systemCapacityKwp: -2 }), "invalid", "capacity must be positive");
+const dpBefore = api.listEvents(dp.id).filter((e) => e.eventType === "project_updated").length;
+api.updateProjectDetails("u_fin", dp.id, { name: "Details job (renamed)", clientName: "Acme Ltd", systemCapacityKwp: 40.6, leadEngineerId: "u_pm2" });
+ok(dp.name === "Details job (renamed)" && dp.clientName === "Acme Ltd" && dp.systemCapacityKwp === 40.6 && dp.leadEngineerId === "u_pm2" && dp.branchName === "HQ", "finance edits several fields in one save; untouched fields stay");
+ok(api.listEvents(dp.id).filter((e) => e.eventType === "project_updated").length === dpBefore + 4, "one chronology line per changed field");
+ok(api.memberships.some((m) => m.projectId === dp.id && m.userId === "u_pm2"), "the new lead engineer is granted membership");
+ok(api.memberships.some((m) => m.projectId === dp.id && m.userId === "u_pm1"), "the previous owner keeps theirs");
+api.updateProjectDetails("u_dir", dp.id, { systemCapacityKwp: null });
+ok(dp.systemCapacityKwp === undefined, "capacity can be cleared");
+
+
 
 
 ok(api.listEvents(vtP.id).some((e) => e.eventType === "contract_updated"), "contract change is in the chronology");

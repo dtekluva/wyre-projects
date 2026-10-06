@@ -563,6 +563,25 @@ class VisitPhotoTest(TestCase):
         self.assertTrue(p1.events.filter(event_type="stage_rollback").exists())
         serializers.project(p1)
 
+    def test_project_details_editable_after_creation(self):
+        u = self.u
+        dp = projects.create_project(u["u_pm1"], {"name": "Details job", "clientName": "Acme", "branchName": "HQ", "location": "Lagos", "projectType": "solar_battery",
+                                                 "contractValueNet": 100, "pmId": "u_pm1", "leadEngineerId": "u_pm1"})
+        self.err("forbidden", projects.update_project_details, u["u_ft1"], dp.id, {"name": "x"})
+        self.err("invalid", projects.update_project_details, u["u_pm1"], dp.id, {"name": "  "})
+        self.err("invalid", projects.update_project_details, u["u_pm1"], dp.id, {"name": "Details job"})
+        self.err("conflict", projects.update_project_details, u["u_pm1"], dp.id, {"name": Project.objects.get(pk="p1").name})
+        self.err("invalid", projects.update_project_details, u["u_pm1"], dp.id, {"pmId": "u_ft1"})
+        self.err("invalid", projects.update_project_details, u["u_pm1"], dp.id, {"systemCapacityKwp": -2})
+        before = dp.events.filter(event_type="project_updated").count()
+        dp = projects.update_project_details(u["u_fin"], dp.id, {"name": "Details job (renamed)", "clientName": "Acme Ltd", "systemCapacityKwp": 40.6, "leadEngineerId": "u_pm2"})
+        self.assertEqual(dp.name, "Details job (renamed)"); self.assertEqual(dp.client_name, "Acme Ltd"); self.assertEqual(dec(dp.system_capacity_kwp), dec("40.6")); self.assertEqual(dp.lead_engineer_id, "u_pm2"); self.assertEqual(dp.branch_name, "HQ")
+        self.assertEqual(dp.events.filter(event_type="project_updated").count(), before + 4)
+        self.assertTrue(dp.memberships.filter(user_id="u_pm2").exists()); self.assertTrue(dp.memberships.filter(user_id="u_pm1").exists())
+        dp = projects.update_project_details(u["u_dir"], dp.id, {"systemCapacityKwp": None})
+        self.assertIsNone(dp.system_capacity_kwp)
+        serializers.project(dp)
+
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u
         v = field.log_visit(u["u_ft1"], "p1", {"visitType": "inspection", "startedAt": "2026-09-10T09:00:00Z", "endedAt": "2026-09-10T10:00:00Z",

@@ -235,3 +235,59 @@ def rollback_stage(actor: User, project_id: str, input: dict) -> Project:
     b.stamp(p, actor, b.now()); p.save()
     b.log(project_id, actor, "stage_rollback", f"Stage rolled back {frm} · {STAGE_NAMES[frm]} → {to} · {STAGE_NAMES[to]} — {why}", None, {"model": "Project", "id": p.id})
     return p
+
+
+@transaction.atomic
+def update_project_details(actor: User, project_id: str, input: dict) -> Project:
+    """What was entered at creation — name, client, site, type, capacity, owners — editable after the fact. Same
+    rules as creation; a new owner is granted membership, the old one keeps theirs; every changed field is one line."""
+    b.require(actor, "project.update", project_id)
+    p = b.project(project_id)
+
+    def text(key: str, current: str, label: str) -> str:
+        if key not in input or input[key] is None:
+            return current
+        v = b.clean(input.get(key))
+        if not v:
+            raise ApiError(f"{label} is required", "invalid")
+        return v
+
+    name = text("name", p.name, "Project name"); client_name = text("clientName", p.client_name, "Client")
+    branch_name = text("branchName", p.branch_name, "Branch / site"); location = text("location", p.location, "Location")
+    ptype = input.get("projectType") or p.project_type
+    if ptype not in PROJECT_TYPE_LABEL:
+        raise ApiError("Unknown project type", "invalid")
+    if "systemCapacityKwp" in input:
+        kwp_in = input.get("systemCapacityKwp")
+        kwp = None if kwp_in in (None, "") else b.dec(kwp_in)
+        if kwp is not None and not kwp > 0:
+            raise ApiError("System capacity must be a positive number of kWp", "invalid")
+    else:
+        kwp = p.system_capacity_kwp
+    if name.lower() != p.name.lower() and Project.objects.filter(name__iexact=name).exclude(pk=p.pk).exists():
+        raise ApiError("A project with that name already exists", "conflict")
+    pm = b.get_user(input.get("pmId") or p.pm_id)
+    if "techlead" not in pm.role_codes():
+        raise ApiError(f"{pm.name} is not a Tech Lead", "invalid")
+    le = b.get_user(input.get("leadEngineerId") or p.lead_engineer_id)
+    if "techlead" not in le.role_codes():
+        raise ApiError(f"{le.name} is not a Tech Lead", "invalid")
+    fmt_kwp = lambda v: "—" if v is None else f"{b.dec(v).normalize():f} kWp"  # noqa: E731
+    changes = []
+    for label, old, new in [("Name", p.name, name), ("Client", p.client_name, client_name), ("Branch / site", p.branch_name, branch_name), ("Location", p.location, location),
+                            ("Type", PROJECT_TYPE_LABEL[p.project_type], PROJECT_TYPE_LABEL[ptype]), ("Capacity", fmt_kwp(p.system_capacity_kwp), fmt_kwp(kwp)),
+                            ("Project manager", p.pm.name, pm.name), ("Lead engineer", p.lead_engineer.name, le.name)]:
+        if old != new:
+            changes.append(f"{label}: {old} → {new}")
+    if not changes:
+        raise ApiError("Nothing changed", "invalid")
+    at = b.now()
+    for u in (pm, le):
+        if not ProjectMembership.objects.filter(project=p, user=u).exists():
+            ProjectMembership.objects.create(project=p, user=u, role="techlead", granted_by=actor, granted_at=at)
+            b.log(p.id, actor, "role_granted", f"{u.name} granted techlead")
+    p.name = name; p.client_name = client_name; p.branch_name = branch_name; p.location = location; p.project_type = ptype; p.system_capacity_kwp = kwp; p.pm = pm; p.lead_engineer = le
+    b.stamp(p, actor, at); p.save()
+    for c in changes:
+        b.log(p.id, actor, "project_updated", c, None, {"model": "Project", "id": p.id})
+    return p
