@@ -205,9 +205,11 @@ export interface GoodsReceipt extends AuditFields, ReviewFields, VoidFields  {
   lines: GoodsReceiptLine[]; attachmentIds: string[]; locationId: string; notes?: string;
 }
 
-export type AssetType = "panel" | "inverter" | "battery" | "meter" | "ct" | "ats" | "cable" | "mounting" | "other";
+export type AssetType = "panel" | "inverter" | "battery" | "meter" | "ct" | "ats" | "cable" | "mounting" | "tool" | "ppe" | "other";
 /** Runtime list, same order as backend/tracker/constants.py ASSET_TYPES. */
-export const ASSET_TYPES: readonly AssetType[] = ["panel", "inverter", "battery", "meter", "ct", "ats", "cable", "mounting", "other"];
+export const ASSET_TYPES: readonly AssetType[] = ["panel", "inverter", "battery", "meter", "ct", "ats", "cable", "mounting", "tool", "ppe", "other"];
+/** Categories the operations team buys for itself rather than for a project — tracked by holder, not by project. */
+export const TOOL_CATEGORIES: readonly ItemCategory[] = ["tool", "ppe"];
 export type AssetStatus = "in_stock" | "installed" | "faulty" | "replaced" | "decommissioned";
 export interface Asset extends AuditFields {
   id: string; projectId?: string; inventoryItemId: string; assetType: AssetType; make: string; model: string; serial: string;
@@ -220,7 +222,7 @@ export interface InventoryItem {
   id: string; sku: string; name: string; category: ItemCategory; unit: string; isSerialised: boolean;
   reorderLevel: number; reorderQty: number; defaultVendorId?: string; isActive: boolean; make?: string; model?: string; warrantyMonths?: number;
 }
-export interface StockLocation { id: string; name: string; type: "warehouse" | "vehicle" | "site" | "quarantine"; custodianId?: string; isActive: boolean }
+export interface StockLocation { id: string; name: string; type: "warehouse" | "vehicle" | "site" | "quarantine" | "person"; custodianId?: string; isActive: boolean }
 
 export type MovementType = "receipt" | "issue" | "return" | "transfer" | "adjustment" | "write_off";
 export const MOVEMENT_LABEL: Record<MovementType, string> = {

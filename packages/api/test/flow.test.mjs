@@ -288,6 +288,31 @@ ok(api.memberships.some((m) => m.projectId === dp.id && m.userId === "u_pm1"), "
 api.updateProjectDetails("u_dir", dp.id, { systemCapacityKwp: null });
 ok(dp.systemCapacityKwp === undefined, "capacity can be cleared");
 
+// ---- tools & PPE: bought for the team, held by a person ----
+const drill = api.addItem("u_sk", { sku: "DRL-18V", name: "18 V cordless drill", category: "tool", unit: "pcs" });
+const gloves = api.addItem("u_sk", { sku: "GLV-01", name: "Work gloves", category: "ppe", unit: "pairs" });
+const tnow = api.now ? api.now() : new Date().toISOString();
+const plant = (id, itemId, qty, cost) => { const m = { id, itemId, movementType: "receipt", qty, locationToId: api.mainLocationId(), unitCost: cost, totalCost: qty * cost, reason: "tools receipt", createdBy: "u_sk", createdAt: tnow, reviewStatus: "checked", submittedBy: "u_sk", submittedAt: tnow, checkedBy: "u_fin", checkedAt: tnow, reviewVersion: 1 }; api.movements.push(m); return m; };
+plant("mv_tool_1", drill.id, 3, 85_000); plant("mv_tool_2", gloves.id, 10, 2_500);
+const ts = api.toolsSpend(12);
+ok(ts.total === 280_000 && ts.thisMonth === 280_000 && ts.byCategory.find((c) => c.category === "tool").amount === 255_000 && ts.byCategory.find((c) => c.category === "ppe").amount === 25_000, `tools spend sums checked receipts by category (${ts.total})`);
+ok(ts.byMonth.length === 12 && ts.byMonth[11].amount === 280_000, "spend by month covers 12 months, this month last");
+expectErr(() => api.assignTool("u_ft1", { itemId: drill.id, qty: 1, userId: "u_ft1" }), "forbidden", "a tech cannot hand tools out");
+expectErr(() => api.assignTool("u_sk", { itemId: "it_mccb", qty: 1, userId: "u_ft1" }), "invalid", "project stock is not handed to a person");
+expectErr(() => api.assignTool("u_sk", { itemId: drill.id, qty: 5, userId: "u_ft1" }), "invalid", "cannot hand out more than the store holds");
+const hand = api.assignTool("u_sk", { itemId: drill.id, qty: 2, userId: "u_ft1", note: "Ikeja install" });
+ok(hand.movementType === "transfer" && hand.locationToId === "loc_person_u_ft1" && hand.reviewStatus === "pending", "hand-out is a pending transfer to the person's holder location");
+ok(api.locations.some((l) => l.id === "loc_person_u_ft1" && l.type === "person" && l.custodianId === "u_ft1"), "the holder location was created on first use");
+ok(api.toolHoldings().length === 0, "not held until checked");
+api.check("stock_movement", hand.id, "u_fin", "checked");
+ok(api.toolHoldings().some((h) => h.itemId === drill.id && h.userId === "u_ft1" && h.qtyOnHand === 2) && api.available(drill.id) === 1, "checked: 2 drills with the tech, 1 in the store");
+const over = api.handOverTool("u_pm1", { itemId: drill.id, qty: 1, fromUserId: "u_ft1", toUserId: "u_pm2" }); api.check("stock_movement", over.id, "u_fin", "checked");
+ok(api.toolHoldings().some((h) => h.userId === "u_pm2" && h.qtyOnHand === 1) && api.toolHoldings().some((h) => h.userId === "u_ft1" && h.qtyOnHand === 1), "hand-over moves one drill between people");
+const back = api.returnTool("u_dir", { itemId: drill.id, qty: 1, userId: "u_pm2" }); api.check("stock_movement", back.id, "u_fin", "checked");
+ok(api.available(drill.id) === 2 && !api.toolHoldings().some((h) => h.userId === "u_pm2"), "return puts it back in the store");
+ok(api.toolsSpend(12).total === 280_000, "handing out and returning never changes spend");
+
+
 
 
 

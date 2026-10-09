@@ -40,7 +40,9 @@ MOVEMENT_LABEL = {
     "receipt": "Receipt", "issue": "Issue to project", "return": "Return from site", "transfer": "Transfer",
     "adjustment": "Adjustment", "write_off": "Write-off",
 }
-ASSET_TYPES = ["panel", "inverter", "battery", "meter", "ct", "ats", "cable", "mounting", "other"]
+ASSET_TYPES = ["panel", "inverter", "battery", "meter", "ct", "ats", "cable", "mounting", "tool", "ppe", "other"]
+# bought for the team rather than for a project — tracked by holder, not by project
+TOOL_CATEGORIES = ["tool", "ppe"]
 VISIT_TYPE_LABEL = {
     "routine": "Routine maintenance", "fault": "Fault call-out", "warranty": "Warranty", "inspection": "Inspection",
     "upgrade": "Upgrade", "commissioning": "Commissioning",

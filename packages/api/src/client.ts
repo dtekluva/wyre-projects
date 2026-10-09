@@ -2,7 +2,7 @@
 // Enforces: RBAC (§2), stage gates (§3), actor capture (§4), maker-checker + segregation of duties (§4.13, §5),
 // money & stock rules (§0, §4.4, §4.10, §4.15, §11).
 import { can as canFn, maySelfReview, rolesOn as rolesOnFn, type Permission } from "./rbac";
-import { type VoidKind } from "./types";
+import { TOOL_CATEGORIES, type VoidKind } from "./types";
 import { CONTRACT_STATUS_LABEL, VAT_PAYMENT_METHOD_LABEL, VAT_TREATMENT_LABEL, type ContractStatus, type ClientInvoice, type InvoiceReceipt, type VatPayment, type VatPaymentMethod, type VatTreatment } from "./types";
 import { DEFAULT_VAT_RATE, vatOn } from "./vat";
 import { STAGES } from "./gates";
@@ -803,6 +803,52 @@ export class MockApi {
     return { planned, committed, actual, variance: planned - actual, burnPct: planned > 0 ? Math.round(actual / planned * 100) : 0, forecast: Math.max(committed, actual), byCategory, changeOrders, retentionHeld: this.retention(projectId).amountHeld, ...vb };
   }
 
+  // ---------- tools: bought for the team, held by a person ----------
+  /** The location that stands for "with <person>" — created the first time something is handed to them. */
+  holderLocation(userId: string): StockLocation {
+    const u = this.getUser(userId); const id = `loc_person_${u.id}`;
+    let l = this.locations.find((x) => x.id === id);
+    if (!l) { l = { id, name: u.name, type: "person", custodianId: u.id, isActive: true }; this.locations.push(l); }
+    return l;
+  }
+  isTool(itemId: string) { const it = this.items.find((i) => i.id === itemId); return !!it && TOOL_CATEGORIES.includes(it.category); }
+  /** Hand a tool from the store to a person. Checked like any transfer; value unchanged. */
+  assignTool(actorId: string, input: { itemId: string; qty: number; serials?: string[]; userId: string; note?: string }): StockMovement {
+    this.require(actorId, "tools.assign");
+    if (!this.isTool(input.itemId)) throw new ApiError("Only tools and PPE are handed to people — issue project stock to a project instead", "invalid");
+    const to = this.holderLocation(input.userId); const from = this.mainLocationId(); if (!from) throw new ApiError("No warehouse location configured", "conflict");
+    return this.moveStock(actorId, { itemId: input.itemId, qty: input.qty, serials: input.serials, fromId: from, toId: to.id, label: `Handed to ${to.name}${input.note ? ` — ${input.note.trim()}` : ""}` });
+  }
+  /** One person hands a tool to another. */
+  handOverTool(actorId: string, input: { itemId: string; qty: number; serials?: string[]; fromUserId: string; toUserId: string; note?: string }): StockMovement {
+    this.require(actorId, "tools.assign");
+    if (!this.isTool(input.itemId)) throw new ApiError("Only tools and PPE are handed between people", "invalid");
+    const from = this.holderLocation(input.fromUserId); const to = this.holderLocation(input.toUserId);
+    return this.moveStock(actorId, { itemId: input.itemId, qty: input.qty, serials: input.serials, fromId: from.id, toId: to.id, label: `${from.name} → ${to.name}${input.note ? ` — ${input.note.trim()}` : ""}` });
+  }
+  /** Back to the store. */
+  returnTool(actorId: string, input: { itemId: string; qty: number; serials?: string[]; userId: string; note?: string }): StockMovement {
+    this.require(actorId, "tools.assign");
+    const from = this.holderLocation(input.userId); const to = this.mainLocationId(); if (!to) throw new ApiError("No warehouse location configured", "conflict");
+    return this.moveStock(actorId, { itemId: input.itemId, qty: input.qty, serials: input.serials, fromId: from.id, toId: to, label: `Returned by ${from.name}${input.note ? ` — ${input.note.trim()}` : ""}` });
+  }
+  /** Who holds what: balances at person locations, tools and PPE only. */
+  toolHoldings() {
+    return this.balances().filter((b) => b.qtyOnHand > 0 && this.isTool(b.itemId) && this.locations.find((l) => l.id === b.locationId)?.type === "person")
+      .map((b) => ({ ...b, userId: this.locations.find((l) => l.id === b.locationId)!.custodianId!, serials: this.assets.filter((a) => a.inventoryItemId === b.itemId && a.locationId === b.locationId && a.status === "in_stock").map((a) => a.serial) }));
+  }
+  /** What the team has spent on tools and PPE: checked receipts, by month (last 12) and by category. No budget — the user chose none. */
+  toolsSpend(months = 12) {
+    const rc = this.movements.filter((m) => m.movementType === "receipt" && m.reviewStatus === "checked" && !m.voidedAt && this.isTool(m.itemId));
+    const now = new Date(this.now()); const keys: string[] = [];
+    for (let i = months - 1; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`); }
+    const byMonth = keys.map((k) => ({ month: k, amount: Math.round(rc.filter((m) => m.createdAt.slice(0, 7) === k).reduce((s, m) => s + m.totalCost, 0) * 100) / 100 }));
+    const byCategory = TOOL_CATEGORIES.map((c) => ({ category: c, amount: Math.round(rc.filter((m) => this.items.find((i) => i.id === m.itemId)?.category === c).reduce((s, m) => s + m.totalCost, 0) * 100) / 100 }));
+    const total = Math.round(rc.reduce((s, m) => s + m.totalCost, 0) * 100) / 100;
+    const thisMonth = byMonth[byMonth.length - 1]?.amount ?? 0; const ytd = Math.round(rc.filter((m) => m.createdAt.slice(0, 4) === String(now.getFullYear())).reduce((s, m) => s + m.totalCost, 0) * 100) / 100;
+    return { byMonth, byCategory, total, thisMonth, ytd, count: rc.length };
+  }
+
   // ---------- void (§4.14) ----------
   /** Wrong data that was entered — and maybe checked — stops counting everywhere but stays on the record with who
    *  voided it and why. Never deleted. A movement that already posted effects has them unwound here. */
@@ -1320,6 +1366,9 @@ export class MockApi {
   }
   transferStock(actorId: string, input: { itemId: string; qty: number; fromId: string; toId: string; serials?: string[]; label?: string }): StockMovement {
     this.require(actorId, "inventory.write");
+    return this.moveStock(actorId, input);
+  }
+  private moveStock(actorId: string, input: { itemId: string; qty: number; fromId: string; toId: string; serials?: string[]; label?: string }): StockMovement {
     const it = this.item(input.itemId); if (!(input.qty > 0)) throw new ApiError("Quantity must be positive", "invalid");
     if (input.fromId === input.toId) throw new ApiError("Choose two different locations", "invalid");
     const avail = this.available(it.id, input.fromId); if (input.qty > avail) throw new ApiError(`Only ${avail} available at ${this.locationName(input.fromId)}`, "invalid");

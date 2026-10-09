@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from . import serializers as S
 from .errors import ApiError
-from .services import billing, accounts, approvals, extractions, documents, field, gates, money, projects, recon, review, stock, voiding
+from .services import billing, accounts, approvals, extractions, documents, field, gates, money, projects, recon, review, stock, voiding, tools
 
 Handler = Callable[[Any, dict, Any], Any]
 
@@ -80,6 +80,9 @@ COMMANDS: dict[str, Handler] = {
     "voidRecord": lambda a, d, f: voiding.void_record(a, d.get("kind"), d.get("id"), d.get("reason")) or {"ok": True},
     "rollbackStage": lambda a, d, f: S.project(projects.rollback_stage(a, d.get("projectId"), _in(d))),
     "updateProjectDetails": lambda a, d, f: S.project(projects.update_project_details(a, d.get("projectId"), _in(d))),
+    "assignTool": lambda a, d, f: S.movement(tools.assign_tool(a, _in(d))),
+    "handOverTool": lambda a, d, f: S.movement(tools.hand_over_tool(a, _in(d))),
+    "returnTool": lambda a, d, f: S.movement(tools.return_tool(a, _in(d))),
     "setContractStatus": lambda a, d, f: S.project(billing.set_contract_status(a, d.get("projectId"), _in(d))),
     "raiseInvoice": lambda a, d, f: S.client_invoice(billing.raise_invoice(a, d.get("projectId"), _in(d))),
     "recordReceipt": lambda a, d, f: S.client_invoice(billing.record_receipt(a, d.get("invoiceId"), _in(d))),

@@ -247,7 +247,7 @@ def add_location(actor: User, input: dict) -> StockLocation:
     name = b.clean(input.get("name"))
     if not name:
         raise ApiError("Name is required", "invalid")
-    if input.get("type") not in ("warehouse", "vehicle", "site", "quarantine"):
+    if input.get("type") not in ("warehouse", "vehicle", "site", "quarantine", "person"):
         raise ApiError("Unknown location type", "invalid")
     cust = b.get_user(input["custodianId"]) if input.get("custodianId") else None
     return StockLocation.objects.create(**b.maybe_id(input, StockLocation, "loc"), name=name, type=input["type"], custodian=cust, is_active=True)
@@ -256,6 +256,11 @@ def add_location(actor: User, input: dict) -> StockLocation:
 @transaction.atomic
 def transfer_stock(actor: User, input: dict) -> StockMovement:
     b.require(actor, "inventory.write")
+    return move_stock(actor, input)
+
+
+def move_stock(actor: User, input: dict) -> StockMovement:
+    """A transfer without the permission gate — the tools flow guards itself with tools.assign."""
     it = b.item(input.get("itemId")); qty = b.dec(input.get("qty"))
     if not qty > 0:
         raise ApiError("Quantity must be positive", "invalid")
@@ -383,6 +388,10 @@ _CATEGORY_HINTS = [
     ("inverter", "inverter"), ("battery", "battery"), ("panel", "panel"), ("module", "panel"),
     ("meter", "meter"), ("cable", "cable"), ("wire", "cable"), ("ats", "ats"), ("changeover", "ats"),
     ("ct ", "ct"), ("rail", "mounting"), ("mount", "mounting"), ("bracket", "mounting"),
+    # the operations team's own kit
+    ("drill", "tool"), ("crimp", "tool"), ("multimeter", "tool"), ("clamp meter", "tool"), ("ladder", "tool"), ("spanner", "tool"), ("wrench", "tool"), ("screwdriver", "tool"),
+    ("toolbox", "tool"), ("tool kit", "tool"), ("torque", "tool"), ("hammer", "tool"), ("pliers", "tool"), ("hacksaw", "tool"), ("grinder", "tool"), ("tester", "tool"),
+    ("helmet", "ppe"), ("hard hat", "ppe"), ("glove", "ppe"), ("boot", "ppe"), ("harness", "ppe"), ("goggle", "ppe"), ("vest", "ppe"), ("ppe", "ppe"),
 ]
 
 

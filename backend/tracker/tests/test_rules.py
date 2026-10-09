@@ -8,9 +8,9 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from tracker.errors import ApiError
-from tracker.models import Approval, Asset, Attachment, CostItem, Document, Issue, Project, PurchaseOrder, StockCount, StockMovement, User
+from tracker.models import Approval, Asset, Attachment, CostItem, Document, Issue, Project, PurchaseOrder, StockCount, StockLocation, StockMovement, User
 from tracker import rbac, serializers
-from tracker.services import approvals, billing, documents, field, gates, money, projects, recon, review, stock, voiding
+from tracker.services import approvals, billing, documents, field, gates, money, projects, recon, review, stock, tools, voiding
 from tracker.services.base import dec
 
 
@@ -581,6 +581,32 @@ class VisitPhotoTest(TestCase):
         dp = projects.update_project_details(u["u_dir"], dp.id, {"systemCapacityKwp": None})
         self.assertIsNone(dp.system_capacity_kwp)
         serializers.project(dp)
+
+    def test_tools_held_by_people_and_spend(self):
+        u = self.u
+        drill = stock.add_item(u["u_sk"], {"sku": "DRL-18V", "name": "18 V cordless drill", "category": "tool", "unit": "pcs"})
+        gloves = stock.add_item(u["u_sk"], {"sku": "GLV-01", "name": "Work gloves", "category": "ppe", "unit": "pairs"})
+        rc = stock.receive_stock(u["u_sk"], {"reason": "tools receipt", "attachmentIds": [self.photo(u["u_sk"], "p1", caption="receipt")],
+                                              "lines": [{"itemId": drill.id, "qty": 3, "unitCost": 85_000}, {"itemId": gloves.id, "qty": 10, "unitCost": 2_500}]})
+        for m in rc:
+            review.check(u["u_fin"], "stock_movement", m.id, "checked")
+        ts = tools.tools_spend(12)
+        self.assertEqual(ts["total"], 280_000); self.assertEqual(ts["thisMonth"], 280_000)
+        self.assertEqual(next(c for c in ts["byCategory"] if c["category"] == "tool")["amount"], 255_000)
+        self.assertEqual(len(ts["byMonth"]), 12)
+        self.err("forbidden", tools.assign_tool, u["u_ft1"], {"itemId": drill.id, "qty": 1, "userId": "u_ft1"})
+        self.err("invalid", tools.assign_tool, u["u_sk"], {"itemId": "it_mccb", "qty": 1, "userId": "u_ft1"})
+        self.err("invalid", tools.assign_tool, u["u_sk"], {"itemId": drill.id, "qty": 5, "userId": "u_ft1"})
+        hand = tools.assign_tool(u["u_sk"], {"itemId": drill.id, "qty": 2, "userId": "u_ft1", "note": "Ikeja install"})
+        self.assertEqual(hand.movement_type, "transfer"); self.assertEqual(hand.location_to_id, "loc_person_u_ft1"); self.assertEqual(hand.review_status, "pending")
+        loc = StockLocation.objects.get(pk="loc_person_u_ft1"); self.assertEqual(loc.type, "person"); self.assertEqual(loc.custodian_id, "u_ft1")
+        review.check(u["u_fin"], "stock_movement", hand.id, "checked")
+        self.assertEqual(stock.balance_of(drill.id, "loc_person_u_ft1")["qtyOnHand"], 2); self.assertEqual(stock.available(drill.id), 1)
+        over = tools.hand_over_tool(u["u_pm1"], {"itemId": drill.id, "qty": 1, "fromUserId": "u_ft1", "toUserId": "u_pm2"}); review.check(u["u_fin"], "stock_movement", over.id, "checked")
+        self.assertEqual(stock.balance_of(drill.id, "loc_person_u_pm2")["qtyOnHand"], 1); self.assertEqual(stock.balance_of(drill.id, "loc_person_u_ft1")["qtyOnHand"], 1)
+        back = tools.return_tool(u["u_dir"], {"itemId": drill.id, "qty": 1, "userId": "u_pm2"}); review.check(u["u_fin"], "stock_movement", back.id, "checked")
+        self.assertEqual(stock.available(drill.id), 2); self.assertEqual(tools.tools_spend(12)["total"], 280_000)
+        serializers.movement(hand); serializers.location(loc)
 
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u

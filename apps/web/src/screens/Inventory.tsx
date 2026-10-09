@@ -3,6 +3,7 @@ import { FilePick, type Pick } from "../components/FilePick";
 import { MOVEMENT_LABEL, fmtDate, naira, relative, sectionFiles, type MovementType, type StockCount } from "@wyre/api";
 import { FileGallery } from "../components/FileGallery";
 import { VoidControl, VoidedNote } from "../components/VoidControl";
+import { ToolsCard } from "../components/ToolsCard";
 import { useApi } from "../lib/useApi";
 import { useWaitFor } from "../lib/useWaitFor";
 import { useAuth } from "../lib/auth";
@@ -23,7 +24,7 @@ export function Inventory() {
   const wi = wItem ? api.item(wItem) : undefined; const wVal = wi ? (wi.isSerialised ? wSel.length : Number(wQty) || 0) * api.wacOf(wi.id) : 0;
   const dirThr = api.thresholdNum("writeoff.director_threshold", 500_000);
   // phase 3 — locations, transfers, counts
-  const locs = api.listLocations(); const counts = api.listCounts(); const canCount = api.can(user.id, "stockcount.create");
+  const locs = api.listLocations().filter((l) => l.type !== "person"); const counts = api.listCounts(); const canCount = api.can(user.id, "stockcount.create");
   const [tFrom, setTFrom] = useState(mainLoc ?? ""); const [tTo, setTTo] = useState(locs.find((l) => l.id !== mainLoc)?.id ?? ""); const [tItem, setTItem] = useState(api.items[0]?.id ?? ""); const [tQty, setTQty] = useState("1"); const [tSel, setTSel] = useState<string[]>([]);
   const [lName, setLName] = useState(""); const [lType, setLType] = useState<"vehicle" | "site" | "warehouse">("vehicle"); const [lCust, setLCust] = useState("");
   const [countLoc, setCountLoc] = useState(mainLoc ?? ""); const [entry, setEntry] = useState<Record<string, { qty: string; note: string }>>({});
@@ -42,6 +43,7 @@ export function Inventory() {
       </div>
 
       <ReceiveFromNote />
+      <ToolsCard />
       <div className="card table--wrap"><div className="card__head"><div className="card__title">Stock on hand</div><span className="sm muted">click a row to filter the ledger</span></div>
         <table className="table"><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th className="num">On hand</th><th className="num">Unit cost</th><th className="num">Value</th><th className="num">Reorder at</th><th></th></tr></thead>
           <tbody>{api.items.map((it) => { 
