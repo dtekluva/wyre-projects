@@ -147,6 +147,7 @@ export class RemoteApi extends MockApi {
     wrap("decide", (a) => ({ name: "decide", body: { approvalId: a[0], decision: a[2], comment: a[3] } }));
     wrap("requestRetentionRelease", (a) => ({ name: "requestRetentionRelease", body: { projectId: a[1] } }));
     for (const n of ["issueStock", "returnStock", "writeOff", "addLocation", "transferStock", "addVendor", "addItem", "receiveStock"]) wrap(n, (a, r) => ({ name: n, body: { input: withId(a[1], r) } }));
+    wrap("updateItem", (a) => ({ name: "updateItem", body: { itemId: a[1], input: a[2] } }));
     wrap("matchBill", (a) => ({ name: "matchBill", body: { billId: a[1], poId: a[2] } }));
     wrap("unmatchBill", (a) => ({ name: "unmatchBill", body: { billId: a[1] } }));
     wrap("startCount", (a, r) => ({ name: "startCount", body: { locationId: a[1], id: id(r) } }));

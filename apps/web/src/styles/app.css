@@ -111,6 +111,9 @@ button, input, select, textarea { font: inherit; }
 .filters { display: flex; gap: var(--ns-space-2xs); flex-wrap: wrap; margin-bottom: var(--ns-space-sm); align-items: center; }
 .filters .ns-input { width: 240px; min-height: 36px; }
 .filters select.ns-input { width: auto; }
+/* A select that sits inside a table cell as a value, not as a form field: short, quiet, no row-height change. */
+select.ns-input--inline, .table select.ns-input--inline { width: auto; min-width: 0; min-height: 28px; height: 28px; line-height: 26px; box-sizing: border-box; padding: 0 24px 0 8px; margin: 0; font-size: 12px; background-color: transparent; }
+select.ns-input--inline:hover { background-color: var(--ns-color-surface-selected, rgba(0,0,0,.04)); }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--ns-radius-full); border: var(--ns-border-hairline) solid var(--ns-color-border-default);
   background: var(--ns-color-surface); color: var(--ns-color-text-secondary); font-size: var(--ns-size-caption); font-weight: var(--ns-weight-medium); cursor: pointer; }
 .chip:hover { border-color: var(--ns-color-border-strong); color: var(--ns-color-text-primary); }

@@ -59,6 +59,7 @@ COMMANDS: dict[str, Handler] = {
     "writeOff": lambda a, d, f: S.movement(stock.write_off(a, _in(d))),
     "addVendor": lambda a, d, f: S.vendor(stock.add_vendor(a, _in(d))),
     "addItem": lambda a, d, f: S.item(stock.add_item(a, _in(d))),
+    "updateItem": lambda a, d, f: S.item(stock.update_item(a, d.get("itemId"), _in(d))),
     "receiveStock": lambda a, d, f: [S.movement(m) for m in stock.receive_stock(a, _in(d))],
     "addLocation": lambda a, d, f: S.location(stock.add_location(a, _in(d))),
     "transferStock": lambda a, d, f: S.movement(stock.transfer_stock(a, _in(d))),

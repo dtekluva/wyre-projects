@@ -1358,6 +1358,26 @@ export class MockApi {
       warrantyMonths: input.warrantyMonths || undefined };
     this.items.push(it); this.emit(); return it;
   }
+  /** Fix what an item IS after the fact: its kind (a drill that landed as "other" becomes a tool and moves into
+   *  Tools & PPE), its name, unit, or reorder figures. Item description, not a ledger quantity, so anyone who can
+   *  take stock in can do it and nothing goes for review. */
+  updateItem(actorId: string, itemId: string, input: { name?: string; category?: AssetType; unit?: string; reorderLevel?: number; reorderQty?: number }): InventoryItem {
+    this.require(actorId, "inventory.write");
+    const it = this.item(itemId);
+    if (input.category !== undefined) {
+      if (!ASSET_TYPES.includes(input.category)) throw new ApiError(`Kind must be one of: ${ASSET_TYPES.join(", ")}`, "invalid");
+      it.category = input.category;
+    }
+    if (input.name !== undefined) {
+      const name = input.name.trim(); if (!name) throw new ApiError("Item name is required", "invalid");
+      if (this.items.some((i) => i.id !== it.id && i.name.trim().toLowerCase() === name.toLowerCase())) throw new ApiError(`There is already an item called ${name}`, "conflict");
+      it.name = name;
+    }
+    if (input.unit !== undefined) it.unit = input.unit.trim() || "pcs";
+    if (input.reorderLevel !== undefined) { if (input.reorderLevel < 0) throw new ApiError("Reorder figures cannot be negative", "invalid"); it.reorderLevel = input.reorderLevel; }
+    if (input.reorderQty !== undefined) { if (input.reorderQty < 0) throw new ApiError("Reorder figures cannot be negative", "invalid"); it.reorderQty = input.reorderQty; }
+    this.emit(); return it;
+  }
   addLocation(actorId: string, input: { name: string; type: StockLocation["type"]; custodianId?: string }): StockLocation {
     this.require(actorId, "inventory.write");
     if (!input.name.trim()) throw new ApiError("Name is required", "invalid");

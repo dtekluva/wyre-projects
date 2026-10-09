@@ -68,7 +68,7 @@ export function ToolsCard() {
             <span className="sm muted">Checked by Finance, a Tech Lead or the Store Keeper; value unchanged.</span></div>
         </div>}
 
-        {tools.length === 0 ? <Note tone="info">Nothing in the Tools or PPE categories yet. Take tools in with <b>Add stock</b> above — upload the receipt, dictate it, or type it — and name them so they land as Tools or PPE (drill, multimeter, ladder, helmet, gloves…). Spend is counted the moment the receipt is checked.</Note> : <>
+        {tools.length === 0 ? <Note tone="info">Nothing is marked as a Tool or PPE yet. Take kit in with <b>Add stock</b> above and set the <b>Kind</b> column on each line to <b>Tool</b> or <b>PPE</b> — a drill, multimeter, helmet or gloves is guessed for you. Something already in stock under the wrong kind? Change it in the <b>Category</b> column of Stock on hand. Spend is counted the moment the receipt is checked.</Note> : <>
           <div className="workspace" style={{ gridTemplateColumns: "3fr 2fr", gap: 16 }}>
             <div>
               <div className="ns-overline">Who holds what</div>

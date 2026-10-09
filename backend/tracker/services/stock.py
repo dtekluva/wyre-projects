@@ -382,17 +382,24 @@ def add_item(actor: User, input: dict) -> InventoryItem:
         warranty_months=int(months) if months else None)
 
 
-# Names people actually write, mapped to the categories the asset register understands. Anything else
-# lands in "other" — a wrong guess here costs nothing, an unnecessary form costs somebody's afternoon.
+# Names people actually write, mapped to the categories the asset register understands, in the order they are
+# tried: tools and PPE first so "cable tester" is a tool and "clamp meter" is not a meter. Every word is matched
+# at a word start (" cable" finds "cables"; " vest" does not find "investment"). Anything else lands in "other" —
+# a wrong guess costs nothing because the Kind picker shows it and the person corrects it on the line.
+# Mirrors packages/api/src/categories.ts HINTS.
 _CATEGORY_HINTS = [
-    ("inverter", "inverter"), ("battery", "battery"), ("panel", "panel"), ("module", "panel"),
-    ("meter", "meter"), ("cable", "cable"), ("wire", "cable"), ("ats", "ats"), ("changeover", "ats"),
-    ("ct ", "ct"), ("rail", "mounting"), ("mount", "mounting"), ("bracket", "mounting"),
-    # the operations team's own kit
-    ("drill", "tool"), ("crimp", "tool"), ("multimeter", "tool"), ("clamp meter", "tool"), ("ladder", "tool"), ("spanner", "tool"), ("wrench", "tool"), ("screwdriver", "tool"),
-    ("toolbox", "tool"), ("tool kit", "tool"), ("torque", "tool"), ("hammer", "tool"), ("pliers", "tool"), ("hacksaw", "tool"), ("grinder", "tool"), ("tester", "tool"),
-    ("helmet", "ppe"), ("hard hat", "ppe"), ("glove", "ppe"), ("boot", "ppe"), ("harness", "ppe"), ("goggle", "ppe"), ("vest", "ppe"), ("ppe", "ppe"),
+    ("drill", "tool"), ("crimp", "tool"), ("multimeter", "tool"), ("clamp meter", "tool"), ("ladder", "tool"), ("spanner", "tool"), ("wrench", "tool"),
+    ("screwdriver", "tool"), ("tool", "tool"), ("torque", "tool"), ("hammer", "tool"), ("plier", "tool"), ("hacksaw", "tool"), ("grinder", "tool"), ("tester", "tool"),
+    ("helmet", "ppe"), ("hard hat", "ppe"), ("glove", "ppe"), ("boot", "ppe"), ("harness", "ppe"), ("goggle", "ppe"), ("vest", "ppe"), ("ppe", "ppe"), ("face shield", "ppe"),
+    ("inverter", "inverter"), ("battery", "battery"), ("batteries", "battery"), ("panel", "panel"), ("module", "panel"), ("meter", "meter"),
+    ("cable", "cable"), ("wire", "cable"), ("wiring", "cable"), ("ats", "ats"), ("changeover", "ats"), ("ct", "ct"),
+    ("rail", "mounting"), ("mount", "mounting"), ("bracket", "mounting"),
 ]
+
+
+def guess_category(name: str) -> str:
+    low = f" {normalise(name)} "
+    return next((c for word, c in _CATEGORY_HINTS if f" {word}" in low), "other")
 
 
 def normalise(name: str) -> str:
@@ -400,12 +407,13 @@ def normalise(name: str) -> str:
     return " ".join((name or "").split()).lower()
 
 
-def find_or_create_item(name: str, unit: str = "", serialised: bool = False) -> InventoryItem:
+def find_or_create_item(name: str, unit: str = "", serialised: bool = False, category: Optional[str] = None) -> InventoryItem:
     """Stock is of *something*, but nobody should have to register that something first.
 
     The first time a name arrives it becomes an item; every later delivery of the same name adds to it.
     SKU and category are derived rather than asked for — they exist because the ledger and the asset
-    register need them, not because anybody wants to type them.
+    register need them, not because anybody wants to type them. A category given explicitly (the Kind
+    picker on the line) wins over the guess, and re-labels an existing pile when it differs.
     """
     clean = " ".join((name or "").split())
     if not clean:
@@ -419,6 +427,8 @@ def find_or_create_item(name: str, unit: str = "", serialised: bool = False) -> 
                 it.is_serialised = True; changed.append("is_serialised")
             if unit and it.unit != unit:
                 it.unit = unit; changed.append("unit")
+            if category and it.category != category:
+                it.category = category; changed.append("category")
             if changed:
                 it.save(update_fields=changed)
             return it
@@ -428,10 +438,46 @@ def find_or_create_item(name: str, unit: str = "", serialised: bool = False) -> 
     while InventoryItem.objects.filter(sku=sku).exists():
         n += 1
         sku = f"{base[:24]}-{n}"
-    low = f" {key} "
-    category = next((c for word, c in _CATEGORY_HINTS if word in low), "other")
-    return InventoryItem.objects.create(sku=sku, name=clean, category=category, unit=unit or "pcs",
+    return InventoryItem.objects.create(sku=sku, name=clean, category=category or guess_category(clean), unit=unit or "pcs",
                                         is_serialised=serialised, is_active=True)
+
+
+def update_item(actor: User, item_id: str, input: dict) -> InventoryItem:
+    """Fix what an item IS after the fact: its kind (a drill that landed as "other" becomes a tool and moves into
+    Tools & PPE), its name, unit, or reorder figures. Item description, not a ledger quantity, so anyone who can
+    take stock in can do it and nothing goes for review.
+    """
+    b.require(actor, "inventory.write")
+    it = b.item(item_id)
+    changed: list[str] = []
+    if input.get("category") is not None:
+        category = b.clean(input.get("category"))
+        if category not in ASSET_TYPES:
+            raise ApiError(f"Kind must be one of: {', '.join(ASSET_TYPES)}", "invalid")
+        if category != it.category:
+            it.category = category; changed.append("category")
+    if input.get("name") is not None:
+        name = " ".join(b.clean(input.get("name")).split())
+        if not name:
+            raise ApiError("Item name is required", "invalid")
+        if any(normalise(o.name) == normalise(name) for o in InventoryItem.objects.exclude(pk=it.pk)):
+            raise ApiError(f"There is already an item called {name}", "conflict")
+        if name != it.name:
+            it.name = name; changed.append("name")
+    if input.get("unit") is not None:
+        unit = b.clean(input.get("unit")) or "pcs"
+        if unit != it.unit:
+            it.unit = unit; changed.append("unit")
+    for key, field in (("reorderLevel", "reorder_level"), ("reorderQty", "reorder_qty")):
+        if input.get(key) is not None:
+            v = b.dec(input.get(key))
+            if v < 0:
+                raise ApiError("Reorder figures cannot be negative", "invalid")
+            if v != getattr(it, field):
+                setattr(it, field, v); changed.append(field)
+    if changed:
+        it.save(update_fields=changed)
+    return it
 
 
 @transaction.atomic
@@ -462,8 +508,14 @@ def receive_stock(actor: User, input: dict) -> list[StockMovement]:
     seen_serials: set[str] = set()
     for line in raw:
         serials_in = [x.strip() for x in (line.get("serials") or []) if x and x.strip()]
+        category = b.clean(line.get("category")) or None
+        if category and category not in ASSET_TYPES:
+            raise ApiError(f"{b.clean(line.get('name')) or 'Line'}: kind must be one of: {', '.join(ASSET_TYPES)}", "invalid")
         it = (b.item(line["itemId"]) if line.get("itemId")
-              else find_or_create_item(line.get("name"), b.clean(line.get("unit")), bool(serials_in)))
+              else find_or_create_item(line.get("name"), b.clean(line.get("unit")), bool(serials_in), category))
+        if category and it.category != category:
+            # the Kind picker showed what the pile is and the person changed it — that is a deliberate re-label
+            it.category = category; it.save(update_fields=["category"])
         qty = b.dec(line.get("qty"))
         if not qty > 0:
             raise ApiError(f"{it.name}: quantity must be positive", "invalid")

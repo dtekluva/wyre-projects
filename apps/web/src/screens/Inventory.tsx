@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
-import { MOVEMENT_LABEL, fmtDate, naira, relative, sectionFiles, type MovementType, type StockCount } from "@wyre/api";
+import { CATEGORY_GROUPS, CATEGORY_LABEL, MOVEMENT_LABEL, TOOL_CATEGORIES, fmtDate, guessCategory, naira, relative, sectionFiles, type AssetType, type MovementType, type StockCount } from "@wyre/api";
 import { FileGallery } from "../components/FileGallery";
 import { VoidControl, VoidedNote } from "../components/VoidControl";
 import { ToolsCard } from "../components/ToolsCard";
@@ -39,7 +39,7 @@ export function Inventory() {
         <Kpi label="Below reorder" value={below} sub="items at or under level" tone={below ? "warn" : undefined} />
         <Kpi label="Pending checks" value={pending} sub="issues / returns / write-offs" tone={pending ? "accent" : undefined} />
         <Kpi label="Serialised in stock" value={api.assets.filter((a) => a.status === "in_stock").length} sub="units in the asset register" />
-        {Object.entries(sv.byCategory).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([c, v]) => <Kpi key={c} label={`Value · ${c}`} value={naira(v, true)} />)}
+        {Object.entries(sv.byCategory).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([c, v]) => <Kpi key={c} label={`Value · ${CATEGORY_LABEL[c] ?? c}`} value={naira(v, true)} />)}
       </div>
 
       <ReceiveFromNote />
@@ -53,7 +53,12 @@ export function Inventory() {
             const b = bal.find((x) => x.itemId === it.id)
               ?? { itemId: it.id, locationId: mainLoc ?? "", qtyOnHand: 0, wacUnitCost: 0, value: 0, belowReorder: false };
            const av = api.available(it.id); return <tr key={it.id} onClick={() => setFocus(focus === it.id ? "" : it.id)} style={{ cursor: "pointer", background: focus === it.id ? "var(--ns-color-surface-selected)" : undefined }}>
-            <td className="ns-mono sm">{it.sku}</td><td>{it.name}{it.isSerialised && <span className="sm muted"> · serialised</span>}</td><td className="sm">{it.category}</td>
+            <td className="ns-mono sm">{it.sku}</td><td>{it.name}{it.isSerialised && <span className="sm muted"> · serialised</span>}</td>
+            {/* The kind is editable in place: a drill that was guessed as "other" becomes a tool here and moves into
+                Tools & PPE. Item description, not a ledger quantity — no review. Click must not toggle the row filter. */}
+            <td className="sm" onClick={(e) => e.stopPropagation()}>{canWrite
+              ? <KindSelect value={it.category} onChange={(c) => safe(() => { api.updateItem(user.id, it.id, { category: c }); }, `${it.name} is now ${CATEGORY_LABEL[c]}`)} />
+              : CATEGORY_LABEL[it.category] ?? it.category}</td>
             <td className="num ns-mono">{b.qtyOnHand} {it.unit}{av !== b.qtyOnHand && <div className="sm muted">{av} free</div>}</td><td className="num ns-mono">{naira(b.wacUnitCost)}</td><td className="num ns-mono">{naira(b.value)}</td><td className="num ns-mono muted">{it.reorderLevel}</td>
             <td>{b.qtyOnHand === 0 && av === 0 ? <Badge variant="neutral">awaiting check</Badge> : b.belowReorder ? <Badge variant="danger">reorder {it.reorderQty}</Badge> : b.qtyOnHand <= it.reorderLevel * 1.5 ? <Badge variant="warning">low</Badge> : null}</td></tr>; })}</tbody></table></div>
 
@@ -130,6 +135,15 @@ export function Inventory() {
 
 type ReadLine = { description: string; qty: number; unit: string | null; unit_cost: number | null; serials: string[]; matches_existing?: string | null };
 
+const ASSET_TYPES_SET = new Set<string>(CATEGORY_GROUPS.flatMap((g) => g.categories));
+
+/** One control for "what kind of thing is this", grouped so the choice that matters — project stock or team kit — is obvious. */
+function KindSelect({ value, onChange, inline = true }: { value: string; onChange: (c: AssetType) => void; inline?: boolean }) {
+  return <select className={`ns-input${inline ? " ns-input--inline" : ""}`} value={value} title="What kind of item this is" onChange={(e) => onChange(e.target.value as AssetType)}>
+    {CATEGORY_GROUPS.map((g) => <optgroup key={g.label} label={g.label}>{g.categories.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}</optgroup>)}
+  </select>;
+}
+
 /**
  * Add stock: upload the paperwork, say it, or type it.
  *
@@ -149,6 +163,7 @@ function ReceiveFromNote() {
   const [qty, setQty] = useState<Record<number, string>>({});
   const [serials, setSerials] = useState<Record<number, string>>({});
   const [costs, setCosts] = useState<Record<number, string>>({});
+  const [kinds, setKinds] = useState<Record<number, AssetType>>({});
   const [typed, setTyped] = useState<ReadLine[]>([]);
 
   const all = api.extractions ?? [];
@@ -166,13 +181,19 @@ function ReceiveFromNote() {
   const lines: ReadLine[] = typed.length ? typed : (f.lines ?? []);
   const reviewing = typed.length > 0 || (ext?.status === "done");
 
-  const reset = () => { setExtId(""); setFile([]); setNames({}); setQty({}); setSerials({}); setCosts({}); setTyped([]); };
+  const reset = () => { setExtId(""); setFile([]); setNames({}); setQty({}); setSerials({}); setCosts({}); setKinds({}); setTyped([]); };
+  // What a line IS: whatever the person picked; else the existing pile's kind; else a guess from the name.
+  // Shown on every line (and sent on every line) so nobody discovers the guess only after the tools card stays empty.
+  const kindOf = (i: number, name: string) => {
+    const known = api.items.find((x) => x.name.trim().toLowerCase() === name.trim().toLowerCase());
+    return kinds[i] ?? (known && (ASSET_TYPES_SET.has(known.category) ? known.category as AssetType : undefined)) ?? guessCategory(name);
+  };
 
   const submit = () => {
     const payload = lines.map((l, i) => {
       const name = (names[i] ?? l.description).trim(); if (!name) return null;
       const ser = (serials[i] ?? l.serials.join("\n")).split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
-      return { name, unit: l.unit ?? "", qty: Number(qty[i] ?? l.qty) || 0, unitCost: Number(costs[i] ?? l.unit_cost ?? 0) || 0, serials: ser };
+      return { name, unit: l.unit ?? "", qty: Number(qty[i] ?? l.qty) || 0, unitCost: Number(costs[i] ?? l.unit_cost ?? 0) || 0, serials: ser, category: kindOf(i, name) };
     }).filter(Boolean);
     if (!payload.length) return safe(() => { throw new Error("Give at least one line a name"); }, "");
     const ok = safe(() => api.receiveStock(user.id, {
@@ -226,7 +247,7 @@ function ReceiveFromNote() {
           <select className="ns-input" value={loc} onChange={(e) => setLoc(e.target.value)}>
             {locs.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
         <div className="table--wrap"><table className="table table--entry"><thead><tr>
-          <th>What it is</th><th className="num">Qty</th><th>Unit</th><th className="num">Unit cost</th><th className="num">Line total</th><th>Serial numbers</th></tr></thead>
+          <th>What it is</th><th>Kind</th><th className="num">Qty</th><th>Unit</th><th className="num">Unit cost</th><th className="num">Line total</th><th>Serial numbers</th></tr></thead>
           <tbody>{lines.map((l, i) => {
             // The model is told what is already in stock and returns the existing name when a line is
             // the same product written differently, so a second delivery lands on the same pile.
@@ -242,6 +263,9 @@ function ReceiveFromNote() {
                   : "new — tracked from now on"}
                   {l.matches_existing && l.matches_existing !== l.description ? ` · page said "${l.description}"` : ""}
                   {l.unit_cost ? ` · ${naira(l.unit_cost)} each` : ""}</div></td>
+              <td style={{ minWidth: 190 }}>
+                <KindSelect inline={false} value={kindOf(i, name)} onChange={(c) => setKinds({ ...kinds, [i]: c })} />
+                <div className="sm muted" style={{ whiteSpace: "nowrap" }}>{TOOL_CATEGORIES.includes(kindOf(i, name)) ? "team kit — goes to Tools & PPE" : kinds[i] ? "project stock" : known ? "as it is now" : "guessed from the name"}</div></td>
               <td className="num" style={{ width: 90 }}><input className="ns-input" type="number" min="0" value={qty[i] ?? String(l.qty)} onChange={(e) => setQty({ ...qty, [i]: e.target.value })} /></td>
               <td className="sm cell-mid" style={{ width: 70 }}>{l.unit || "pcs"}</td>
               <td className="num" style={{ width: 120 }}>

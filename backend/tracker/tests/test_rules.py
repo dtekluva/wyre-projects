@@ -608,6 +608,46 @@ class VisitPhotoTest(TestCase):
         self.assertEqual(stock.available(drill.id), 2); self.assertEqual(tools.tools_spend(12)["total"], 280_000)
         serializers.movement(hand); serializers.location(loc)
 
+    def test_kind_on_receipt_lines_and_relabelling(self):
+        """'There is no way to label PPE': the Kind chosen on an Add stock line wins over the name guess, a later
+        delivery can re-label an existing pile, and update_item fixes a wrong kind without a form."""
+        u = self.u
+        att = [self.photo(u["u_sk"], "p1", caption="receipt")]
+        rc = stock.receive_stock(u["u_sk"], {"reason": "tools receipt", "attachmentIds": att, "lines": [
+            {"name": "Face shield", "qty": 4, "unitCost": 3_000, "category": "ppe"},
+            {"name": "Cable tester", "qty": 1, "unitCost": 40_000},
+            {"name": "Clamp meter", "qty": 1, "unitCost": 25_000},
+            {"name": "Safety vest", "qty": 6, "unitCost": 4_000},
+            {"name": "Deye inverter 8kVA", "qty": 1, "unitCost": 900_000}]})
+        by = {m.item.name: m.item for m in rc}
+        self.assertEqual(by["Face shield"].category, "ppe", "the kind chosen on the line wins")
+        self.assertEqual(by["Cable tester"].category, "tool", "a tester is a tool even though it mentions cable")
+        self.assertEqual(by["Clamp meter"].category, "tool", "a clamp meter is a tool, not a meter")
+        self.assertEqual(by["Safety vest"].category, "ppe")
+        self.assertEqual(by["Deye inverter 8kVA"].category, "inverter")
+        self.assertEqual(stock.guess_category("Investment panel"), "panel", "'vest' inside 'investment' is not a vest")
+        self.err("invalid", stock.receive_stock, u["u_sk"], {"reason": "x", "attachmentIds": att,
+                                                            "lines": [{"name": "Thing", "qty": 1, "unitCost": 1, "category": "gadget"}]})
+        self.assertTrue(tools.is_tool(by["Face shield"]))
+        self.assertFalse(tools.is_tool(by["Deye inverter 8kVA"]))
+        # a later delivery of the same name, with a different kind picked, re-labels the existing pile
+        rc2 = stock.receive_stock(u["u_sk"], {"reason": "y", "attachmentIds": att,
+                                               "lines": [{"name": "deye  inverter 8KVA", "qty": 1, "unitCost": 900_000, "category": "other"}]})
+        self.assertEqual(rc2[0].item_id, by["Deye inverter 8kVA"].id, "same pile")
+        by["Deye inverter 8kVA"].refresh_from_db(); self.assertEqual(by["Deye inverter 8kVA"].category, "other")
+        # relabel directly: inventory.write, no review
+        self.err("forbidden", stock.update_item, u["u_ft1"], by["Face shield"].id, {"category": "tool"})
+        self.err("invalid", stock.update_item, u["u_sk"], by["Face shield"].id, {"category": "gadget"})
+        self.err("not_found", stock.update_item, u["u_sk"], "it_nope", {"category": "tool"})
+        it = stock.update_item(u["u_sk"], by["Face shield"].id, {"category": "tool", "reorderLevel": 2, "reorderQty": 4})
+        self.assertEqual((it.category, it.reorder_level, it.reorder_qty), ("tool", 2, 4))
+        self.err("conflict", stock.update_item, u["u_sk"], it.id, {"name": "cable  TESTER"})
+        self.err("invalid", stock.update_item, u["u_sk"], it.id, {"reorderLevel": -1})
+        self.err("invalid", stock.update_item, u["u_sk"], it.id, {"name": "  "})
+        it = stock.update_item(u["u_sk"], it.id, {"name": "Face shield (clear)", "unit": "pcs"})
+        self.assertEqual(it.name, "Face shield (clear)")
+        serializers.item(it)
+
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u
         v = field.log_visit(u["u_ft1"], "p1", {"visitType": "inspection", "startedAt": "2026-09-10T09:00:00Z", "endedAt": "2026-09-10T10:00:00Z",
