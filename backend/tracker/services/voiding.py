@@ -5,13 +5,13 @@ from django.db import transaction
 
 from ..constants import MOVEMENT_LABEL, VISIT_TYPE_LABEL
 from ..errors import ApiError
-from ..models import Actual, Approval, Asset, Attachment, ClientInvoice, CostItem, Document, GoodsReceipt, Issue, PurchaseOrder, SiteVisit, StockMovement, User, VatPayment
+from ..models import Expense, Actual, Approval, Asset, Attachment, ClientInvoice, CostItem, Document, GoodsReceipt, Issue, PurchaseOrder, SiteVisit, StockMovement, User, VatPayment
 from . import base as b
 
 KINDS = {"document": Document, "attachment": Attachment, "stock_movement": StockMovement, "cost_item": CostItem, "client_invoice": ClientInvoice, "vat_payment": VatPayment,
-         "purchase_order": PurchaseOrder, "goods_receipt": GoodsReceipt, "site_visit": SiteVisit, "issue": Issue}
+         "purchase_order": PurchaseOrder, "goods_receipt": GoodsReceipt, "site_visit": SiteVisit, "issue": Issue, "expense": Expense}
 MODEL_NAME = {"document": "Document", "attachment": "Attachment", "stock_movement": "StockMovement", "cost_item": "CostItem", "client_invoice": "ClientInvoice", "vat_payment": "VatPayment",
-              "purchase_order": "PurchaseOrder", "goods_receipt": "GoodsReceipt", "site_visit": "SiteVisit", "issue": "Issue"}
+              "purchase_order": "PurchaseOrder", "goods_receipt": "GoodsReceipt", "site_visit": "SiteVisit", "issue": "Issue", "expense": "Expense"}
 
 
 def _cascade_attachments(ids, actor: User, at, why: str) -> None:
@@ -80,6 +80,10 @@ def void_record(actor: User, kind: str, id: str, reason: str) -> None:
         label = f"file {rec.caption or rec.file_name}"
     elif kind == "cost_item":
         label = f"budget line {rec.label}"
+    elif kind == "expense":
+        label = f"expense {rec.description} · {b.fmt(rec.amount)}"
+        Actual.objects.filter(source_ref__model="Expense", source_ref__id=rec.id).delete()
+        _cascade_attachments(rec.attachment_ids or [], actor, at, "removed with the expense")
     elif kind == "client_invoice":
         label = f"invoice {rec.invoice_number}"
     elif kind == "vat_payment":

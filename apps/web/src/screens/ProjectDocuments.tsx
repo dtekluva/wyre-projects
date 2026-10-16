@@ -43,7 +43,7 @@ function PhotoTile({ a }: { a: Attachment }) {
     <FileLink kind="attachment" id={a.id} className="photo__img photo__img--btn" title={`Open ${a.fileName}`}>
       {showImg
         ? <img src={a.url} alt={a.caption ?? a.fileName} loading="lazy" onError={() => setBroken(true)} />
-        : <span className="photo__ph">{a.kind === "image" ? "📷" : "📄"} {a.fileName}</span>}
+        : <span className="photo__ph">{a.kind === "image" ? "📷" : a.kind === "video" ? "🎬" : "📄"} {a.fileName}</span>}
     </FileLink>
   );
 }

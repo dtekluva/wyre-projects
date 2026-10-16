@@ -19,7 +19,7 @@ export type Permission =
   | "commissioning.create" | "commissioning.check" | "hse.create" | "hse.check" | "warranty.create" | "warranty.check"
   | "stockcount.create" | "stockcount.approve"
   | "dashboard.read"
-  | "billing.manage" | "contract.manage" | "record.void" | "stage.rollback" | "tools.assign";
+  | "billing.manage" | "contract.manage" | "record.void" | "stage.rollback" | "tools.assign" | "expense.create";
 
 const R = (...p: Permission[]) => p;
 
@@ -58,6 +58,9 @@ export const MATRIX: Record<RoleCode, Permission[]> = {
   auditor: R("project.read","chronology.read","document.read","attachment.read","po.read","approval.read","thresholds.read",
              "money.read","inventory.read","asset.read","recon.read","dashboard.read"),
 };
+// Expense claims — fuel, transport, small purchases with a receipt (2026-10-16). Logged by the people who spend the
+// money, checked by Finance through cost.check. Mirrors backend/tracker/rbac.py.
+for (const r of ["director", "techlead", "finance", "tech", "store_keeper"] as RoleCode[]) MATRIX[r].push("expense.create");
 
 /**
  * Roles a user holds on a project. Wyre runs as a single in-house team, so roles apply company-wide: a Tech

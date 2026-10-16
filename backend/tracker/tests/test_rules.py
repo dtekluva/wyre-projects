@@ -8,7 +8,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from tracker.errors import ApiError
-from tracker.models import Approval, Asset, Attachment, ChronologyEvent, CostItem, Document, Issue, Project, PurchaseOrder, Role, StockCount, StockLocation, StockMovement, User
+from tracker.models import Actual, Approval, Asset, Attachment, ChronologyEvent, CostItem, Document, Issue, Project, PurchaseOrder, Role, StockCount, StockLocation, StockMovement, User
 from tracker import rbac, serializers
 from tracker.services import alerts, approvals, billing, documents, field, gates, money, projects, recon, review, stock, tools, voiding
 from tracker.services.base import dec
@@ -706,6 +706,48 @@ class VisitPhotoTest(TestCase):
         self.assertEqual([a.ref["id"] for a in waiting], [r4.id]); self.assertIn("u_sk", waiting[0].recipients)
         stock.decline_request(u["u_sk"], r4.id, "later")
         self.assertEqual([a for a in alerts.build() if a.kind == "stock_request_waiting"], [])
+
+    def test_expenses_and_video_evidence(self):
+        """Akanimo, 2026-10-16: a Logistics receipt had nowhere to go but through a PO, and a clip could not be
+        uploaded. An expense is logged with its receipt against a budget line, Finance checks it, then it is an actual."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        u = self.u
+        clip = documents.add_attachment(u["u_ft1"], "p1", {"caption": "Inverter buzzing under load", "fileName": "noise.mp4"},
+                                        upload=SimpleUploadedFile("noise.mp4", b"\x00\x00\x00\x18ftypmp42", content_type="video/mp4"))
+        self.assertEqual((clip.kind, clip.mime), ("video", "video/mp4"), "the bytes decide: a clip is a video")
+        self.assertEqual(documents.add_attachment(u["u_ft1"], "p1", {"fileName": "walk.mov", "kind": "video"}).kind, "video")
+        self.assertTrue(any(i["id"] == clip.id and i["subtitle"] == "Video" for i in review.review_queue(u["u_pm1"])))
+        ci = money.add_cost_item(u["u_fin"], "p1", {"category": "logistics", "label": "Site transport", "plannedAmount": 400_000})
+        review.check(u["u_fin"], "cost_item", ci.id, "checked")
+        other = money.add_cost_item(u["u_fin"], "p2", {"category": "logistics", "label": "Other project", "plannedAmount": 1}); review.check(u["u_fin"], "cost_item", other.id, "checked")
+        rc = lambda: self.photo(u["u_ft1"], "p1", caption="Fuel receipt")
+        self.err("forbidden", money.log_expense, u["u_aud"], "p1", {"amount": 1, "description": "x", "attachmentIds": [rc()], "category": "logistics"})
+        self.err("invalid", money.log_expense, u["u_ft1"], "p1", {"amount": 0, "description": "x", "attachmentIds": [rc()], "category": "logistics"})
+        self.err("invalid", money.log_expense, u["u_ft1"], "p1", {"amount": 5000, "description": " ", "attachmentIds": [rc()], "category": "logistics"})
+        self.err("invalid", money.log_expense, u["u_ft1"], "p1", {"amount": 5000, "description": "Diesel", "attachmentIds": [], "category": "logistics"})
+        self.err("invalid", money.log_expense, u["u_ft1"], "p1", {"amount": 5000, "description": "Diesel", "attachmentIds": [rc()], "costItemId": other.id})
+        self.err("invalid", money.log_expense, u["u_ft1"], "p1", {"amount": 5000, "description": "Diesel", "attachmentIds": [rc()], "category": "snacks"})
+        before = money.money("p1")["actual"]; rid = rc()
+        e = money.log_expense(u["u_ft1"], "p1", {"amount": 18_500, "description": "Diesel for the Sango run", "payee": "Total, Ota", "date": "2026-10-15", "attachmentIds": [rid], "costItemId": ci.id})
+        self.assertEqual((e.review_status, e.category, e.cost_item_id, str(e.spent_on)), ("pending", "logistics", ci.id, "2026-10-15"))
+        self.assertEqual(money.money("p1")["actual"], before, "nothing posts until Finance checks")
+        self.assertTrue(any(i["kind"] == "expense" and i["id"] == e.id and i["amount"] == 18_500 for i in review.review_queue(u["u_fin"])))
+        self.assertFalse(any(i["id"] == e.id for i in review.review_queue(u["u_ft1"])))
+        self.err("forbidden", review.check, u["u_ft1"], "expense", e.id, "checked")
+        review.check(u["u_fin"], "expense", e.id, "checked")
+        act = Actual.objects.get(source_ref__model="Expense", source_ref__id=e.id)
+        self.assertEqual((dec(act.amount), act.category, act.cost_item_id, act.source, act.date.date().isoformat()), (18_500, "logistics", ci.id, "expense", "2026-10-15"))
+        self.assertEqual(money.money("p1")["actual"], before + 18_500)
+        self.assertGreater(money.money("p1")["byCategory"]["logistics"]["actual"], 0)
+        e2 = money.log_expense(u["u_ft1"], "p1", {"amount": 2_000, "description": "Okada to site", "attachmentIds": [rc()], "category": "logistics"})
+        review.check(u["u_fin"], "expense", e2.id, "rejected", "No receipt visible")
+        e2.refresh_from_db(); self.assertEqual(e2.review_status, "rejected"); self.assertFalse(Actual.objects.filter(source_ref__id=e2.id).exists())
+        self.err("forbidden", voiding.void_record, u["u_ft1"], "expense", e.id, "wrong")
+        voiding.void_record(u["u_dir"], "expense", e.id, "Duplicate of the PO receipt")
+        self.assertFalse(Actual.objects.filter(source_ref__id=e.id).exists()); self.assertEqual(money.money("p1")["actual"], before)
+        self.assertIsNotNone(Attachment.objects.get(pk=rid).voided_at, "the receipt goes with it")
+        serializers.expense(e); self.assertTrue(any(x["id"] == e.id for x in serializers.snapshot(u["u_ft1"])["expenses"]))
+        self.assertTrue(any(ev.event_type == "expense" for ev in ChronologyEvent.objects.filter(project_id="p1")))
 
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u

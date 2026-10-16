@@ -101,9 +101,9 @@ def update_document(actor: User, document_id: str, input: dict) -> Document:
 
 def _attachment(actor: User, project_id: Optional[str], input: dict, upload, checked: bool) -> Attachment:
     at = b.now()
-    kind = input.get("kind") if input.get("kind") in ("image", "document") else "image"
+    kind = input.get("kind") if input.get("kind") in ("image", "document", "video") else "image"
     att = Attachment(**b.maybe_id(input, Attachment, "att"), project_id=project_id or None, file_name=b.clean(input.get("fileName")) or f"photo-{int(at.timestamp())}.jpg",
-                     mime="application/pdf" if kind == "document" else "image/jpeg", size_bytes=int(input.get("sizeBytes") or 1_400_000), kind=kind,
+                     mime={"document": "application/pdf", "video": "video/mp4"}.get(kind, "image/jpeg"), size_bytes=int(input.get("sizeBytes") or 1_400_000), kind=kind,
                      captured_at=b.to_dt(input["capturedAt"], "capturedAt") if input.get("capturedAt") else at, gps=input.get("gps") or None,
                      sha256=secrets.token_hex(32), uploaded_by=actor, uploaded_at=at, linked_to=input.get("linkedTo") or None,
                      caption=b.clean(input.get("caption")) or None)
@@ -112,7 +112,8 @@ def _attachment(actor: User, project_id: Optional[str], input: dict, upload, che
         att.sha256, att.size_bytes = _sha(upload)
         att.file_name = upload.name or att.file_name
         att.mime = getattr(upload, "content_type", None) or att.mime
-        att.kind = "image" if att.mime.startswith("image/") else "document"
+        # the bytes decide: a phone clip is a video whatever the caller guessed
+        att.kind = "image" if att.mime.startswith("image/") else "video" if att.mime.startswith("video/") else "document"
         att.file.save(upload.name, upload, save=False)
     if checked:
         att.review_status = "checked"; att.check_comment = "Verified through the linked approval"

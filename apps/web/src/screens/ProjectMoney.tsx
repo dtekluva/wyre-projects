@@ -128,6 +128,8 @@ export function ProjectMoney() {
           <input className="ns-input" type="number" placeholder="Days Δ" value={coD} onChange={(e) => setCoD(e.target.value)} /><button className="ns-btn ns-btn--secondary" type="submit">Raise CO</button></form></div>}
       </div>
 
+      <ExpensesCard p={p} />
+
       <div id="actuals" className="card table--wrap"><div className="card__head"><div className="card__title">Actuals ledger</div><span className="sm muted">only checked / approved events · {naira(m.actual, true)}</span></div>
         {acts.length ? <table className="table ledger"><thead><tr><th>Date</th><th>Source</th><th>Reference</th><th>Category</th><th className="num">Amount</th><th>Evidence</th></tr></thead>
           <tbody>{acts.map((a) => <tr key={a.id}><td className="sm">{fmtDate(a.date)}</td><td><Badge variant="neutral">{a.source.replace("_", " ")}</Badge></td><td>{a.sourceRef.label}{a.vendorId && <div className="sm muted">{api.vendorName(a.vendorId)}</div>}</td><td className="sm">{COST_CATEGORY_LABEL[a.category]}</td>
@@ -186,4 +188,55 @@ function BudgetLine({ c, projectId }: { c: CostItem; projectId: string }) {
       <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={save}>Save</button>
       <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => setEditing(false)}>Cancel</button></span></td>
   </tr>;
+}
+
+/**
+ * Fuel, transport, small purchases — the spend that never had a purchase order. Logged with the receipt against a budget
+ * line (or a category), checked by Finance like every other input, and only then an actual. Akanimo, 2026-10-16: a Logistics
+ * receipt had nowhere to go but through a PO.
+ */
+function ExpensesCard({ p }: { p: Project }) {
+  const api = useApi(); const { user } = useAuth(); const safe = useSafe();
+  const list = api.listExpenses(p.id);
+  const canLog = api.can(user.id, "expense.create", p.id); const canCheck = api.can(user.id, "cost.check", p.id);
+  const lines = api.costItems.filter((c) => c.projectId === p.id && c.reviewStatus === "checked" && !c.voidedAt);
+  const [ci, setCi] = useState(""); const [cat, setCat] = useState<CostCategory>("logistics"); const [amt, setAmt] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); const [payee, setPayee] = useState(""); const [desc, setDesc] = useState(""); const [picks, setPicks] = useState<Pick[]>([]);
+  const lineLabel = (e: { costItemId?: string; category: CostCategory }) => (e.costItemId && api.costItems.find((c) => c.id === e.costItemId)?.label) || COST_CATEGORY_LABEL[e.category];
+  const submit = (ev: React.FormEvent) => {
+    ev.preventDefault();
+    const ok = safe(() => {
+      const ids = picks.map((f) => api.addAttachment(user.id, p.id, { fileName: f.fileName, caption: f.caption?.trim() || `Receipt — ${desc.trim()}`, blob: f.file, sizeBytes: f.size }).id);
+      api.logExpense(user.id, p.id, { costItemId: ci || undefined, category: ci ? undefined : cat, amount: Number(amt), date, payee, description: desc, attachmentIds: ids });
+    }, "Logged — pending Finance check");
+    if (ok) { setAmt(""); setPayee(""); setDesc(""); setPicks([]); }
+  };
+  return <div id="expenses" className="card">
+    <div className="card__head"><div className="card__title">Expenses & receipts</div><span className="sm muted">fuel, transport, small purchases · Finance checks · then an actual</span></div>
+    {list.length ? <div className="table--wrap"><table className="table ledger"><thead><tr><th>Date</th><th>What</th><th>Budget line</th><th className="num">Amount</th><th>Receipt</th><th>By</th><th>Status</th></tr></thead>
+      <tbody>{list.map((e) => <tr key={e.id} className={e.voidedAt ? "voided" : ""}>
+        <td className="sm">{fmtDate(e.date)}</td><td>{e.description}{e.payee && <div className="sm muted">{e.payee}</div>}</td>
+        <td className="sm">{lineLabel(e)}</td><td className="num ns-mono">{naira(e.amount)}</td><td><Thumbs ids={e.attachmentIds} /></td><td className="sm">{api.userName(e.submittedBy)}</td>
+        <td><span className="row" style={{ gap: 6 }}><ReviewBadge status={e.reviewStatus} />
+          {e.reviewStatus === "pending" && !e.voidedAt && canCheck && <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => safe(() => api.check("expense", e.id, user.id, "checked"), "Checked — posted to actuals")}>✓ Check</button>}
+          {!e.voidedAt && <VoidControl kind="expense" id={e.id} projectId={p.id} size="xs" what={`expense ${e.description} · ${naira(e.amount)}`} />}</span>
+          {e.reviewStatus === "rejected" && e.checkComment && <div className="sm note--danger">“{e.checkComment}”</div>}<VoidedNote r={e} /></td>
+      </tr>)}</tbody></table></div>
+      : <div className="card__body"><Empty title="No expenses logged" hint="Receipts for fuel, transport and small purchases go here, against a budget line." /></div>}
+    {canLog && <div className="card__foot" style={{ display: "block" }}>
+      <div className="ns-overline" style={{ marginBottom: 8 }}>Log an expense</div>
+      <form className="form" onSubmit={submit}>
+        <label className="ns-field"><span className="ns-field__label">Budget line</span><select className="ns-input" value={ci} onChange={(e) => setCi(e.target.value)}>
+          <option value="">— by category —</option>{lines.map((c) => <option key={c.id} value={c.id}>{c.label} · {COST_CATEGORY_LABEL[c.category]}</option>)}</select></label>
+        {!ci && <label className="ns-field"><span className="ns-field__label">Category</span><select className="ns-input" value={cat} onChange={(e) => setCat(e.target.value as CostCategory)}>
+          {(Object.keys(COST_CATEGORY_LABEL) as CostCategory[]).map((c) => <option key={c} value={c}>{COST_CATEGORY_LABEL[c]}</option>)}</select></label>}
+        <label className="ns-field"><span className="ns-field__label">Amount ₦</span><input className="ns-input" type="number" min={1} step="0.01" value={amt} onChange={(e) => setAmt(e.target.value)} required /></label>
+        <label className="ns-field"><span className="ns-field__label">Date</span><input className="ns-input" type="date" value={date} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setDate(e.target.value)} /></label>
+        <label className="ns-field"><span className="ns-field__label">Paid to <span className="muted">· optional</span></span><input className="ns-input" value={payee} onChange={(e) => setPayee(e.target.value)} placeholder="Fuel station, driver, vendor" /></label>
+        <label className="ns-field"><span className="ns-field__label">What for</span><input className="ns-input" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Diesel for the Ojodu run" required /></label>
+        <label className="ns-field"><span className="ns-field__label">Receipt (required)</span><FilePick picks={picks} onChange={setPicks} multiple required label="Attach receipt" /></label>
+        <div><button className="ns-btn ns-btn--primary" type="submit" disabled={!picks.length || !desc.trim() || !(Number(amt) > 0)}>Log expense → Finance check</button></div>
+      </form>
+    </div>}
+  </div>;
 }

@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from . import rbac
-from .models import (ClientInvoice, VatPayment, StockRequest, Extraction, Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
+from .models import (ClientInvoice, VatPayment, StockRequest, Expense, Extraction, Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
                      InventoryItem, Issue, Project, ProjectMembership, PurchaseOrder, QbBill, Retention, SiteVisit, StockCount, StockLocation, StockMovement,
                      Threshold, User, Vendor, WarrantyClaim)
 from .services.base import iso
@@ -193,6 +193,11 @@ def stock_count(s: StockCount) -> dict:
             "notes": s.notes, "varianceValue": num(s.variance_value), **audit(s)}
 
 
+def expense(e: Expense) -> dict:
+    return {"id": e.id, "projectId": e.project_id, "costItemId": e.cost_item_id, "category": e.category, "amount": num(e.amount), "date": e.spent_on.isoformat(),
+            "payee": e.payee, "description": e.description, "attachmentIds": e.attachment_ids or [], **audit(e), **review(e), **void(e)}
+
+
 def stock_request(r: StockRequest) -> dict:
     return {"id": r.id, "projectId": r.project_id, "lines": r.lines or [], "note": r.note, "neededBy": r.needed_by.isoformat() if r.needed_by else None,
             "status": r.status, "requestedBy": r.requested_by_id, "requestedAt": iso(r.requested_at), "fulfilledBy": r.fulfilled_by_id, "fulfilledAt": iso(r.fulfilled_at),
@@ -290,4 +295,5 @@ def snapshot(u: User) -> dict:
         "warrantyClaims": [warranty(w) for w in scoped(WarrantyClaim.objects.all()).order_by("-claimed_at")],
         "stockCounts": [stock_count(s) for s in StockCount.objects.all().order_by("-created_at")] if sees_stock else [],
         "stockRequests": [stock_request(r) for r in scoped(StockRequest.objects.all()).order_by("-requested_at")] if sees_stock else [],
+        "expenses": [expense(e) for e in scoped(Expense.objects.all()).order_by("-spent_on", "-created_at")],
     }

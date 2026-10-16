@@ -2,7 +2,7 @@
 // Enforces: RBAC (§2), stage gates (§3), actor capture (§4), maker-checker + segregation of duties (§4.13, §5),
 // money & stock rules (§0, §4.4, §4.10, §4.15, §11).
 import { can as canFn, maySelfReview, rolesOn as rolesOnFn, type Permission } from "./rbac";
-import { TOOL_CATEGORIES, STOCK_REQUEST_STATUS_LABEL, type VoidKind, type StockRequest, type StockRequestStatus } from "./types";
+import { TOOL_CATEGORIES, STOCK_REQUEST_STATUS_LABEL, kindOfFile, type AttachmentKind, type VoidKind, type StockRequest, type StockRequestStatus, type Expense } from "./types";
 import { CONTRACT_STATUS_LABEL, VAT_PAYMENT_METHOD_LABEL, VAT_TREATMENT_LABEL, type ContractStatus, type ClientInvoice, type InvoiceReceipt, type VatPayment, type VatPaymentMethod, type VatTreatment } from "./types";
 import { DEFAULT_VAT_RATE, vatOn } from "./vat";
 import { STAGES } from "./gates";
@@ -23,11 +23,11 @@ export class ApiError extends Error {
   constructor(message: string, public code: "forbidden" | "invalid" | "not_found" | "conflict") { super(message); }
 }
 
-export type ReviewKind = "document" | "attachment" | "goods_receipt" | "stock_movement" | "cost_item" | "site_visit" | "issue" | "commissioning" | "hse" | "warranty" | "client_invoice" | "vat_payment";
+export type ReviewKind = "document" | "attachment" | "goods_receipt" | "stock_movement" | "cost_item" | "site_visit" | "issue" | "commissioning" | "hse" | "warranty" | "client_invoice" | "vat_payment" | "expense";
 export interface ReviewItem {
   kind: ReviewKind; id: string; projectId?: string; title: string; subtitle: string; amount?: number;
   submittedBy: string; submittedAt: string; ageDays: number; overdue: boolean;
-  item: Document | Attachment | GoodsReceipt | StockMovement | CostItem | SiteVisit | Issue | CommissioningRecord | HseIncident | WarrantyClaim | ClientInvoice | VatPayment;
+  item: Document | Attachment | GoodsReceipt | StockMovement | CostItem | SiteVisit | Issue | CommissioningRecord | HseIncident | WarrantyClaim | Expense | ClientInvoice | VatPayment;
 }
 
 /** Spec §4.1 — fields captured when a project is opened (stage 0, RAG green, nothing committed yet) */
@@ -84,12 +84,13 @@ export class MockApi {
   warrantyClaims: WarrantyClaim[] = clone(seed3.warrantyClaims);
   stockCounts: StockCount[] = clone(seed3.stockCounts);
   stockRequests: StockRequest[] = clone(seed3.stockRequests);
+  expenses: Expense[] = [];
 
   private listeners = new Set<Listener>();
   private seq = 1000;
   private static KEY = "wyre.tracker.state.v3";
   private static PERSISTED = ["projects","memberships","documents","attachments","events","approvals","thresholds",
-    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","stockRequests","extractions","clientInvoices","vatPayments","seq"] as const;
+    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","stockRequests","expenses","extractions","clientInvoices","vatPayments","seq"] as const;
 
   /** Synchronous key-value storage (web: localStorage). Native apps hydrate asynchronously via serialize()/hydrate() instead. */
   private storage: { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void } | null =
@@ -277,12 +278,14 @@ export class MockApi {
     this.emit(); return doc;
   }
 
-  addAttachment(actorId: string, projectId: string, input: { fileName: string; caption?: string; kind?: "image" | "document"; linkedTo?: Attachment["linkedTo"]; gps?: Attachment["gps"]; blob?: Blob; sizeBytes?: number }): Attachment {
+  addAttachment(actorId: string, projectId: string, input: { fileName: string; caption?: string; kind?: AttachmentKind; linkedTo?: Attachment["linkedTo"]; gps?: Attachment["gps"]; blob?: Blob; sizeBytes?: number }): Attachment {
     this.require(actorId, "attachment.create", projectId);
     const at = this.now();
     const att: Attachment = {
-      id: this.id("att"), projectId, fileName: input.fileName, mime: input.kind === "document" ? "application/pdf" : "image/jpeg",
-      sizeBytes: input.sizeBytes ?? input.blob?.size ?? 1_400_000, kind: input.kind ?? "image", capturedAt: at,
+      id: this.id("att"), projectId, fileName: input.fileName,
+      // The bytes decide what this is. The server re-derives it from the upload; this keeps the local guess honest.
+      mime: input.blob?.type || (input.kind === "document" ? "application/pdf" : input.kind === "video" ? "video/mp4" : "image/jpeg"),
+      sizeBytes: input.sizeBytes ?? input.blob?.size ?? 1_400_000, kind: input.kind ?? (input.blob?.type ? kindOfFile(input.blob.type, input.fileName) : kindOfFile(undefined, input.fileName)), capturedAt: at,
       sha256: Array.from({ length: 64 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join(""),
       uploadedBy: actorId, uploadedAt: at, linkedTo: input.linkedTo, caption: input.caption, gps: input.gps,
       reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1,
@@ -305,11 +308,11 @@ export class MockApi {
   // ---------- maker-checker ----------
   private checkPerm(kind: ReviewKind): Permission {
     return ({ document: "document.check", attachment: "attachment.check", goods_receipt: "goods_receipt.check", stock_movement: "inventory.check", cost_item: "cost.check",
-      site_visit: "visit.check", issue: "issue.check", commissioning: "commissioning.check", hse: "hse.check", warranty: "warranty.check", client_invoice: "billing.manage", vat_payment: "billing.manage" } as const)[kind];
+      site_visit: "visit.check", issue: "issue.check", commissioning: "commissioning.check", hse: "hse.check", warranty: "warranty.check", client_invoice: "billing.manage", vat_payment: "billing.manage", expense: "cost.check" } as const)[kind];
   }
   private findReviewable(kind: ReviewKind, id: string) {
     const list = ({ document: this.documents, attachment: this.attachments, goods_receipt: this.goodsReceipts, stock_movement: this.movements, cost_item: this.costItems,
-      site_visit: this.visits, issue: this.issues, commissioning: this.commissionings, hse: this.hseIncidents, warranty: this.warrantyClaims, client_invoice: this.clientInvoices, vat_payment: this.vatPayments } as Record<ReviewKind, { id: string }[]>)[kind];
+      site_visit: this.visits, issue: this.issues, commissioning: this.commissionings, hse: this.hseIncidents, warranty: this.warrantyClaims, client_invoice: this.clientInvoices, vat_payment: this.vatPayments, expense: this.expenses } as Record<ReviewKind, { id: string }[]>)[kind];
     const it = list.find((x) => x.id === id); if (!it) throw new ApiError("Item not found", "not_found");
     return it as ReviewItem["item"];
   }
@@ -324,7 +327,7 @@ export class MockApi {
       items.push({ kind, id: it.id, projectId, title, subtitle, amount, submittedBy: it.submittedBy, submittedAt: it.submittedAt, ageDays, overdue: ageDays > escalation, item: it });
     };
     this.documents.forEach((d) => push("document", d, d.projectId, d.title, DOC_TYPE_LABEL[d.docType]));
-    this.attachments.forEach((a) => push("attachment", a, a.projectId, a.caption ?? a.fileName, a.linkedTo ? `${a.linkedTo.model}: ${a.linkedTo.label}` : a.kind === "image" ? "Photo" : "File"));
+    this.attachments.forEach((a) => push("attachment", a, a.projectId, a.caption ?? a.fileName, a.linkedTo ? `${a.linkedTo.model}: ${a.linkedTo.label}` : a.kind === "image" ? "Photo" : a.kind === "video" ? "Video" : "File"));
     this.goodsReceipts.forEach((g) => { const po = this.purchaseOrders.find((p) => p.id === g.poId);
       push("goods_receipt", g, g.projectId, `${g.grnNumber} · ${this.vendorName(po?.vendorId)}`, `${g.lines.length} line${g.lines.length > 1 ? "s" : ""} against ${po?.poNumber}`, this.grnValue(g)); });
     // "receipt" included: a receipt against a PO arrives already checked, but stock taken in without
@@ -332,6 +335,7 @@ export class MockApi {
     this.movements.filter((m) => ["receipt", "issue", "return", "transfer"].includes(m.movementType) && m.sourceRef?.model !== "SiteVisit").forEach((m) =>
       push("stock_movement", m, m.projectId, `${MOVEMENT_LABEL[m.movementType]} · ${this.itemName(m.itemId)} × ${m.qty}`, m.sourceRef?.label ?? "", m.totalCost));
     this.costItems.forEach((c) => push("cost_item", c, c.projectId, c.label, `Budget line · ${COST_CATEGORY_LABEL[c.category]}`, c.plannedAmount));
+    this.expenses.forEach((e) => push("expense", e, e.projectId, `Expense · ${e.description}`, `${COST_CATEGORY_LABEL[e.category]} · ${e.date}${e.payee ? ` · ${e.payee}` : ""} · ${e.attachmentIds.length} receipt${e.attachmentIds.length === 1 ? "" : "s"}`, e.amount));
     this.visits.forEach((v) => push("site_visit", v, v.projectId, `${VISIT_TYPE_LABEL[v.visitType]} visit · ${v.startedAt.slice(0, 10)}`, `${v.technicianIds.map((t) => this.userName(t)).join(", ")} · ${v.parts.length} part line${v.parts.length === 1 ? "" : "s"} · ${v.attachmentIds.length} photo${v.attachmentIds.length === 1 ? "" : "s"}`, v.costTotal));
     this.issues.forEach((i) => push("issue", i, i.projectId, `${i.status === "resolved" ? "Resolution" : "Issue report"} · ${i.title}`, `${i.severity} · ${i.category}${i.status === "resolved" ? " · after photo attached" : ""}`, i.costToResolve || undefined));
     this.commissionings.forEach((c) => push("commissioning", c, c.projectId, `Commissioning record · ${c.result}`, `${c.items.filter((i) => i.pass).length}/${c.items.length} checklist pass · meter integrity ${Object.values(c.meter).every(Boolean) ? "pass" : "FAIL"}`));
@@ -353,7 +357,8 @@ export class MockApi {
       + this.hseIncidents.filter((h) => h.projectId === projectId && h.reviewStatus === "pending").length
       + this.warrantyClaims.filter((w) => w.projectId === projectId && w.reviewStatus === "pending").length
       + this.clientInvoices.filter((i) => i.projectId === projectId && i.reviewStatus === "pending" && !i.voidedAt).length
-      + this.vatPayments.filter((v) => v.projectId === projectId && v.reviewStatus === "pending" && !v.voidedAt).length;
+      + this.vatPayments.filter((v) => v.projectId === projectId && v.reviewStatus === "pending" && !v.voidedAt).length
+      + this.expenses.filter((e) => e.projectId === projectId && e.reviewStatus === "pending" && !e.voidedAt).length;
   }
 
   check(kind: ReviewKind, id: string, actorId: string, decision: Exclude<ReviewStatus, "pending">, comment?: string) {
@@ -384,6 +389,10 @@ export class MockApi {
           else { i.status = "in_progress"; i.resolvedAt = undefined; i.resolvedBy = undefined; } }
         else if (!ok) i.status = "wont_fix";
         break; }
+      case "expense": { const e = item as Expense; e.updatedAt = at; e.updatedBy = actorId; label = `expense ${this.fmt(e.amount)} · ${e.description}`;
+        if (ok) this.actuals.push({ id: this.id("act"), projectId: e.projectId, costItemId: e.costItemId, category: e.category, source: "expense",
+          sourceRef: { model: "Expense", id: e.id, label: `${e.description}${e.payee ? ` — ${e.payee}` : ""}` }, amount: e.amount, date: `${e.date}T12:00:00.000Z`, attachmentIds: e.attachmentIds, createdBy: actorId });
+        break; }
       case "commissioning": { const c = item as CommissioningRecord; c.updatedAt = at; c.updatedBy = actorId; label = `commissioning record (${c.result})`;
         if (ok && c.result !== "fail") this.emitCommissioningEvidence(c, actorId); break; }
       case "hse": { const h = item as HseIncident; h.updatedAt = at; h.updatedBy = actorId; label = `HSE ${HSE_TYPE_LABEL[h.type]}`; break; }
@@ -394,7 +403,7 @@ export class MockApi {
           this.actuals.push({ id: this.id("act"), projectId: w.projectId, category: "om", source: "warranty", sourceRef: { model: "WarrantyClaim", id: w.id, label: `Warranty recovery — ${this.vendorName(w.vendorId)}` }, amount: -w.costRecovered, date: at, attachmentIds: [], createdBy: actorId });
         break; }
     }
-    const model = { document: "Document", attachment: "Attachment", goods_receipt: "GoodsReceipt", stock_movement: "StockMovement", cost_item: "CostItem", site_visit: "SiteVisit", issue: "Issue", commissioning: "CommissioningRecord", hse: "HseIncident", warranty: "WarrantyClaim", client_invoice: "ClientInvoice", vat_payment: "VatPayment" }[kind];
+    const model = { document: "Document", attachment: "Attachment", goods_receipt: "GoodsReceipt", stock_movement: "StockMovement", cost_item: "CostItem", site_visit: "SiteVisit", issue: "Issue", commissioning: "CommissioningRecord", hse: "HseIncident", warranty: "WarrantyClaim", client_invoice: "ClientInvoice", vat_payment: "VatPayment", expense: "Expense" }[kind];
     this.log(projectId, actorId, ok ? "check_passed" : "check_rejected", `${ok ? "Checked" : "Rejected"}: ${label}`, comment?.trim() || undefined, { model, id });
     this.emit();
   }
@@ -856,7 +865,7 @@ export class MockApi {
   voidRecord(actorId: string, kind: VoidKind, id: string, reason: string): void {
     const lists: Record<VoidKind, { id: string; projectId?: string; voidedAt?: string; voidedBy?: string; voidReason?: string }[]> = {
       document: this.documents, attachment: this.attachments, stock_movement: this.movements, cost_item: this.costItems, client_invoice: this.clientInvoices, vat_payment: this.vatPayments,
-      purchase_order: this.purchaseOrders, goods_receipt: this.goodsReceipts, site_visit: this.visits, issue: this.issues };
+      purchase_order: this.purchaseOrders, goods_receipt: this.goodsReceipts, site_visit: this.visits, issue: this.issues, expense: this.expenses };
     if (!(kind in lists)) throw new ApiError("That kind of record cannot be voided", "invalid");
     const rec = lists[kind].find((x) => x.id === id); if (!rec) throw new ApiError("Record not found", "not_found");
     this.require(actorId, "record.void", rec.projectId);
@@ -867,6 +876,11 @@ export class MockApi {
       case "document": { const d = rec as Document; label = `document ${d.title}`; break; }
       case "attachment": { const a = rec as Attachment; label = `file ${a.caption ?? a.fileName}`; break; }
       case "cost_item": { const c = rec as CostItem; label = `budget line ${c.label}`; break; }
+      case "expense": {
+        const e = rec as Expense; label = `expense ${e.description} · ${this.fmt(e.amount)}`;
+        this.actuals = this.actuals.filter((x) => !(x.sourceRef.model === "Expense" && x.sourceRef.id === e.id));
+        this.cascadeVoidAttachments(e.attachmentIds, actorId, at, "removed with the expense");
+        break; }
       case "client_invoice": { const i = rec as ClientInvoice; label = `invoice ${i.invoiceNumber}`; break; }
       case "vat_payment": { const v = rec as VatPayment; label = `VAT payment ${this.fmt(v.amount)}`; break; }
       case "purchase_order": {
@@ -914,7 +928,7 @@ export class MockApi {
         break; }
     }
     Object.assign(rec, { voidedAt: at, voidedBy: actorId, voidReason: why });
-    this.log(rec.projectId, actorId, "void", `Voided ${label} — ${why}`, undefined, { model: { document: "Document", attachment: "Attachment", stock_movement: "StockMovement", cost_item: "CostItem", client_invoice: "ClientInvoice", vat_payment: "VatPayment", purchase_order: "PurchaseOrder", goods_receipt: "GoodsReceipt", site_visit: "SiteVisit", issue: "Issue" }[kind], id });
+    this.log(rec.projectId, actorId, "void", `Voided ${label} — ${why}`, undefined, { model: { document: "Document", attachment: "Attachment", stock_movement: "StockMovement", cost_item: "CostItem", client_invoice: "ClientInvoice", vat_payment: "VatPayment", purchase_order: "PurchaseOrder", goods_receipt: "GoodsReceipt", site_visit: "SiteVisit", issue: "Issue", expense: "Expense" }[kind], id });
     this.emit();
   }
 
@@ -1212,6 +1226,33 @@ export class MockApi {
     this.log(input.projectId, actorId, "stock_movement", `Return requested — ${it.name} × ${input.qty} (pending check)`, undefined, { model: "StockMovement", id: m.id });
     this.emit(); return m;
   }
+  // ---- expenses: receipted spend outside a PO, checked by Finance, then an actual ----
+  listExpenses(projectId?: string) {
+    return this.expenses.filter((e) => !projectId || e.projectId === projectId).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  }
+  logExpense(actorId: string, projectId: string, input: { costItemId?: string; category?: CostCategory; amount: number; date?: string; payee?: string; description: string; attachmentIds: string[] }): Expense {
+    this.require(actorId, "expense.create", projectId);
+    const p = this.raw(projectId); if (p.stage >= 8) throw new ApiError("This project is closed", "invalid");
+    if (!(input.amount > 0)) throw new ApiError("Amount must be positive", "invalid");
+    const description = (input.description ?? "").trim(); if (!description) throw new ApiError("Say what the money was spent on", "invalid");
+    const attachmentIds = (input.attachmentIds ?? []).filter(Boolean);
+    if (!attachmentIds.length) throw new ApiError("Attach the receipt — an expense without one cannot be checked", "invalid");
+    let category = input.category; let costItemId: string | undefined;
+    if (input.costItemId) {
+      const ci = this.costItems.find((c) => c.id === input.costItemId);
+      if (!ci || ci.projectId !== projectId || ci.reviewStatus !== "checked" || ci.voidedAt) throw new ApiError("Pick a checked budget line on this project", "invalid");
+      category = ci.category; costItemId = ci.id;
+    }
+    if (!category || !(category in COST_CATEGORY_LABEL)) throw new ApiError(`Category must be one of: ${Object.keys(COST_CATEGORY_LABEL).join(", ")}`, "invalid");
+    const at = this.now();
+    const e: Expense = { id: this.id("exp"), projectId, costItemId, category, amount: round(input.amount), date: input.date || at.slice(0, 10), payee: input.payee?.trim() || undefined,
+      description: description.slice(0, 200), attachmentIds, createdAt: at, createdBy: actorId, updatedAt: at, updatedBy: actorId,
+      reviewStatus: "pending", submittedBy: actorId, submittedAt: at, reviewVersion: 1 };
+    this.expenses.push(e);
+    this.log(projectId, actorId, "expense", `Expense logged — ${description} · ${this.fmt(e.amount)} (pending Finance check)`, e.payee, { model: "Expense", id: e.id });
+    this.emit(); return e;
+  }
+
   // ---- stock requests: the operations team asks, the store keeper hands over, the project updates itself ----
   listStockRequests(f: { projectId?: string; status?: StockRequestStatus; requestedBy?: string } = {}) {
     return this.stockRequests.filter((r) => (!f.projectId || r.projectId === f.projectId) && (!f.status || r.status === f.status) && (!f.requestedBy || r.requestedBy === f.requestedBy))

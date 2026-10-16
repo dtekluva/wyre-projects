@@ -10,7 +10,7 @@ from django.db import transaction
 from .. import rbac
 from ..constants import ASSET_TYPES, COST_CATEGORIES, COST_CATEGORY_LABEL
 from ..errors import ApiError
-from ..models import (Actual, Approval, Asset, ChangeOrder, CostItem, GoodsReceipt, InventoryItem, Project, PurchaseItem, PurchaseOrder,
+from ..models import (Expense, Actual, Approval, Asset, ChangeOrder, CostItem, GoodsReceipt, InventoryItem, Project, PurchaseItem, PurchaseOrder,
                       Retention, StockMovement, User, Vendor)
 from . import base as b
 from . import billing
@@ -283,3 +283,39 @@ def money(project_id: str) -> dict:
     return {"planned": float(planned), "committed": float(committed), "actual": float(actual), "variance": float(planned - actual), "burnPct": burn,
             "forecast": float(max(committed, actual)), "byCategory": {k: {kk: float(vv) for kk, vv in v.items()} for k, v in by.items()},
             "changeOrders": float(cos), "retentionHeld": retention(p)["amountHeld"], **billing.vat_block(p, cos)}
+
+
+@transaction.atomic
+def log_expense(actor: User, project_id: Optional[str], input: dict) -> Expense:
+    """Receipted spend outside a PO — fuel, transport, a small purchase. Pending until Finance checks it; the receipt
+    is required because a check without one is a signature on nothing."""
+    b.require(actor, "expense.create", project_id)
+    p = b.project(project_id)
+    if p.stage >= 8:
+        raise ApiError("This project is closed", "invalid")
+    amount = b.dec(input.get("amount"))
+    if not amount > 0:
+        raise ApiError("Amount must be positive", "invalid")
+    desc = b.clean(input.get("description"))
+    if not desc:
+        raise ApiError("Say what the money was spent on", "invalid")
+    atts = [a for a in (input.get("attachmentIds") or []) if a]
+    if not atts:
+        raise ApiError("Attach the receipt — an expense without one cannot be checked", "invalid")
+    ci = None; category = b.clean(input.get("category")) or None
+    if input.get("costItemId"):
+        ci = b.get_or_404(CostItem, input["costItemId"], "Budget line")
+        if ci.project_id != p.id or ci.review_status != "checked" or ci.voided_at:
+            raise ApiError("Pick a checked budget line on this project", "invalid")
+        category = ci.category
+    if category not in COST_CATEGORIES:
+        raise ApiError(f"Category must be one of: {', '.join(COST_CATEGORIES)}", "invalid")
+    at = b.now()
+    spent_on = b.to_date(input.get("date"), "date") if input.get("date") else at.date()
+    e = Expense(**b.maybe_id(input, Expense, "exp"), project=p, cost_item=ci, category=category, amount=b.round2(amount), spent_on=spent_on,
+                payee=b.clean(input.get("payee")) or None, description=desc[:200], attachment_ids=atts,
+                created_at=at, created_by=actor, updated_at=at, updated_by=actor)
+    b.new_review(e, actor, at)
+    e.save()
+    b.log(p.id, actor, "expense", f"Expense logged — {desc} · {b.fmt(amount)} (pending Finance check)", e.payee, {"model": "Expense", "id": e.id})
+    return e

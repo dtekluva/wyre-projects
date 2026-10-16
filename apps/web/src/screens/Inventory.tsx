@@ -233,7 +233,7 @@ function ReceiveFromNote() {
               const att = api.addEvidence(user.id, { fileName: p0.fileName, sizeBytes: p0.size, blob: p0.file, caption: "Delivery note" });
               setExtId(api.requestExtraction(user.id, "attachment", att.id, "stock_lines").id);
             }, "Reading it — this usually takes under a minute");
-          }} required label="Delivery note or photo" />
+          }} required label="Delivery note or photo" accept="image/*,application/pdf" />
         </> : how === "say" ? <Dictate onDone={(text) => safe(() => { setExtId(api.requestExtraction(user.id, "dictation", "", "stock_lines", text).id); }, "Working out what you said")} />
         : null}
       </> : ext && (ext.status === "queued" || ext.status === "running") ? <Note tone="info">Reading it… this usually takes under a minute.</Note>

@@ -44,11 +44,20 @@ export type Rag = "green" | "amber" | "red";
 export type ReviewStatus = "pending" | "checked" | "rejected";
 
 export interface AuditFields { createdAt: string; createdBy: string; updatedAt: string; updatedBy: string }
+
+export type AttachmentKind = "image" | "document" | "video";
+/** What a file IS, from its MIME type first and its name second — the same rule the server applies to the bytes it receives. */
+export function kindOfFile(mime?: string, name?: string): AttachmentKind {
+  const m = (mime ?? "").toLowerCase(); const n = (name ?? "").toLowerCase();
+  if (m.startsWith("video/") || /\.(mp4|mov|m4v|webm|3gp|mkv|avi)$/.test(n)) return "video";
+  if (m.startsWith("image/") || /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif)$/.test(n)) return "image";
+  return "document";
+}
 /** §4.14 void — wrong data that was entered (and maybe checked) stops counting everywhere but stays on the record,
  *  struck through, with who voided it and why. Never deleted: the chronology and gates must keep their history. */
 export interface VoidFields { voidedAt?: string; voidedBy?: string; voidReason?: string }
-export type VoidKind = "document" | "attachment" | "stock_movement" | "cost_item" | "client_invoice" | "vat_payment" | "purchase_order" | "goods_receipt" | "site_visit" | "issue";
-export const VOID_KIND_LABEL: Record<VoidKind, string> = { document: "document", attachment: "file", stock_movement: "stock movement", cost_item: "budget line", client_invoice: "invoice", vat_payment: "VAT payment", purchase_order: "purchase order", goods_receipt: "goods receipt", site_visit: "site visit", issue: "issue" };
+export type VoidKind = "document" | "attachment" | "stock_movement" | "cost_item" | "client_invoice" | "vat_payment" | "purchase_order" | "goods_receipt" | "site_visit" | "issue" | "expense";
+export const VOID_KIND_LABEL: Record<VoidKind, string> = { document: "document", attachment: "file", stock_movement: "stock movement", cost_item: "budget line", client_invoice: "invoice", vat_payment: "VAT payment", purchase_order: "purchase order", goods_receipt: "goods receipt", site_visit: "site visit", issue: "issue", expense: "expense" };
 
 export interface ReviewFields {
   reviewStatus: ReviewStatus; submittedBy: string; submittedAt: string;
@@ -122,7 +131,7 @@ export interface Document extends AuditFields, ReviewFields, VoidFields {
 
 export interface Attachment extends ReviewFields, VoidFields {
   id: string; projectId: string; fileName: string; mime: string; sizeBytes: number;
-  kind: "image" | "document"; capturedAt?: string; gps?: { lat: number; lng: number };
+  kind: "image" | "document" | "video"; capturedAt?: string; gps?: { lat: number; lng: number };
   sha256: string; uploadedBy: string; uploadedAt: string;
   linkedTo?: { model: string; id: string; label: string }; caption?: string;
   /** short-lived signed download link, present in live mode only */
@@ -137,7 +146,7 @@ export type EventType =
   | "role_granted" | "role_revoked" | "commissioning_assigned" | "note"
   | "stock_movement" | "cost_item" | "retention" | "reconciliation"
   | "issue" | "commissioning" | "hse" | "warranty" | "stock_count"
-  | "contract_updated" | "contract_received" | "invoice" | "plan_updated" | "void" | "stage_rollback" | "project_updated" | "stock_request";
+  | "contract_updated" | "contract_received" | "invoice" | "plan_updated" | "void" | "stage_rollback" | "project_updated" | "stock_request" | "expense";
 
 export interface ChronologyEvent {
   id: string; projectId: string; occurredAt: string; actorId: string; eventType: EventType;
@@ -186,6 +195,14 @@ export const COST_CATEGORY_LABEL: Record<CostCategory, string> = {
 
 /** Budget line — maker-checked (Finance checks) */
 export interface CostItem extends AuditFields, ReviewFields, VoidFields { id: string; projectId: string; category: CostCategory; label: string; plannedAmount: number }
+/** Money spent and receipted outside a purchase order — fuel, transport, a small purchase. Logged against a budget line (or
+ *  a category when no line fits), checked by Finance, and only then an Actual. The receipt is required: an expense without
+ *  one cannot be checked, so it cannot be entered. */
+export interface Expense extends AuditFields, ReviewFields, VoidFields {
+  id: string; projectId: string; costItemId?: string; category: CostCategory; amount: number;
+  /** YYYY-MM-DD, the day the money left */ date: string;
+  payee?: string; description: string; attachmentIds: string[];
+}
 
 export type PoStatus = "pending_approval" | "approved" | "rejected" | "partially_delivered" | "delivered" | "closed";
 export interface PurchaseItem {
@@ -251,7 +268,7 @@ export interface StockRequest {
   declineReason?: string; resolvedBy?: string; resolvedAt?: string;
 }
 
-export type ActualSource = "goods_receipt" | "issue" | "return" | "visit" | "change_order" | "bill" | "payment" | "warranty";
+export type ActualSource = "goods_receipt" | "issue" | "return" | "visit" | "change_order" | "bill" | "payment" | "warranty" | "expense";
 /** Unified actuals ledger (spec §4.10). Only produced by checked / approved events. */
 export interface Actual {
   id: string; projectId: string; costItemId?: string; category: CostCategory; source: ActualSource;

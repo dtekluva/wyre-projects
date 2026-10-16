@@ -12,6 +12,7 @@ export const useFileViewer = () => useContext(Ctx);
 const isImage = (mime?: string, name?: string) =>
   (mime ?? "").startsWith("image/") || /\.(jpe?g|png|gif|webp|avif|bmp|svg)$/i.test(name ?? "");
 const isPdf = (mime?: string, name?: string) => (mime ?? "").includes("pdf") || /\.pdf$/i.test(name ?? "");
+const isVideo = (mime?: string, name?: string) => (mime ?? "").startsWith("video/") || /\.(mp4|mov|m4v|webm|3gp)$/i.test(name ?? "");
 
 /** Single in-app viewer. Files open here rather than in a new tab, which keeps the reviewer on the page. */
 export function FileViewerProvider({ children }: { children: ReactNode }) {
@@ -65,7 +66,7 @@ function FileModal({ target, siblings, onStep, onClose }: { target: ViewTarget; 
   }, [close, prev, next, onStep]);
 
   const image = isImage(mime, fileName) && !broken;
-  const pdf = isPdf(mime, fileName);
+  const pdf = isPdf(mime, fileName); const video = isVideo(mime, fileName);
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="modal__panel">
@@ -87,6 +88,7 @@ function FileModal({ target, siblings, onStep, onClose }: { target: ViewTarget; 
           {state === "ready" && url && (
             image ? <img className="modal__img" src={url} alt={title} onError={() => setBroken(true)} />
             : pdf ? <iframe className="modal__frame" src={url} title={title} />
+            : video ? <video className="modal__video" src={url} controls autoPlay playsInline />
             : <div className="modal__note"><b>{broken ? "This file isn't a viewable image." : "No preview for this file type."}</b>
                 <div className="sm muted">{fileName}</div></div>
           )}

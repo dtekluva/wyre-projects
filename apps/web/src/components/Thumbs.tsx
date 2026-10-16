@@ -29,7 +29,7 @@ function Thumb({ att }: { att: { id: string; url?: string; kind: string; fileNam
     <FileLink kind="attachment" id={att.id} className="thumb" title={att.caption ?? att.fileName}>
       {showImg
         ? <img src={att.url} alt={att.caption ?? att.fileName} loading="lazy" onError={() => setBroken(true)} />
-        : <span className="thumb__ph">{att.kind === "image" ? "📷" : "📄"}</span>}
+        : <span className="thumb__ph">{att.kind === "image" ? "📷" : att.kind === "video" ? "🎬" : "📄"}</span>}
     </FileLink>
   );
 }

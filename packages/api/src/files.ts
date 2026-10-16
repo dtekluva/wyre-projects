@@ -1,5 +1,5 @@
 import { STAGES, type StageDef } from "./gates";
-import { MOVEMENT_LABEL, type Actual, type Attachment, type ClientInvoice, type CommissioningRecord, type VatPayment, type DocType, type Document, type GoodsReceipt,
+import { Expense, MOVEMENT_LABEL, type Actual, type Attachment, type ClientInvoice, type CommissioningRecord, type VatPayment, type DocType, type Document, type GoodsReceipt,
   type HseIncident, type Issue, type ReviewStatus, type SiteVisit, type StockMovement } from "./types";
 
 /**
@@ -24,7 +24,7 @@ export interface FileSection { key: string; title: string; hint?: string; stage?
 /** The slice of the store the sectioner reads. MockApi satisfies it structurally. */
 export interface FileStore {
   documents: Document[]; attachments: Attachment[]; goodsReceipts: GoodsReceipt[]; movements: StockMovement[];
-  actuals: Actual[]; visits: SiteVisit[]; commissionings: CommissioningRecord[]; hseIncidents: HseIncident[]; issues: Issue[]; clientInvoices: ClientInvoice[]; vatPayments: VatPayment[];
+  actuals: Actual[]; visits: SiteVisit[]; commissionings: CommissioningRecord[]; hseIncidents: HseIncident[]; issues: Issue[]; clientInvoices: ClientInvoice[]; vatPayments: VatPayment[]; expenses: Expense[];
   items: { id: string; name: string }[];
 }
 export type FileScope = { projectId: string } | "warehouse";
@@ -93,6 +93,7 @@ function indexAttachments(s: FileStore): Map<string, Hit> {
   }
   for (const v of s.vatPayments) for (const id of v.attachmentIds) put(id, "invoices", { model: "VatPayment", id: v.id, label: `VAT payment · ${v.paidOn}` });
   for (const a of s.actuals) for (const id of a.attachmentIds) put(id, "expenses", { model: "Actual", id: a.id, label: a.sourceRef.label });
+  for (const e of s.expenses) if (!e.voidedAt) for (const id of e.attachmentIds) put(id, "expenses", { model: "Expense", id: e.id, label: `${e.description} · ${e.reviewStatus === "checked" ? "receipt" : e.reviewStatus}` });
   return idx;
 }
 

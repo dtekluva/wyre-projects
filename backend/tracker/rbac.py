@@ -42,6 +42,10 @@ MATRIX: dict[str, list[str]] = {
     "auditor": ["project.read", "chronology.read", "document.read", "attachment.read", "po.read", "approval.read", "thresholds.read",
                 "money.read", "inventory.read", "asset.read", "recon.read", "dashboard.read"],
 }
+# Expense claims — fuel, transport, small purchases with a receipt (2026-10-16). Logged by the people who spend the
+# money, checked by Finance through cost.check. Mirrors packages/api/src/rbac.ts.
+for _r in ("director", "techlead", "finance", "tech", "store_keeper"):
+    MATRIX[_r].append("expense.create")
 
 # Roles trusted to sign off their own work (user decision, 2026-09-20). Everyone else still needs a
 # second pair of eyes: a tech cannot check the visit they logged, a techlead cannot approve their own
@@ -58,6 +62,7 @@ CHECK_PERM = {
     "document": "document.check", "attachment": "attachment.check", "goods_receipt": "goods_receipt.check", "stock_movement": "inventory.check",
     "cost_item": "cost.check", "site_visit": "visit.check", "issue": "issue.check", "commissioning": "commissioning.check",
     "hse": "hse.check", "warranty": "warranty.check", "client_invoice": "billing.manage", "vat_payment": "billing.manage",
+    "expense": "cost.check",
 }
 
 _cache: Optional[dict[str, set[str]]] = None

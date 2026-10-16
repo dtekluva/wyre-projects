@@ -93,6 +93,10 @@ def id_sr():
     return _nid("sr")
 
 
+def id_exp():
+    return _nid("exp")
+
+
 def id_ntf():
     return _nid("ntf")
 
@@ -719,3 +723,18 @@ class StockRequest(models.Model):
     decline_reason = models.TextField(blank=True, null=True)
     resolved_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     resolved_at = models.DateTimeField(null=True, blank=True)
+
+
+class Expense(Audit, Reviewable, Voidable):
+    """Money spent and receipted outside a purchase order — fuel, transport, a small purchase. Logged against a budget
+    line (or a category when no line fits), checked by Finance (cost.check), and only then an Actual. The receipt is
+    required: an expense without one cannot be checked, so it cannot be entered."""
+    id = models.CharField(primary_key=True, max_length=40, default=id_exp)
+    project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="expenses")
+    cost_item = models.ForeignKey(CostItem, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    category = models.CharField(max_length=20)
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    spent_on = models.DateField()
+    payee = models.CharField(max_length=120, blank=True, null=True)
+    description = models.CharField(max_length=200)
+    attachment_ids = models.JSONField(default=list)

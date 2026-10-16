@@ -28,7 +28,7 @@ export class RemoteApi extends MockApi {
     this.resetLocal();
     this.wrapMutations();
   }
-  private resetLocal() { for (const k of ["projects","memberships","documents","attachments","events","approvals","thresholds","vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","stockRequests","extractions","clientInvoices","vatPayments"]) (this as unknown as Record<string, unknown[]>)[k] = []; this.users = []; }
+  private resetLocal() { for (const k of ["projects","memberships","documents","attachments","events","approvals","thresholds","vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","stockRequests","expenses","extractions","clientInvoices","vatPayments"]) (this as unknown as Record<string, unknown[]>)[k] = []; this.users = []; }
   get signedIn() { return !!this.access; }
   onError(fn: (e: RemoteError) => void) { this.errorListeners.add(fn); return () => { this.errorListeners.delete(fn); }; }
   onSync(fn: (pending: number) => void) { this.syncListeners.add(fn); return () => { this.syncListeners.delete(fn); }; }
@@ -152,6 +152,7 @@ export class RemoteApi extends MockApi {
     wrap("fulfilRequest", (a) => ({ name: "fulfilRequest", body: { requestId: a[1], input: a[2] } }));
     wrap("declineRequest", (a) => ({ name: "declineRequest", body: { requestId: a[1], reason: a[2] } }));
     wrap("cancelRequest", (a) => ({ name: "cancelRequest", body: { requestId: a[1] } }));
+    wrap("logExpense", (a, r) => ({ name: "logExpense", body: { projectId: a[1], input: withId(a[2], r) } }));
     wrap("matchBill", (a) => ({ name: "matchBill", body: { billId: a[1], poId: a[2] } }));
     wrap("unmatchBill", (a) => ({ name: "unmatchBill", body: { billId: a[1] } }));
     wrap("startCount", (a, r) => ({ name: "startCount", body: { locationId: a[1], id: id(r) } }));

@@ -5,6 +5,7 @@ import { useFileViewer, type ViewTarget } from "../lib/fileViewer";
 import { VoidControl } from "./VoidControl";
 
 const looksLikeImage = (name: string, mime?: string) => (mime ?? "").startsWith("image/") || /\.(jpe?g|png|gif|webp|avif|bmp)$/i.test(name);
+const looksLikeVideo = (name: string, mime?: string) => (mime ?? "").startsWith("video/") || /\.(mp4|mov|m4v|webm|3gp)$/i.test(name);
 const ext = (name: string) => name.split(".").pop()?.toUpperCase().slice(0, 4) || "FILE";
 
 /**
@@ -18,6 +19,7 @@ export function FileTile({ e, siblings }: { e: FileEntry; siblings: ViewTarget[]
   const url = e.kind === "document" ? e.doc.url : e.att.url;
   const mime = e.kind === "attachment" ? e.att.mime : undefined;
   const img = !!url && looksLikeImage(name, mime) && !broken;
+  const vid = !!url && !img && looksLikeVideo(name, mime);
   const title = e.kind === "document" ? e.doc.title : (e.att.caption || e.att.fileName);
   const by = e.kind === "document" ? e.doc.submittedBy : e.att.uploadedBy;
   const sub = e.kind === "document" ? `${DOC_TYPE_LABEL[e.doc.docType]} · v${e.doc.version}` : e.via?.label;
@@ -27,8 +29,10 @@ export function FileTile({ e, siblings }: { e: FileEntry; siblings: ViewTarget[]
   return (
     <div className="ftile">
     <button type="button" className="ftile__open" title={`Open ${name}`} onClick={() => view({ kind: e.kind, id: e.id }, siblings)}>
-      <span className={`ftile__thumb ${img ? "" : "ftile__thumb--ph"}`}>
-        {img ? <img src={url} alt={title} loading="lazy" onError={() => setBroken(true)} /> : <span className="ftile__ext">{ext(name)}</span>}
+      <span className={`ftile__thumb ${img || vid ? "" : "ftile__thumb--ph"}`}>
+        {img ? <img src={url} alt={title} loading="lazy" onError={() => setBroken(true)} />
+          : vid ? <><video src={url} muted playsInline preload="metadata" /><span className="ftile__play" aria-hidden>▶</span></>
+          : <span className="ftile__ext">{ext(name)}</span>}
         {pip && <span className={`ftile__pip ${pip.cls}`}>{pip.text}</span>}
         {e.kind === "attachment" && e.att.gps && <span className="ftile__gps" title="GPS captured">◎</span>}
       </span>

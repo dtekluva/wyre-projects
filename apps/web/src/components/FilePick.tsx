@@ -4,14 +4,15 @@ export type Pick = { fileName: string; url: string; size: number; file: File; ca
 
 const KB = 1024, MB = KB * 1024;
 export const human = (n: number) => (n < MB ? `${Math.round(n / KB)} KB` : `${(n / MB).toFixed(1)} MB`);
-/** Matches the backend's FILE_UPLOAD_MAX_MEMORY_SIZE. */
-export const MAX_BYTES = 25 * MB;
+/** Matches client_max_body_size on both nginx layers and the gunicorn timeout — a 30 s phone clip is 60–100 MB. */
+export const MAX_BYTES = 300 * MB;
+const isVideo = (f: File) => f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|3gp)$/i.test(f.name);
 
 /**
  * Real file input for the office screens. Holds the File itself so the API layer can upload the bytes;
  * the field app uses CameraInput instead, which opens the rear camera.
  */
-export function FilePick({ picks, onChange, label = "Choose file", accept = "image/*,application/pdf", multiple = false, required, hint, captions = false, captionPlaceholder = "Label this photo…" }:
+export function FilePick({ picks, onChange, label = "Choose file", accept = "image/*,video/*,application/pdf", multiple = false, required, hint, captions = false, captionPlaceholder = "Label this photo…" }:
   { picks: Pick[]; onChange: (p: Pick[]) => void; label?: string; accept?: string; multiple?: boolean; required?: boolean; hint?: string; captions?: boolean; captionPlaceholder?: string }) {
   const ref = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState("");
@@ -32,7 +33,7 @@ export function FilePick({ picks, onChange, label = "Choose file", accept = "ima
     <div className="filepick" onDragOver={(e) => e.preventDefault()} onDrop={drop}>
       {picks.length > 0 && <div className={`filepick__list ${captions ? "filepick__list--captioned" : ""}`}>
         {picks.map((p, i) => <span key={i} className="filepick__chip">
-          {p.file.type.startsWith("image/") ? <img src={p.url} alt="" /> : <span className="filepick__doc">📄</span>}
+          {p.file.type.startsWith("image/") ? <img src={p.url} alt="" /> : isVideo(p.file) ? <video src={p.url} muted playsInline preload="metadata" /> : <span className="filepick__doc">📄</span>}
           <span className="filepick__meta">
             <span className="filepick__name" title={p.fileName}>{p.fileName} <span className="muted">{human(p.size)}</span></span>
             {captions && <input className="ns-input filepick__caption" value={p.caption ?? ""} placeholder={captionPlaceholder}

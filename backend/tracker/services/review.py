@@ -9,14 +9,16 @@ from django.utils import timezone
 from .. import rbac
 from ..constants import COST_CATEGORY_LABEL, DOC_TYPE_LABEL, HSE_TYPE_LABEL, MOVEMENT_LABEL, VISIT_TYPE_LABEL
 from ..errors import ApiError
-from ..models import (ClientInvoice, VatPayment, Actual, Attachment, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Issue, SiteVisit, StockMovement, User, WarrantyClaim)
+from ..models import (Expense, ClientInvoice, VatPayment, Actual, Attachment, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Issue, SiteVisit, StockMovement, User, WarrantyClaim)
 from ..rbac import CHECK_PERM
 from . import base as b
 
 MODELS = {"document": Document, "attachment": Attachment, "goods_receipt": GoodsReceipt, "stock_movement": StockMovement, "cost_item": CostItem,
-          "site_visit": SiteVisit, "issue": Issue, "commissioning": CommissioningRecord, "hse": HseIncident, "warranty": WarrantyClaim, "client_invoice": ClientInvoice, "vat_payment": VatPayment}
+          "site_visit": SiteVisit, "issue": Issue, "commissioning": CommissioningRecord, "hse": HseIncident, "warranty": WarrantyClaim, "client_invoice": ClientInvoice, "vat_payment": VatPayment,
+          "expense": Expense}
 MODEL_NAME = {"document": "Document", "attachment": "Attachment", "goods_receipt": "GoodsReceipt", "stock_movement": "StockMovement", "cost_item": "CostItem",
-              "site_visit": "SiteVisit", "issue": "Issue", "commissioning": "CommissioningRecord", "hse": "HseIncident", "warranty": "WarrantyClaim", "client_invoice": "ClientInvoice", "vat_payment": "VatPayment"}
+              "site_visit": "SiteVisit", "issue": "Issue", "commissioning": "CommissioningRecord", "hse": "HseIncident", "warranty": "WarrantyClaim", "client_invoice": "ClientInvoice", "vat_payment": "VatPayment",
+              "expense": "Expense"}
 
 
 def pending_items() -> list[dict]:
@@ -49,7 +51,7 @@ def _collect(user: Optional[User]) -> list[dict]:
     for d in Document.objects.filter(review_status="pending"):
         push("document", d, d.project_id, d.title, DOC_TYPE_LABEL.get(d.doc_type, d.doc_type))
     for a in Attachment.objects.filter(review_status="pending"):
-        push("attachment", a, a.project_id, a.caption or a.file_name, f"{a.linked_to['model']}: {a.linked_to.get('label', '')}" if a.linked_to else "Photo" if a.kind == "image" else "File")
+        push("attachment", a, a.project_id, a.caption or a.file_name, f"{a.linked_to['model']}: {a.linked_to.get('label', '')}" if a.linked_to else "Photo" if a.kind == "image" else "Video" if a.kind == "video" else "File")
     for g in GoodsReceipt.objects.filter(review_status="pending").select_related("po__vendor"):
         push("goods_receipt", g, g.project_id, f"{g.grn_number} · {g.po.vendor.name}", f"{len(g.lines)} line{'s' if len(g.lines) > 1 else ''} against {g.po.po_number}", money_svc.grn_value(g))
     # "receipt" belongs here now. Receipts used to come only from a goods receipt against an approved
@@ -62,6 +64,9 @@ def _collect(user: Optional[User]) -> list[dict]:
         push("stock_movement", m, m.project_id, f"{MOVEMENT_LABEL[m.movement_type]} · {m.item.name} × {b.dec(m.qty).normalize():f}", (m.source_ref or {}).get("label", ""), m.total_cost)
     for c in CostItem.objects.filter(review_status="pending"):
         push("cost_item", c, c.project_id, c.label, f"Budget line · {COST_CATEGORY_LABEL[c.category]}", c.planned_amount)
+    for e in Expense.objects.filter(review_status="pending"):
+        n = len(e.attachment_ids or [])
+        push("expense", e, e.project_id, f"Expense · {e.description}", f"{COST_CATEGORY_LABEL[e.category]} · {e.spent_on}{' · ' + e.payee if e.payee else ''} · {n} receipt{'' if n == 1 else 's'}", e.amount)
     for v in SiteVisit.objects.filter(review_status="pending"):
         techs = ", ".join(b.user_name(t) for t in v.technician_ids)
         push("site_visit", v, v.project_id, f"{VISIT_TYPE_LABEL[v.visit_type]} visit · {b.iso(v.started_at)[:10]}",
@@ -154,6 +159,12 @@ def check(actor: User, kind: str, id: str, decision: str, comment: Optional[str]
                 item.status = "in_progress"; item.resolved_at = None; item.resolved_by = None
         elif not ok:
             item.status = "wont_fix"
+    elif kind == "expense":
+        b.stamp(item, actor, at); label = f"expense {b.fmt(item.amount)} · {item.description}"
+        if ok:
+            Actual.objects.create(project_id=item.project_id, cost_item_id=item.cost_item_id, category=item.category, source="expense",
+                                  source_ref={"model": "Expense", "id": item.id, "label": item.description + (f" — {item.payee}" if item.payee else "")},
+                                  amount=item.amount, date=b.to_dt(item.spent_on.isoformat(), "date"), attachment_ids=item.attachment_ids or [], created_by=actor)
     elif kind == "commissioning":
         b.stamp(item, actor, at); label = f"commissioning record ({item.result})"
         item.save()

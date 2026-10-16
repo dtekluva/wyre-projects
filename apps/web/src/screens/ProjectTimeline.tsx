@@ -9,7 +9,7 @@ export const EVENT_GROUPS: Record<string, EventType[] | null> = {
   All: null,
   Evidence: ["document_added", "attachment_added", "check_passed", "check_rejected"],
   Approvals: ["gate_requested", "approval_decided", "stage_change", "stage_rollback", "po_approved"],
-  Money: ["po_raised", "po_approved", "bill_received", "payment", "change_order", "delivery", "invoice", "contract_updated", "contract_received", "cost_item", "retention"],
+  Money: ["po_raised", "po_approved", "bill_received", "payment", "change_order", "delivery", "invoice", "contract_updated", "contract_received", "cost_item", "retention", "expense"],
   Stock: ["stock_movement", "stock_request", "stock_count", "delivery"],
   Field: ["visit", "issue_raised", "issue_closed", "issue", "commissioning", "hse", "warranty"],
   People: ["role_granted", "role_revoked", "note", "project_created", "project_updated", "plan_updated", "commissioning_assigned"],
