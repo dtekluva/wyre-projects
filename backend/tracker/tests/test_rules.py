@@ -8,9 +8,9 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from tracker.errors import ApiError
-from tracker.models import Approval, Asset, Attachment, CostItem, Document, Issue, Project, PurchaseOrder, StockCount, StockLocation, StockMovement, User
+from tracker.models import Approval, Asset, Attachment, ChronologyEvent, CostItem, Document, Issue, Project, PurchaseOrder, Role, StockCount, StockLocation, StockMovement, User
 from tracker import rbac, serializers
-from tracker.services import approvals, billing, documents, field, gates, money, projects, recon, review, stock, tools, voiding
+from tracker.services import alerts, approvals, billing, documents, field, gates, money, projects, recon, review, stock, tools, voiding
 from tracker.services.base import dec
 
 
@@ -647,6 +647,65 @@ class VisitPhotoTest(TestCase):
         it = stock.update_item(u["u_sk"], it.id, {"name": "Face shield (clear)", "unit": "pcs"})
         self.assertEqual(it.name, "Face shield (clear)")
         serializers.item(it)
+
+    def test_stock_requests_fulfilled_by_the_store_is_the_check(self):
+        """Mr. Idris, demo 2026-10-16: the ops team asks for stock and the project updates itself. The requester and
+        the store keeper are two different people, so the hand-over IS the check — no third signature."""
+        u = self.u
+        att = [self.photo(u["u_sk"], "p1", caption="count sheet")]
+        rc = stock.receive_stock(u["u_sk"], {"reason": "opening", "attachmentIds": att, "lines": [
+            {"name": "Request test cable", "qty": 100, "unitCost": 1_500, "unit": "m"},
+            {"name": "Request test inverter", "qty": 2, "unitCost": 900_000, "serials": ["RQ-INV-1", "RQ-INV-2"]}]})
+        for m in rc:
+            review.check(u["u_fin"], "stock_movement", m.id, "checked")
+        cable = rc[0].item; inv = rc[1].item
+        self.err("forbidden", stock.request_stock, u["u_sk"], "p1", {"lines": [{"itemId": cable.id, "qty": 1}]})
+        self.err("invalid", stock.request_stock, u["u_ft1"], "p1", {"lines": []})
+        self.err("invalid", stock.request_stock, u["u_ft1"], "p1", {"lines": [{"itemId": cable.id, "qty": 0}]})
+        r = stock.request_stock(u["u_ft1"], "p1", {"lines": [{"itemId": cable.id, "qty": 40}, {"itemId": cable.id, "qty": 20}, {"itemId": inv.id, "qty": 1}], "note": "String 3"})
+        self.assertEqual(r.status, "requested")
+        self.assertEqual([(l["itemId"], l["qty"]) for l in r.lines], [(cable.id, 60.0), (inv.id, 1.0)], "duplicate lines merge")
+        self.assertEqual(stock.available(cable.id), 100, "a request reserves nothing")
+        m0 = money.money("p1")["actual"]
+        self.err("forbidden", stock.fulfil_request, u["u_ft1"], r.id, {"lines": [{"itemId": cable.id, "qty": 60}]})
+        self.err("forbidden", stock.fulfil_request, u["u_pm1"], r.id, {"lines": [{"itemId": cable.id, "qty": 60}]})
+        self.err("invalid", stock.fulfil_request, u["u_sk"], r.id, {"lines": []})
+        self.err("invalid", stock.fulfil_request, u["u_sk"], r.id, {"lines": [{"itemId": cable.id, "qty": 61}]})
+        self.err("invalid", stock.fulfil_request, u["u_sk"], r.id, {"lines": [{"itemId": inv.id, "qty": 1}]})
+        self.err("invalid", stock.fulfil_request, u["u_sk"], r.id, {"lines": [{"itemId": "it_mccb", "qty": 1}]})
+        r = stock.fulfil_request(u["u_sk"], r.id, {"lines": [{"itemId": cable.id, "qty": 50}, {"itemId": inv.id, "qty": 1, "serials": ["RQ-INV-2"]}], "note": "10 m short — rest Friday"})
+        self.assertEqual(r.status, "fulfilled"); self.assertEqual(len(r.movement_ids), 2)
+        ms = list(StockMovement.objects.filter(pk__in=r.movement_ids))
+        self.assertTrue(all(m.review_status == "checked" and m.checked_by_id == "u_sk" and m.submitted_by_id == "u_ft1" for m in ms), "fulfilment is the check")
+        self.assertEqual(stock.balance_of(cable.id)["qtyOnHand"], 50); self.assertEqual(stock.available(inv.id), 1)
+        self.assertEqual(Asset.objects.get(serial="RQ-INV-2").status, "installed")
+        self.assertEqual(money.money("p1")["actual"], m0 + 50 * 1_500 + 900_000, "the cost lands on the project at once")
+        self.assertEqual(next(l for l in r.lines if l["itemId"] == cable.id)["suppliedQty"], 50)
+        self.err("conflict", stock.fulfil_request, u["u_sk"], r.id, {"lines": [{"itemId": cable.id, "qty": 1}]})
+        # nobody fulfils their own request, whatever roles they stack
+        u["u_pm1"].roles.add(Role.objects.get(code="store_keeper"))
+        own = stock.request_stock(u["u_pm1"], "p1", {"lines": [{"itemId": cable.id, "qty": 5}]})
+        self.err("forbidden", stock.fulfil_request, u["u_pm1"], own.id, {"lines": [{"itemId": cable.id, "qty": 5}]})
+        stock.fulfil_request(u["u_sk"], own.id, {"lines": [{"itemId": cable.id, "qty": 5}]})
+        # decline needs a reason; the requester (or the store) can withdraw
+        r2 = stock.request_stock(u["u_ft1"], "p1", {"lines": [{"itemId": cable.id, "qty": 10}]})
+        self.err("invalid", stock.decline_request, u["u_sk"], r2.id, "")
+        self.err("forbidden", stock.decline_request, u["u_ft1"], r2.id, "nope")
+        r2 = stock.decline_request(u["u_sk"], r2.id, "Out of stock until Friday"); self.assertEqual(r2.status, "declined")
+        r3 = stock.request_stock(u["u_ft1"], "p1", {"lines": [{"itemId": cable.id, "qty": 10}]})
+        self.err("forbidden", stock.cancel_request, u["u_le1"], r3.id)
+        r3 = stock.cancel_request(u["u_ft1"], r3.id); self.assertEqual(r3.status, "cancelled")
+        self.err("conflict", stock.decline_request, u["u_sk"], r3.id, "x")
+        evs = [e.summary for e in ChronologyEvent.objects.filter(project_id="p1", event_type="stock_request")]
+        self.assertTrue(any(s.startswith("Stock requested") for s in evs) and any(s.startswith("Stock handed over") for s in evs))
+        self.assertTrue(any("Short: Request test cable 50/60" in (e.detail or "") for e in ChronologyEvent.objects.filter(project_id="p1", event_type="stock_request")))
+        serializers.stock_request(r); self.assertTrue(any(x["id"] == r.id for x in serializers.snapshot(u["u_ft1"])["stockRequests"]))
+        # the store is told while a request waits, and only then
+        r4 = stock.request_stock(u["u_ft1"], "p1", {"lines": [{"itemId": cable.id, "qty": 5}]})
+        waiting = [a for a in alerts.build() if a.kind == "stock_request_waiting"]
+        self.assertEqual([a.ref["id"] for a in waiting], [r4.id]); self.assertIn("u_sk", waiting[0].recipients)
+        stock.decline_request(u["u_sk"], r4.id, "later")
+        self.assertEqual([a for a in alerts.build() if a.kind == "stock_request_waiting"], [])
 
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u

@@ -18,12 +18,13 @@ import { ProjectMoney } from "./screens/ProjectMoney";
 import { ProjectDetails } from "./screens/ProjectDetails";
 import { ProjectAssets } from "./screens/ProjectAssets";
 import { Inventory } from "./screens/Inventory";
+import { Activity } from "./screens/Activity";
 import { Reconciliation } from "./screens/Reconciliation";
 import { ProjectField } from "./screens/ProjectField";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FieldShell } from "./components/field/FieldShell";
 import { Forgot, SetPassword } from "./screens/SetPassword";
-import { FieldSignin, FieldHome, FieldIssues, FieldIssueNew, FieldIssueDetail, FieldVisits, FieldVisitNew, FieldVan, FieldQueue } from "./screens/field/FieldScreens";
+import { FieldSignin, FieldHome, FieldIssues, FieldIssueNew, FieldIssueDetail, FieldVisits, FieldVisitNew, FieldVan, FieldQueue, FieldStock, FieldStockNew } from "./screens/field/FieldScreens";
 
 export function App() {
   return (
@@ -42,6 +43,8 @@ export function App() {
           <Route path="visits" element={<FieldVisits />} />
           <Route path="visits/new" element={<FieldVisitNew />} />
           <Route path="van" element={<FieldVan />} />
+          <Route path="stock" element={<FieldStock />} />
+          <Route path="stock/new" element={<FieldStockNew />} />
           <Route path="queue" element={<FieldQueue />} />
         </Route>
         <Route element={<Shell />}>
@@ -58,6 +61,7 @@ export function App() {
             <Route path="details" element={<ProjectDetails />} />
           </Route>
           <Route path="work/reviews" element={<ReviewQueue />} />
+          <Route path="work/activity" element={<Activity />} />
           <Route path="work/approvals" element={<Approvals />} />
           <Route path="inventory" element={<Inventory />} />
           <Route path="finance/reconciliation" element={<Reconciliation />} />

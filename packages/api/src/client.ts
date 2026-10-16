@@ -2,7 +2,7 @@
 // Enforces: RBAC (§2), stage gates (§3), actor capture (§4), maker-checker + segregation of duties (§4.13, §5),
 // money & stock rules (§0, §4.4, §4.10, §4.15, §11).
 import { can as canFn, maySelfReview, rolesOn as rolesOnFn, type Permission } from "./rbac";
-import { TOOL_CATEGORIES, type VoidKind } from "./types";
+import { TOOL_CATEGORIES, STOCK_REQUEST_STATUS_LABEL, type VoidKind, type StockRequest, type StockRequestStatus } from "./types";
 import { CONTRACT_STATUS_LABEL, VAT_PAYMENT_METHOD_LABEL, VAT_TREATMENT_LABEL, type ContractStatus, type ClientInvoice, type InvoiceReceipt, type VatPayment, type VatPaymentMethod, type VatTreatment } from "./types";
 import { DEFAULT_VAT_RATE, vatOn } from "./vat";
 import { STAGES } from "./gates";
@@ -83,12 +83,13 @@ export class MockApi {
   hseIncidents: HseIncident[] = clone(seed3.hseIncidents);
   warrantyClaims: WarrantyClaim[] = clone(seed3.warrantyClaims);
   stockCounts: StockCount[] = clone(seed3.stockCounts);
+  stockRequests: StockRequest[] = clone(seed3.stockRequests);
 
   private listeners = new Set<Listener>();
   private seq = 1000;
   private static KEY = "wyre.tracker.state.v3";
   private static PERSISTED = ["projects","memberships","documents","attachments","events","approvals","thresholds",
-    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","extractions","clientInvoices","vatPayments","seq"] as const;
+    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","stockRequests","extractions","clientInvoices","vatPayments","seq"] as const;
 
   /** Synchronous key-value storage (web: localStorage). Native apps hydrate asynchronously via serialize()/hydrate() instead. */
   private storage: { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void } | null =
@@ -1211,6 +1212,86 @@ export class MockApi {
     this.log(input.projectId, actorId, "stock_movement", `Return requested — ${it.name} × ${input.qty} (pending check)`, undefined, { model: "StockMovement", id: m.id });
     this.emit(); return m;
   }
+  // ---- stock requests: the operations team asks, the store keeper hands over, the project updates itself ----
+  listStockRequests(f: { projectId?: string; status?: StockRequestStatus; requestedBy?: string } = {}) {
+    return this.stockRequests.filter((r) => (!f.projectId || r.projectId === f.projectId) && (!f.status || r.status === f.status) && (!f.requestedBy || r.requestedBy === f.requestedBy))
+      .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+  }
+  requestLabel(r: StockRequest) { return r.lines.map((l) => `${this.itemName(l.itemId)} × ${l.qty}`).join(", "); }
+  private stockRequest(id: string) { const r = this.stockRequests.find((x) => x.id === id); if (!r) throw new ApiError("Request not found", "not_found"); return r; }
+  /** Ask the store for stock on a project. No serials, no WAC, nothing reserved — it is a request, and the store keeper
+   *  decides what actually leaves the shelf. Anyone who may request stock on the project (PM, tech) can raise one. */
+  requestStock(actorId: string, projectId: string, input: { lines: { itemId: string; qty: number }[]; note?: string; neededBy?: string }): StockRequest {
+    this.require(actorId, "inventory.request", projectId);
+    const p = this.raw(projectId);
+    if (p.stage >= 8) throw new ApiError("This project is closed", "invalid");
+    const merged = new Map<string, number>();
+    for (const l of input.lines ?? []) {
+      if (!l?.itemId) continue;
+      const it = this.item(l.itemId); const q = Number(l.qty);
+      if (!(q > 0)) throw new ApiError(`${it.name}: quantity must be positive`, "invalid");
+      merged.set(it.id, (merged.get(it.id) ?? 0) + q);
+    }
+    if (!merged.size) throw new ApiError("Ask for at least one item", "invalid");
+    const at = this.now();
+    const r: StockRequest = { id: this.id("sr"), projectId, lines: [...merged].map(([itemId, qty]) => ({ itemId, qty })), note: input.note?.trim() || undefined,
+      neededBy: input.neededBy || undefined, status: "requested", requestedBy: actorId, requestedAt: at, movementIds: [] };
+    this.stockRequests.push(r);
+    this.log(projectId, actorId, "stock_request", `Stock requested — ${this.requestLabel(r)}`, r.note, { model: "StockRequest", id: r.id });
+    this.emit(); return r;
+  }
+  /** The store keeper hands the goods over. This IS the check (§4.13): the requester asked, a different person with
+   *  inventory.write supplied, so each supplied line lands as a CHECKED issue — stock drops, serialised units install,
+   *  the cost posts to the project — with no third signature. Short supply is allowed; nothing at all means decline. */
+  fulfilRequest(actorId: string, requestId: string, input: { lines: { itemId: string; qty: number; serials?: string[] }[]; locationId?: string; note?: string }): StockRequest {
+    this.require(actorId, "inventory.write");
+    const r = this.stockRequest(requestId);
+    if (r.status !== "requested") throw new ApiError(`Already ${STOCK_REQUEST_STATUS_LABEL[r.status].toLowerCase()}`, "conflict");
+    if (r.requestedBy === actorId) throw new ApiError("You cannot fulfil your own request (segregation of duties)", "forbidden");
+    const loc = input.locationId ?? this.mainLocationId() ?? "";
+    const supplied = (input.lines ?? []).filter((l) => l && Number(l.qty) > 0);
+    if (!supplied.length) throw new ApiError("Nothing supplied — decline the request instead", "invalid");
+    const at = this.now(); const made: StockMovement[] = []; const note = input.note?.trim() || undefined;
+    for (const s of supplied) {
+      const line = r.lines.find((l) => l.itemId === s.itemId); if (!line) throw new ApiError(`${this.itemName(s.itemId)} was not requested`, "invalid");
+      const qty = Number(s.qty); if (qty > line.qty) throw new ApiError(`${this.itemName(s.itemId)}: ${qty} supplied but only ${line.qty} requested`, "invalid");
+      const it = this.item(s.itemId);
+      const avail = this.available(it.id, loc); if (qty > avail) throw new ApiError(`Only ${avail} ${it.unit} of ${it.name} available at ${this.locationName(loc)} — no negative stock`, "invalid");
+      const serials = this.validateSerials(it.id, qty, s.serials, loc);
+      const wac = this.wacOf(it.id);
+      const m: StockMovement = { id: this.id("mv"), itemId: it.id, movementType: "issue", qty, locationFromId: loc, unitCost: wac, totalCost: round(qty * wac), projectId: r.projectId,
+        sourceRef: { model: "StockRequest", id: r.id, label: `Request by ${this.userName(r.requestedBy)}${r.note ? ` — ${r.note}` : ""}` }, serials, createdBy: actorId, createdAt: at,
+        reviewStatus: "checked", submittedBy: r.requestedBy, submittedAt: at, checkedBy: actorId, checkedAt: at, checkComment: note, reviewVersion: 1 };
+      this.movements.push(m); made.push(m);
+      line.suppliedQty = qty; line.serials = serials;
+    }
+    for (const l of r.lines) if (l.suppliedQty === undefined) l.suppliedQty = 0;
+    for (const m of made) this.postMovementEffects(m, actorId);
+    r.status = "fulfilled"; r.fulfilledBy = actorId; r.fulfilledAt = at; r.fulfilNote = note; r.movementIds = made.map((m) => m.id);
+    const short = r.lines.filter((l) => (l.suppliedQty ?? 0) < l.qty);
+    this.log(r.projectId, actorId, "stock_request", `Stock handed over — ${made.map((m) => `${this.itemName(m.itemId)} × ${m.qty}`).join(", ")}`,
+      short.length ? `Short: ${short.map((l) => `${this.itemName(l.itemId)} ${l.suppliedQty ?? 0}/${l.qty}`).join(", ")}${note ? ` · ${note}` : ""}` : note, { model: "StockRequest", id: r.id });
+    this.emit(); return r;
+  }
+  declineRequest(actorId: string, requestId: string, reason: string): StockRequest {
+    this.require(actorId, "inventory.write");
+    const r = this.stockRequest(requestId);
+    if (r.status !== "requested") throw new ApiError(`Already ${STOCK_REQUEST_STATUS_LABEL[r.status].toLowerCase()}`, "conflict");
+    const why = reason?.trim(); if (!why) throw new ApiError("Say why the request is declined", "invalid");
+    r.status = "declined"; r.declineReason = why; r.resolvedBy = actorId; r.resolvedAt = this.now();
+    this.log(r.projectId, actorId, "stock_request", `Stock request declined — ${this.requestLabel(r)}`, why, { model: "StockRequest", id: r.id });
+    this.emit(); return r;
+  }
+  /** The requester changes their mind, or the store tidies up. */
+  cancelRequest(actorId: string, requestId: string): StockRequest {
+    const r = this.stockRequest(requestId);
+    if (r.status !== "requested") throw new ApiError(`Already ${STOCK_REQUEST_STATUS_LABEL[r.status].toLowerCase()}`, "conflict");
+    if (r.requestedBy !== actorId && !this.can(actorId, "inventory.write")) throw new ApiError("Only the requester or the store can withdraw a request", "forbidden");
+    r.status = "cancelled"; r.resolvedBy = actorId; r.resolvedAt = this.now();
+    this.log(r.projectId, actorId, "stock_request", `Stock request withdrawn — ${this.requestLabel(r)}`, undefined, { model: "StockRequest", id: r.id });
+    this.emit(); return r;
+  }
+
   /** On check of an issue / return: assets move, project actual posts (issue = cost, return = credit). */
   private postMovementEffects(m: StockMovement, actorId: string) {
     const at = this.now(); const it = this.item(m.itemId);

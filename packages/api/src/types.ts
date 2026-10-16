@@ -137,7 +137,7 @@ export type EventType =
   | "role_granted" | "role_revoked" | "commissioning_assigned" | "note"
   | "stock_movement" | "cost_item" | "retention" | "reconciliation"
   | "issue" | "commissioning" | "hse" | "warranty" | "stock_count"
-  | "contract_updated" | "contract_received" | "invoice" | "plan_updated" | "void" | "stage_rollback" | "project_updated";
+  | "contract_updated" | "contract_received" | "invoice" | "plan_updated" | "void" | "stage_rollback" | "project_updated" | "stock_request";
 
 export interface ChronologyEvent {
   id: string; projectId: string; occurredAt: string; actorId: string; eventType: EventType;
@@ -158,7 +158,7 @@ export interface Approval {
 
 export type NotificationKind =
   | "document_expiring" | "document_expired" | "check_overdue" | "approval_pending" | "gate_ready"
-  | "issue_sla_breach" | "budget_warn" | "budget_over" | "stock_below_reorder" | "qb_unmatched";
+  | "issue_sla_breach" | "budget_warn" | "budget_over" | "stock_below_reorder" | "qb_unmatched" | "stock_request_waiting";
 export interface AppNotification {
   id: string; kind: NotificationKind | string; severity: "critical" | "warning" | "info";
   title: string; body: string; link: string; projectId?: string | null;
@@ -236,6 +236,20 @@ export interface StockMovement extends ReviewFields, VoidFields {
   serials?: string[]; attachmentIds?: string[]; createdBy: string; createdAt: string; approvalId?: string;
 }
 export interface StockBalance { itemId: string; locationId: string; qtyOnHand: number; wacUnitCost: number; value: number; lastMovementAt?: string; belowReorder: boolean }
+
+export type StockRequestStatus = "requested" | "fulfilled" | "declined" | "cancelled";
+export const STOCK_REQUEST_STATUS_LABEL: Record<StockRequestStatus, string> = { requested: "Waiting for the store", fulfilled: "Handed over", declined: "Declined", cancelled: "Withdrawn" };
+/** One line of a request: what was asked for and, once the store keeper acts, what was actually supplied. */
+export interface StockRequestLine { itemId: string; qty: number; suppliedQty?: number; serials?: string[] }
+/** The operations team asking the store for stock on a project. Not a ledger row: nothing moves and nothing is
+ *  reserved until the store keeper fulfils it — and that fulfilment IS the check (§4.13), because the requester and
+ *  the person handing the goods over are already two different people. Each supplied line lands as a CHECKED issue. */
+export interface StockRequest {
+  id: string; projectId: string; lines: StockRequestLine[]; note?: string; neededBy?: string;
+  status: StockRequestStatus; requestedBy: string; requestedAt: string;
+  fulfilledBy?: string; fulfilledAt?: string; fulfilNote?: string; movementIds: string[];
+  declineReason?: string; resolvedBy?: string; resolvedAt?: string;
+}
 
 export type ActualSource = "goods_receipt" | "issue" | "return" | "visit" | "change_order" | "bill" | "payment" | "warranty";
 /** Unified actuals ledger (spec §4.10). Only produced by checked / approved events. */

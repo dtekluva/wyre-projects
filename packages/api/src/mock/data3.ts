@@ -1,5 +1,5 @@
 // Phase 3 seed — field & quality: vehicle location, transfers, visits, issues, commissioning, HSE, warranty, stock count.
-import type { StockLocation, StockMovement, Attachment, SiteVisit, Issue, CommissioningRecord, HseIncident, WarrantyClaim, StockCount, ReviewStatus } from "../types";
+import type { StockLocation, StockMovement, Attachment, SiteVisit, Issue, CommissioningRecord, HseIncident, WarrantyClaim, StockCount, StockRequest, ReviewStatus } from "../types";
 import { type ClientInvoice, type VatPayment, type AuditFields, type ReviewFields, COMMISSIONING_TEMPLATE } from "../types";
 import { NOW } from "./data";
 import { assets as assets2 } from "./data2";
@@ -110,6 +110,11 @@ export const warrantyClaims: WarrantyClaim[] = [
 
 // ---------------- stock count (warehouse, open) ----------------
 const line = (itemId: string, expectedQty: number, countedQty: number | null = null, note?: string) => ({ itemId, expectedQty, countedQty, variance: countedQty === null ? 0 : countedQty - expectedQty, note });
+// A request the store has not acted on yet — the demo's Requests waiting card has something to show.
+export const stockRequests: StockRequest[] = [
+  { id: "sr1", projectId: "p1", lines: [{ itemId: "it_mc4", qty: 20 }, { itemId: "it_cable", qty: 60 }], note: "String 3 re-termination — Sango",
+    status: "requested", requestedBy: "u_ft1", requestedAt: d(0, 8), movementIds: [] },
+];
 export const stockCounts: StockCount[] = [
   { id: "sc1", locationId: "loc_wh", countDate: d(1).slice(0, 10), countedBy: "u_sk", status: "open", varianceValue: 0, notes: "Month-end count — in progress",
     lines: [line("it_panel", 230), line("it_bat16", 3), line("it_meter", 4), line("it_ct", 16), line("it_cable", 1020, 1020), line("it_mc4", 220, 212, "8 pairs used on Sango string 3 not booked"), line("it_rail", 80, 80), line("it_fuse", 50, 52), line("it_mccb", 0), line("it_inv50", 0), line("it_inv80", 0)],

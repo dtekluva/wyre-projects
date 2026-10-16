@@ -14,6 +14,8 @@ export type Command =
   | { kind: "set_issue_status"; actorId: string; issueId: string; status: "in_progress" | "awaiting_parts" }
   | { kind: "add_issue_photos"; actorId: string; issueId: string; projectId: string; photos: Photo[] }
   | { kind: "resolve_issue"; actorId: string; issueId: string; projectId: string; photos: Photo[]; input: { rootCause: string; resolution: string; costToResolve: number } }
+  | { kind: "cancel_request"; actorId: string; requestId: string }
+  | { kind: "request_stock"; actorId: string; projectId: string; input: { lines: { itemId: string; qty: number }[]; note?: string; neededBy?: string } }
   | { kind: "log_visit"; actorId: string; projectId: string; photos: Photo[]; signature?: { name: string; rating?: number; fileName: string; blob?: Blob };
       input: { visitType: string; startedAt: string; endedAt: string; findings: string; actionsTaken: string; costTravel: number; costLabour: number; locationId: string; parts: { itemId: string; qty: number }[]; gps?: { lat: number; lng: number }; offlineCapturedAt?: string } };
 
@@ -56,6 +58,8 @@ export function applyCommand(api: MockApi, c: Command) {
   switch (c.kind) {
     case "raise_issue": { const ids = photos(c.projectId, c.actorId, c.photos); return api.raiseIssue(c.actorId, c.projectId, { ...c.input, category: c.input.category as never, severity: c.input.severity as never, beforeAttachmentIds: ids }); }
     case "set_issue_status": return api.setIssueStatus(c.actorId, c.issueId, c.status, c.actorId);
+    case "request_stock": return api.requestStock(c.actorId, c.projectId, c.input);
+    case "cancel_request": return api.cancelRequest(c.actorId, c.requestId);
     case "add_issue_photos": { const ids = photos(c.projectId, c.actorId, c.photos); return api.addIssuePhotos(c.actorId, c.issueId, { attachmentIds: ids }); }
     case "resolve_issue": { const ids = photos(c.projectId, c.actorId, c.photos); return api.resolveIssue(c.actorId, c.issueId, { ...c.input, afterAttachmentIds: ids }); }
     case "log_visit": {

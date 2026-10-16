@@ -89,6 +89,10 @@ def id_sc():
     return _nid("sc")
 
 
+def id_sr():
+    return _nid("sr")
+
+
 def id_ntf():
     return _nid("ntf")
 
@@ -693,3 +697,25 @@ class StockCount(Audit):
     approval = models.ForeignKey(Approval, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     notes = models.TextField(blank=True, null=True)
     variance_value = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+
+
+class StockRequest(models.Model):
+    """The operations team asking the store for stock on a project. Not a ledger row: nothing moves and nothing is
+    reserved until the store keeper fulfils it — and that fulfilment IS the check (§4.13), because the requester and
+    the person handing the goods over are already two different people. Each supplied line lands as a CHECKED issue."""
+    STATUS = [("requested", "Waiting for the store"), ("fulfilled", "Handed over"), ("declined", "Declined"), ("cancelled", "Withdrawn")]
+    id = models.CharField(primary_key=True, max_length=40, default=id_sr)
+    project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="stock_requests")
+    lines = models.JSONField(default=list)          # [{itemId, qty, suppliedQty?, serials?}]
+    note = models.TextField(blank=True, null=True)
+    needed_by = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS, default="requested")
+    requested_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
+    requested_at = models.DateTimeField(db_index=True)
+    fulfilled_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    fulfilled_at = models.DateTimeField(null=True, blank=True)
+    fulfil_note = models.TextField(blank=True, null=True)
+    movement_ids = models.JSONField(default=list)
+    decline_reason = models.TextField(blank=True, null=True)
+    resolved_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    resolved_at = models.DateTimeField(null=True, blank=True)

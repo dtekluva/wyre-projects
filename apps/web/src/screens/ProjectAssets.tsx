@@ -6,13 +6,15 @@ import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
 import { Badge, Empty, Note, ReviewBadge } from "../components/ui";
 import { VoidControl, VoidedNote } from "../components/VoidControl";
+import { ProjectRequests, RequestForm } from "../components/StockRequests";
 
 const ASSET_BADGE = { in_stock: "neutral", installed: "success", faulty: "danger", replaced: "warning", decommissioned: "neutral" } as const;
 
 export function ProjectAssets() {
   const p = useOutletContext<Project>(); const api = useApi(); const { user } = useAuth(); const safe = useSafe();
   const assets = api.listAssets({ projectId: p.id }); const mv = api.listMovements({ projectId: p.id });
-  const canIssue = api.can(user.id, "inventory.write") || api.can(user.id, "inventory.request", p.id);
+  const isStore = api.can(user.id, "inventory.write"); const canRequest = api.can(user.id, "inventory.request", p.id);
+  const canIssue = isStore || canRequest;
   const [itemId, setItemId] = useState(api.items[0]?.id ?? ""); const [qty, setQty] = useState("1"); const [sel, setSel] = useState<string[]>([]); const [label, setLabel] = useState("");
   const it = itemId ? api.item(itemId) : undefined; const avail = it ? api.available(it.id) : 0; const serialsInStock = it?.isSerialised ? api.inStockSerials(it.id) : [];
   const [rItem, setRItem] = useState(""); const [rQty, setRQty] = useState("1"); const [rSel, setRSel] = useState<string[]>([]); const [rWhy, setRWhy] = useState("");
@@ -27,7 +29,12 @@ export function ProjectAssets() {
           : <div className="card__body"><Empty title="No assets installed yet" hint="Assets appear here when serialised stock is issued to the project and checked." /></div>}</div>
 
       <div className="workspace" style={{ gridTemplateColumns: "1fr 1fr" }}>
-        <div className="card"><div className="card__head"><div className="card__title">Issue stock to this project</div><span className="sm muted">→ PM / Finance check</span></div>
+        {/* Two doors into the same ledger. The store keeper issues directly (someone else checks). Everyone else
+            asks — no serials, no WAC — and the store's hand-over is the check. */}
+        {!isStore && canRequest
+          ? <div className="card"><div className="card__head"><div className="card__title">Request stock from the store</div><span className="sm muted">the store keeper hands over · that is the check</span></div>
+              <div className="card__body"><RequestForm projectId={p.id} /></div></div>
+          : <div className="card"><div className="card__head"><div className="card__title">Issue stock to this project</div><span className="sm muted">→ Tech Lead / Finance check</span></div>
           <div className="card__body">{canIssue ? <form className="stack" onSubmit={(e) => { e.preventDefault(); if (safe(() => { api.issueStock(user.id, { itemId, qty: it?.isSerialised ? sel.length : Number(qty), projectId: p.id, serials: sel, label }); }, "Issue submitted — pending check")) { setSel([]); setLabel(""); } }}>
             <label className="ns-field"><span className="ns-field__label">Item</span><select className="ns-input" value={itemId} onChange={(e) => { setItemId(e.target.value); setSel([]); }}>{api.items.map((i) => <option key={i.id} value={i.id}>{i.name} — {api.available(i.id)} {i.unit} @ {naira(api.wacOf(i.id))}</option>)}</select></label>
             {it?.isSerialised ? <label className="ns-field"><span className="ns-field__label">Serials in stock ({serialsInStock.length}) — select {sel.length}</span>
@@ -35,7 +42,7 @@ export function ProjectAssets() {
               : <label className="ns-field"><span className="ns-field__label">Quantity ({it?.unit}) · {avail} available</span><input className="ns-input" type="number" min={1} max={avail} value={qty} onChange={(e) => setQty(e.target.value)} /></label>}
             <label className="ns-field"><span className="ns-field__label">Pick list / reason</span><input className="ns-input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Strings 1–3" /></label>
             <div><button className="ns-btn ns-btn--primary" type="submit">Issue @ WAC {naira(it ? api.wacOf(it.id) : 0)}</button></div>
-          </form> : <Note tone="warn">Only a Store Keeper, or a PM / Field Tech on this project, can request stock.</Note>}</div></div>
+          </form> : <Note tone="warn">Only a Store Keeper, or a PM / Field Tech on this project, can request stock.</Note>}</div></div>}
         <div className="card"><div className="card__head"><div className="card__title">Return unused stock</div><span className="sm muted">credits the project</span></div>
           <div className="card__body">{canIssue ? <form className="stack" onSubmit={(e) => { e.preventDefault(); if (safe(() => { const ri = api.item(rItem); api.returnStock(user.id, { itemId: rItem, qty: ri.isSerialised ? rSel.length : Number(rQty), projectId: p.id, serials: rSel, reason: rWhy }); }, "Return submitted — pending check")) { setRSel([]); setRWhy(""); } }}>
             <label className="ns-field"><span className="ns-field__label">Item</span><select className="ns-input" value={rItem} onChange={(e) => { setRItem(e.target.value); setRSel([]); }}><option value="">—</option>{api.items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
@@ -47,6 +54,9 @@ export function ProjectAssets() {
             {installedItems.length === 0 && <span className="sm muted">Nothing installed to return.</span>}
           </form> : <Note tone="warn">Not allowed for your role.</Note>}</div></div>
       </div>
+
+      <div className="card"><div className="card__head"><div className="card__title">Stock requests</div><span className="sm muted">{api.listStockRequests({ projectId: p.id, status: "requested" }).length} waiting for the store</span></div>
+        <div className="card__body"><ProjectRequests projectId={p.id} /></div></div>
 
       <div className="card table--wrap"><div className="card__head"><div className="card__title">Stock movements for this project</div><span className="sm muted">{mv.length} · ledger is append-only</span></div>
         {mv.length ? <table className="table ledger"><thead><tr><th>When</th><th>Type</th><th>Item</th><th className="num">Qty</th><th className="num">Unit (WAC)</th><th className="num">Total</th><th>By</th><th>Status</th></tr></thead>

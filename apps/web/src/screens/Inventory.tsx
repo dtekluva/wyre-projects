@@ -1,9 +1,11 @@
 import { useRef, useState } from "react";
 import { FilePick, type Pick } from "../components/FilePick";
-import { CATEGORY_GROUPS, CATEGORY_LABEL, MOVEMENT_LABEL, TOOL_CATEGORIES, fmtDate, guessCategory, naira, relative, sectionFiles, type AssetType, type MovementType, type StockCount } from "@wyre/api";
+import { CATEGORY_GROUPS, CATEGORY_LABEL, MOVEMENT_LABEL, TOOL_CATEGORIES, fmtDate, guessCategory, inRange, naira, relative, sectionFiles, type AssetType, type MovementType, type StockCount } from "@wyre/api";
 import { FileGallery } from "../components/FileGallery";
 import { VoidControl, VoidedNote } from "../components/VoidControl";
 import { ToolsCard } from "../components/ToolsCard";
+import { StockRequestsCard } from "../components/StockRequests";
+import { DateRangePicker, useDateRange } from "../components/DateRange";
 import { useApi } from "../lib/useApi";
 import { useWaitFor } from "../lib/useWaitFor";
 import { useAuth } from "../lib/auth";
@@ -17,7 +19,8 @@ export function Inventory() {
   const mainLoc = api.mainLocationId();
   const bal = api.balances().filter((b) => b.locationId === mainLoc); const sv = api.stockValue();
   const [focus, setFocus] = useState<string>(""); const [type, setType] = useState<"" | MovementType>("");
-  const mv = api.listMovements({ itemId: focus || undefined, type: type || undefined }).slice(0, 60);
+  const dr = useDateRange("all");
+  const mv = api.listMovements({ itemId: focus || undefined, type: type || undefined }).filter((m) => inRange(m.createdAt, dr.range)).slice(0, dr.preset === "all" ? 60 : 500);
   const pending = api.listMovements({ status: "pending" }).filter((m) => !m.voidedAt).length; const below = bal.filter((b) => b.belowReorder).length;
   const canWrite = api.can(user.id, "inventory.write");
   const [wItem, setWItem] = useState(api.items[0]?.id ?? ""); const [wQty, setWQty] = useState("1"); const [wSel, setWSel] = useState<string[]>([]); const [wWhy, setWWhy] = useState(""); const [wFile, setWFile] = useState<Pick[]>([]);
@@ -42,6 +45,7 @@ export function Inventory() {
         {Object.entries(sv.byCategory).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([c, v]) => <Kpi key={c} label={`Value · ${CATEGORY_LABEL[c] ?? c}`} value={naira(v, true)} />)}
       </div>
 
+      <StockRequestsCard />
       <ReceiveFromNote />
       <ToolsCard />
       <div className="card table--wrap"><div className="card__head"><div className="card__title">Stock on hand</div><span className="sm muted">click a row to filter the ledger</span></div>
@@ -96,6 +100,7 @@ export function Inventory() {
 
       <div className="workspace" style={{ gridTemplateColumns: "2fr 1fr", marginTop: 20 }}>
         <div className="card table--wrap"><div className="card__head"><div className="card__title">Stock ledger {focus && <span className="muted">· {api.itemName(focus)}</span>}</div>
+          <DateRangePicker state={dr} presets={["today", "week", "30d", "all", "custom"]} compact />
           <select className="ns-input" style={{ width: "auto" }} value={type} onChange={(e) => setType(e.target.value as "" | MovementType)}><option value="">All types</option>{(Object.keys(MOVEMENT_LABEL) as MovementType[]).map((t) => <option key={t} value={t}>{MOVEMENT_LABEL[t]}</option>)}</select></div>
           {mv.length ? <table className="table ledger"><thead><tr><th>When</th><th>Type</th><th>Item</th><th className="num">Qty</th><th className="num">Unit</th><th className="num">Total</th><th>Project</th><th>Ref</th><th>Status</th></tr></thead>
             <tbody>{mv.map((m) => <tr key={m.id} className={m.voidedAt ? "voided" : ""}><td className="sm">{relative(m.createdAt)}</td><td><Badge variant={m.movementType === "receipt" ? "success" : m.movementType === "issue" ? "info" : m.movementType === "write_off" ? "danger" : "warning"}>{MOVEMENT_LABEL[m.movementType]}</Badge></td>

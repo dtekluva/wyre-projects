@@ -19,7 +19,7 @@ from django.utils import timezone
 from .. import rbac
 from ..constants import DOC_TYPE_LABEL, MOVEMENT_LABEL
 from ..gates import STAGES
-from ..models import (Approval, CommissioningRecord, Document, InventoryItem, Issue, Notification, Project, ProjectMembership, QbBill, StockLocation, User)
+from ..models import (Approval, CommissioningRecord, Document, InventoryItem, Issue, Notification, Project, ProjectMembership, QbBill, StockLocation, StockRequest, User)
 from . import base as b
 from . import approvals as approvals_svc
 from . import gates as gates_svc
@@ -191,6 +191,17 @@ def build() -> list[Alert]:
                          f"Reorder level {it.reorder_level:g} · suggested order {it.reorder_qty:g}",
                          "/inventory", None, {"model": "InventoryItem", "id": it.id},
                          f"stock_reorder:{it.id}", _with_role(users, "store_keeper") + _with_role(users, "finance")))
+
+    # ---- stock requests waiting for the store ------------------------------------------------------------
+    # The person who physically hands goods over is the one who needs to know; the requester sees the status
+    # on the request itself. Derived, so it withdraws itself the moment the request is fulfilled or declined.
+    for r in StockRequest.objects.filter(status="requested").select_related("project"):
+        age = (now - r.requested_at).days
+        p = r.project
+        out.append(Alert("stock_request_waiting", "warning" if age >= 1 else "info",
+                         f"Stock request waiting {age} d" if age else "Stock request waiting",
+                         f"{p.code} · {stock_svc.request_label(r)} — asked by {b.user_name(r.requested_by_id)}",
+                         "/inventory", p.id, {"model": "StockRequest", "id": r.id}, f"stock_request:{r.id}", _with_role(users, "store_keeper")))
 
     # ---- bills that have not been reconciled ----------------------------------------------------------------
     unmatched = [row for row in __import__("tracker.services.recon", fromlist=["list_qb_bills"]).list_qb_bills() if row["confidence"] != "matched"]

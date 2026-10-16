@@ -45,6 +45,7 @@ export function FieldShell() {
           <NavLink to="/field" end className={({ isActive }) => `tabbar__item ${isActive ? "tabbar__item--on" : ""}`}><span>⌂</span>Home</NavLink>
           <NavLink to="/field/issues" className={({ isActive }) => `tabbar__item ${isActive ? "tabbar__item--on" : ""}`}><span>⚠</span>Issues</NavLink>
           <NavLink to="/field/visits" className={({ isActive }) => `tabbar__item ${isActive ? "tabbar__item--on" : ""}`}><span>🛠</span>Visits</NavLink>
+          <NavLink to="/field/stock" className={({ isActive }) => `tabbar__item ${isActive ? "tabbar__item--on" : ""}`}><span>📦</span>Stock</NavLink>
           <NavLink to="/field/van" className={({ isActive }) => `tabbar__item ${isActive ? "tabbar__item--on" : ""}`}><span>🚐</span>Van</NavLink>
         </nav>
       </div>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ISSUE_STATUS_LABEL, ROLE_LABEL, VISIT_TYPE_LABEL, fmtDate, naira, relative, type IssueCategory, type IssueSeverity, type VisitType } from "@wyre/api";
+import { ISSUE_STATUS_LABEL, ROLE_LABEL, STOCK_REQUEST_STATUS_LABEL, VISIT_TYPE_LABEL, fmtDate, naira, relative, type IssueCategory, type IssueSeverity, type StockRequestStatus, type VisitType } from "@wyre/api";
 import { Thumbs } from "../../components/Thumbs";
 import { VisitDetail } from "../../components/VisitDetail";
 import { useApi } from "../../lib/useApi";
@@ -66,6 +66,7 @@ export function FieldHome() {
       </Link>
     ))}
     <div className="fgrid"><Link to="/field/issues/new" className="ns-btn ns-btn--primary ns-btn--block">＋ New issue</Link><Link to="/field/visits/new" className="ns-btn ns-btn--secondary ns-btn--block">＋ Log a visit</Link></div>
+    <Link to="/field/stock/new" className="ns-btn ns-btn--secondary ns-btn--block">📦 Request stock from the store</Link>
     <h2 className="field__h2">Projects</h2>
     {[...mine].sort((a, b) => Number(assigned.has(b.id)) - Number(assigned.has(a.id))).map((p) => <Link key={p.id} to={`/field/issues?p=${p.id}`} className="frow frow--col">
       <span className="row" style={{ gap: 8 }}><RagDot rag={p.rag} /><b className="grow">{p.name}</b></span>
@@ -207,4 +208,50 @@ export function FieldQueue() {
     {queue.length ? queue.map((q) => <div key={q.id} className="frow frow--col"><span className="row" style={{ justifyContent: "space-between" }}><b>{q.label}</b><Badge variant={q.status === "failed" ? "danger" : "warning"}>{q.status}</Badge></span><span className="sm muted">{relative(q.createdAt)}{q.error ? ` · ${q.error}` : ""}</span>
       {q.status === "failed" && <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => outbox.remove(q.id)}>Discard</button>}</div>) : <Empty title="Queue is empty" />}
     <button className="ns-btn ns-btn--primary ns-btn--block" disabled={!online || !queue.length} onClick={() => flush()}>Sync now</button></div>;
+}
+
+const REQ_VARIANT: Record<StockRequestStatus, "warning" | "success" | "danger" | "neutral"> = { requested: "warning", fulfilled: "success", declined: "danger", cancelled: "neutral" };
+
+/** My stock requests across my projects — what is still waiting, what the store said. */
+export function FieldStock() {
+  const api = useApi(); const { user } = useAuth(); const mine = useMine(); const plabel = useProjectLabel(); const { submit } = useField();
+  const ids = new Set(mine.map((p) => p.id));
+  const list = api.listStockRequests().filter((r) => ids.has(r.projectId)).sort((a, b) => Number(b.status === "requested") - Number(a.status === "requested") || b.requestedAt.localeCompare(a.requestedAt));
+  return <div className="stack"><h1 className="field__title">Stock requests</h1>
+    {list.length ? list.map((r) => <div key={r.id} className="frow frow--col">
+      <span className="row" style={{ justifyContent: "space-between" }}><b className="ellipsis">{plabel(r.projectId).name}</b><Badge variant={REQ_VARIANT[r.status]}>{STOCK_REQUEST_STATUS_LABEL[r.status]}</Badge></span>
+      <span className="sm">{r.lines.map((l) => `${api.itemName(l.itemId)} × ${r.status === "fulfilled" ? `${l.suppliedQty ?? 0}/${l.qty}` : l.qty}`).join(" · ")}</span>
+      <span className="sm muted">{api.userName(r.requestedBy)} · {relative(r.requestedAt)}{r.note ? ` · ${r.note}` : ""}</span>
+      {r.status === "fulfilled" && <span className="sm muted">Handed over by {api.userName(r.fulfilledBy)}{r.fulfilNote ? ` — “${r.fulfilNote}”` : ""}</span>}
+      {r.status === "declined" && <span className="sm note--danger">Declined — “{r.declineReason}”</span>}
+      {r.status === "requested" && r.requestedBy === user.id && <button className="ns-btn ns-btn--ghost ns-btn--sm" style={{ alignSelf: "flex-start" }} onClick={() => submit("Request withdrawn", { kind: "cancel_request", actorId: user.id, requestId: r.id })}>Withdraw</button>}
+    </div>) : <Empty title="No stock requests yet" hint="Ask the store for what you need on site — they hand over and the project updates itself." />}
+    <Link to="/field/stock/new" className="fab" aria-label="Request stock">＋</Link></div>;
+}
+
+/** Ask the store for stock from the site. Tap what you need; no serials, no prices — the store decides what leaves the shelf. */
+export function FieldStockNew() {
+  const api = useApi(); const { user } = useAuth(); const mine = useMine(); const plabel = useProjectLabel(); const { submit } = useField(); const nav = useNavigate();
+  const [pid, setPid] = useState(mine[0]?.id ?? ""); const [q, setQ] = useState(""); const [want, setWant] = useState<Record<string, number>>({}); const [note, setNote] = useState("");
+  const items = api.items.filter((it) => it.isActive !== false && (!q.trim() || it.name.toLowerCase().includes(q.trim().toLowerCase()) || it.sku.toLowerCase().includes(q.trim().toLowerCase())));
+  const chosen = Object.entries(want).filter(([, n]) => n > 0);
+  const go = () => {
+    const r = submit(`Stock requested — ${chosen.length} item${chosen.length === 1 ? "" : "s"}`, { kind: "request_stock", actorId: user.id, projectId: pid,
+      input: { lines: chosen.map(([itemId, qty]) => ({ itemId, qty })), note: note.trim() || undefined } });
+    if (r !== "error") nav("/field/stock");
+  };
+  return <div className="stack">
+    <h1 className="field__title">Request stock</h1>
+    <label className="flabel">Project</label><Chips value={pid} options={mine.map((p) => p.id)} onChange={setPid} label={(id) => <span className="chip__stack"><b>{plabel(id).name}</b><span className="chip__code ns-mono">{plabel(id).code}</span></span>} />
+    <input className="ns-input fld" placeholder="Find an item…" value={q} onChange={(e) => setQ(e.target.value)} />
+    {items.slice(0, 40).map((it) => { const n = want[it.id] ?? 0; const av = api.available(it.id); return <div key={it.id} className={`stepper ${n ? "stepper--on" : ""}`}>
+      <span className="grow"><b>{it.name}</b><span className="sm muted"> · {av} {it.unit} in store</span></span>
+      <button type="button" onClick={() => setWant((w) => ({ ...w, [it.id]: Math.max(0, (w[it.id] ?? 0) - 1) }))} aria-label={`Less ${it.name}`}>−</button><span className="ns-mono">{n}</span><button type="button" onClick={() => setWant((w) => ({ ...w, [it.id]: (w[it.id] ?? 0) + 1 }))} aria-label={`More ${it.name}`}>＋</button>
+    </div>; })}
+    {items.length > 40 && <div className="sm muted">Showing 40 — type to narrow it down.</div>}
+    <textarea className="ns-textarea fld" placeholder="What it is for (optional) — e.g. strings 1–3, east roof" value={note} onChange={(e) => setNote(e.target.value)} />
+    {chosen.length > 0 && <div className="fnote">{chosen.map(([id, n]) => `${api.itemName(id)} × ${n}`).join(" · ")}</div>}
+    <button className="ns-btn ns-btn--primary ns-btn--block ns-btn--lg" disabled={!pid || !chosen.length} onClick={go}>Send to the store</button>
+    <div className="sm muted">The store keeper hands over and the project updates itself. You will see the status under Stock.</div>
+  </div>;
 }

@@ -12,7 +12,7 @@ from django.db import transaction
 from .. import rbac
 from ..errors import ApiError
 from ..constants import ASSET_TYPES
-from ..models import Actual, Approval, Asset, InventoryItem, StockCount, StockLocation, StockMovement, User, Vendor
+from ..models import Actual, Approval, Asset, InventoryItem, StockCount, StockLocation, StockMovement, StockRequest, User, Vendor
 from . import base as b
 
 
@@ -547,3 +547,121 @@ def receive_stock(actor: User, input: dict) -> list[StockMovement]:
                               source_ref={"model": "DirectReceipt", "label": reason})
         out.append(m)
     return out
+
+
+# ------------------------------------------------------------------ stock requests
+REQUEST_STATUS_LABEL = {"requested": "Waiting for the store", "fulfilled": "Handed over", "declined": "Declined", "cancelled": "Withdrawn"}
+
+
+def _request(request_id: Optional[str]) -> StockRequest:
+    return b.get_or_404(StockRequest, request_id, "Request")
+
+
+def request_label(r: StockRequest) -> str:
+    return ", ".join(f"{b.item_name(l['itemId'])} × {b.dec(l['qty']).normalize():f}" for l in r.lines)
+
+
+@transaction.atomic
+def request_stock(actor: User, project_id: Optional[str], input: dict) -> StockRequest:
+    """Ask the store for stock on a project. No serials, no WAC, nothing reserved — it is a request, and the store
+    keeper decides what actually leaves the shelf. Anyone who may request stock on the project (PM, tech) can raise one."""
+    b.require(actor, "inventory.request", project_id)
+    p = b.project(project_id)
+    if p.stage >= 8:
+        raise ApiError("This project is closed", "invalid")
+    merged: dict[str, Decimal] = {}
+    for l in (input.get("lines") or []):
+        if not l or not l.get("itemId"):
+            continue
+        it = b.item(l["itemId"]); q = b.dec(l.get("qty"))
+        if not q > 0:
+            raise ApiError(f"{it.name}: quantity must be positive", "invalid")
+        merged[it.id] = merged.get(it.id, Decimal(0)) + q
+    if not merged:
+        raise ApiError("Ask for at least one item", "invalid")
+    at = b.now()
+    needed = b.to_date(input.get("neededBy"), "needed-by date") if input.get("neededBy") else None
+    r = StockRequest.objects.create(**b.maybe_id(input, StockRequest, "sr"), project=p, lines=[{"itemId": k, "qty": float(v)} for k, v in merged.items()],
+                                    note=b.clean(input.get("note")) or None, needed_by=needed, status="requested",
+                                    requested_by=actor, requested_at=at, movement_ids=[])
+    b.log(project_id, actor, "stock_request", f"Stock requested — {request_label(r)}", r.note, {"model": "StockRequest", "id": r.id})
+    return r
+
+
+@transaction.atomic
+def fulfil_request(actor: User, request_id: Optional[str], input: dict) -> StockRequest:
+    """The store keeper hands the goods over. This IS the check (§4.13): the requester asked, a different person with
+    inventory.write supplied, so each supplied line lands as a CHECKED issue — stock drops, serialised units install,
+    the cost posts to the project — with no third signature. Short supply is allowed; nothing at all means decline."""
+    b.require(actor, "inventory.write")
+    r = _request(request_id)
+    if r.status != "requested":
+        raise ApiError(f"Already {REQUEST_STATUS_LABEL[r.status].lower()}", "conflict")
+    if r.requested_by_id == actor.id:
+        raise ApiError("You cannot fulfil your own request (segregation of duties)", "forbidden")
+    loc = b.location(input.get("locationId"))
+    supplied = [l for l in (input.get("lines") or []) if l and b.dec(l.get("qty")) > 0]
+    if not supplied:
+        raise ApiError("Nothing supplied — decline the request instead", "invalid")
+    at = b.now(); made: list[StockMovement] = []; lines = [dict(l) for l in r.lines]
+    note = b.clean(input.get("note")) or None
+    for s in supplied:
+        line = next((l for l in lines if l["itemId"] == s.get("itemId")), None)
+        if line is None:
+            raise ApiError(f"{b.item_name(s.get('itemId'))} was not requested", "invalid")
+        qty = b.dec(s.get("qty")); asked = b.dec(line["qty"])
+        if qty > asked:
+            raise ApiError(f"{b.item_name(line['itemId'])}: {qty.normalize():f} supplied but only {asked.normalize():f} requested", "invalid")
+        it = b.item(line["itemId"])
+        avail = available(it.id, loc.id)
+        if qty > avail:
+            raise ApiError(f"Only {avail.normalize():f} {it.unit} of {it.name} available at {loc.name} — no negative stock", "invalid")
+        serials = validate_serials(it, qty, s.get("serials"), loc.id)
+        wac = wac_of(it.id)
+        m = StockMovement(created_by=actor, created_at=at, item=it, movement_type="issue", qty=qty, location_from=loc, unit_cost=wac,
+                          total_cost=b.round2(qty * wac), project_id=r.project_id,
+                          source_ref={"model": "StockRequest", "id": r.id, "label": f"Request by {b.user_name(r.requested_by_id)}" + (f" — {r.note}" if r.note else "")},
+                          serials=serials, review_status="checked", submitted_by=r.requested_by, submitted_at=at, checked_by=actor, checked_at=at,
+                          check_comment=note, review_version=1)
+        m.save(); made.append(m)
+        line["suppliedQty"] = float(qty); line["serials"] = serials
+    for l in lines:
+        l.setdefault("suppliedQty", 0)
+    for m in made:
+        post_movement_effects(m, actor)
+    r.lines = lines; r.status = "fulfilled"; r.fulfilled_by = actor; r.fulfilled_at = at; r.fulfil_note = note; r.movement_ids = [m.id for m in made]
+    r.save()
+    short = [l for l in lines if b.dec(l.get("suppliedQty")) < b.dec(l["qty"])]
+    detail = note
+    if short:
+        detail = "Short: " + ", ".join(f"{b.item_name(l['itemId'])} {b.dec(l.get('suppliedQty')).normalize():f}/{b.dec(l['qty']).normalize():f}" for l in short) + (f" · {note}" if note else "")
+    b.log(r.project_id, actor, "stock_request", "Stock handed over — " + ", ".join(f"{m.item.name} × {b.dec(m.qty).normalize():f}" for m in made), detail,
+          {"model": "StockRequest", "id": r.id})
+    return r
+
+
+@transaction.atomic
+def decline_request(actor: User, request_id: Optional[str], reason: Optional[str]) -> StockRequest:
+    b.require(actor, "inventory.write")
+    r = _request(request_id)
+    if r.status != "requested":
+        raise ApiError(f"Already {REQUEST_STATUS_LABEL[r.status].lower()}", "conflict")
+    why = b.clean(reason)
+    if not why:
+        raise ApiError("Say why the request is declined", "invalid")
+    r.status = "declined"; r.decline_reason = why; r.resolved_by = actor; r.resolved_at = b.now(); r.save()
+    b.log(r.project_id, actor, "stock_request", f"Stock request declined — {request_label(r)}", why, {"model": "StockRequest", "id": r.id})
+    return r
+
+
+@transaction.atomic
+def cancel_request(actor: User, request_id: Optional[str]) -> StockRequest:
+    """The requester changes their mind, or the store tidies up."""
+    r = _request(request_id)
+    if r.status != "requested":
+        raise ApiError(f"Already {REQUEST_STATUS_LABEL[r.status].lower()}", "conflict")
+    if r.requested_by_id != actor.id and not rbac.can(actor, "inventory.write"):
+        raise ApiError("Only the requester or the store can withdraw a request", "forbidden")
+    r.status = "cancelled"; r.resolved_by = actor; r.resolved_at = b.now(); r.save()
+    b.log(r.project_id, actor, "stock_request", f"Stock request withdrawn — {request_label(r)}", None, {"model": "StockRequest", "id": r.id})
+    return r

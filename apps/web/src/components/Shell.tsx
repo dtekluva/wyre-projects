@@ -23,6 +23,7 @@ export function Shell() {
   const seesRecon = api.can(user.id, "recon.read");
   const unmatched = seesRecon ? api.listQbBills().filter((b) => b.confidence !== "matched").length : 0;
   const writeOffs = api.can(user.id, "writeoff.approve") ? api.listApprovals({ status: "pending", kind: "write_off" }).length : 0;
+  const requests = api.can(user.id, "inventory.write") ? api.listStockRequests({ status: "requested" }).length : 0;
   return (
     <div className="app ns">
       <div className={`scrim ${open ? "scrim--on" : ""}`} onClick={() => setOpen(false)} aria-hidden />
@@ -32,6 +33,7 @@ export function Shell() {
           <button className="nav__close" onClick={() => setOpen(false)} aria-label="Close menu">✕</button></div>
         <div className="nav__section">Portfolio</div>
         <Item to="/" label="All projects" end />
+        <Item to="/work/activity" label="Activity" />
         {api.canCreateProject(user.id) && <Item to="/projects/new" label="New project" />}
         <div className="nav__section">My work</div>
         <Item to="/work/reviews" label="Review queue" badge={checks} />
@@ -39,7 +41,7 @@ export function Shell() {
         <div className="nav__section">Field</div>
         <Item to="/field" label="Field mode (PWA)" />
         <div className="nav__section">Stores</div>
-        <Item to="/inventory" label="Inventory" badge={writeOffs} />
+        <Item to="/inventory" label="Inventory" badge={writeOffs + requests} />
         {seesRecon && <><div className="nav__section">Finance</div><Item to="/finance/reconciliation" label="QB reconciliation" badge={unmatched} /></>}
         {(isAdmin || seesThresholds) && <>
           <div className="nav__section">Admin</div>

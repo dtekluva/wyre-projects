@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from . import rbac
-from .models import (ClientInvoice, VatPayment, Extraction, Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
+from .models import (ClientInvoice, VatPayment, StockRequest, Extraction, Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
                      InventoryItem, Issue, Project, ProjectMembership, PurchaseOrder, QbBill, Retention, SiteVisit, StockCount, StockLocation, StockMovement,
                      Threshold, User, Vendor, WarrantyClaim)
 from .services.base import iso
@@ -193,6 +193,12 @@ def stock_count(s: StockCount) -> dict:
             "notes": s.notes, "varianceValue": num(s.variance_value), **audit(s)}
 
 
+def stock_request(r: StockRequest) -> dict:
+    return {"id": r.id, "projectId": r.project_id, "lines": r.lines or [], "note": r.note, "neededBy": r.needed_by.isoformat() if r.needed_by else None,
+            "status": r.status, "requestedBy": r.requested_by_id, "requestedAt": iso(r.requested_at), "fulfilledBy": r.fulfilled_by_id, "fulfilledAt": iso(r.fulfilled_at),
+            "fulfilNote": r.fulfil_note, "movementIds": r.movement_ids or [], "declineReason": r.decline_reason, "resolvedBy": r.resolved_by_id, "resolvedAt": iso(r.resolved_at)}
+
+
 def notification(n: Notification) -> dict:
     return {"id": n.id, "kind": n.kind, "severity": n.severity, "title": n.title, "body": n.body, "link": n.link,
             "projectId": n.project_id, "ref": n.ref, "createdAt": iso(n.created_at), "updatedAt": iso(n.updated_at),
@@ -283,4 +289,5 @@ def snapshot(u: User) -> dict:
         "hseIncidents": [hse(h) for h in scoped(HseIncident.objects.all()).order_by("-occurred_at")],
         "warrantyClaims": [warranty(w) for w in scoped(WarrantyClaim.objects.all()).order_by("-claimed_at")],
         "stockCounts": [stock_count(s) for s in StockCount.objects.all().order_by("-created_at")] if sees_stock else [],
+        "stockRequests": [stock_request(r) for r in scoped(StockRequest.objects.all()).order_by("-requested_at")] if sees_stock else [],
     }
