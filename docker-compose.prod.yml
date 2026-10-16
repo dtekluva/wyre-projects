@@ -48,7 +48,7 @@ services:
       - media:/app/media     # only used when SPACES_BUCKET is unset; uploads normally go to Spaces
     # 2 workers for 2 vCPU. Three would win nothing and cost ~60 MB the ingestion service may need.
     command: ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000",
-              "--workers", "2", "--timeout", "60", "--access-logfile", "-"]
+              "--workers", "2", "--timeout", "300", "--access-logfile", "-"]
 
   scheduler:
     build: ./backend
