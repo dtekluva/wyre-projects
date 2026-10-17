@@ -3,9 +3,10 @@ import { useRef, useState } from "react";
 export type Pick = { fileName: string; url: string; size: number; file: File; caption?: string };
 
 const KB = 1024, MB = KB * 1024;
-export const human = (n: number) => (n < MB ? `${Math.round(n / KB)} KB` : `${(n / MB).toFixed(1)} MB`);
-/** Matches client_max_body_size on both nginx layers and the gunicorn timeout — a 30 s phone clip is 60–100 MB. */
-export const MAX_BYTES = 300 * MB;
+export const human = (n: number) => (n < MB ? `${Math.round(n / KB)} KB` : n < 1024 * MB ? `${(n / MB).toFixed(1)} MB` : `${(n / MB / 1024).toFixed(n % (1024 * MB) ? 1 : 0)} GB`);
+/** 1 GB, the user's call (2026-10-17): matches client_max_body_size on both nginx layers; gunicorn and the proxy read
+ *  timeout are 900 s so the hash + Spaces upload of a file that size has time to finish. */
+export const MAX_BYTES = 1024 * MB;
 const isVideo = (f: File) => f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|3gp)$/i.test(f.name);
 
 /**

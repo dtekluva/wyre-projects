@@ -121,14 +121,14 @@ export function ProjectDocuments() {
               {STAGES.filter((s) => s.evidence.length).map((s) => <optgroup key={s.stage} label={`${s.stage} · ${s.name}`}>{s.evidence.map((t) => <option key={t} value={t}>{DOC_TYPE_LABEL[t]}</option>)}</optgroup>)}
               <optgroup label="Other"><option value="contract">Contract</option><option value="other">Other</option></optgroup></select></label>
           <label className="ns-field"><span className="ns-field__label">Title</span><input className="ns-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={DOC_TYPE_LABEL[dt]} /></label>
-          <label className="ns-field"><span className="ns-field__label">File <span className="muted">· PDF or image, max 25 MB</span></span><FilePick picks={docFile} onChange={setDocFile} required label="Choose document" hint="PDF or image, up to 25 MB" /></label>
+          <label className="ns-field"><span className="ns-field__label">File <span className="muted">· PDF, image or video, max 1 GB</span></span><FilePick picks={docFile} onChange={setDocFile} required label="Choose document" hint="PDF or image, up to 25 MB" /></label>
           <button className="ns-btn ns-btn--primary" type="submit" disabled={!docFile.length}>Submit document</button>
         </form> : <Note tone="warn">Your role cannot add documents to this project.</Note>}
       </div>
     </div>
   );
   const upload = canAtt ? <form className="form--inline" onSubmit={(e) => { e.preventDefault(); if (!picks.length) return; if (safe(() => { for (const f of picks) api.addAttachment(user.id, p.id, { fileName: f.fileName, sizeBytes: f.size, blob: f.file, kind: f.file.type.startsWith("image/") ? "image" : "document", caption: cap.trim() || undefined }); }, `${picks.length} upload${picks.length > 1 ? "s" : ""} submitted — pending check`)) { setPicks([]); setCap(""); } }}>
-      <label className="ns-field grow"><span className="ns-field__label">Files <span className="muted">· images or PDF, max 25 MB each</span></span><FilePick picks={picks} onChange={setPicks} multiple required label="Choose photos or documents" hint="Images or PDF, up to 25 MB each" /></label>
+      <label className="ns-field grow"><span className="ns-field__label">Files <span className="muted">· images, PDF or video, max 1 GB each</span></span><FilePick picks={picks} onChange={setPicks} multiple required label="Choose photos or documents" hint="Images or PDF, up to 25 MB each" /></label>
       <label className="ns-field grow"><span className="ns-field__label">Caption</span><input className="ns-input" value={cap} onChange={(e) => setCap(e.target.value)} placeholder="What does this show?" /></label>
       <button className="ns-btn ns-btn--secondary" type="submit" disabled={!picks.length}>Upload</button>
     </form> : <Note tone="warn">Your role cannot upload to this project.</Note>;
