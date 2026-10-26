@@ -60,6 +60,7 @@ class Command(BaseCommand):
             # Cheap when the queue is empty (one indexed count), so it rides the same tick as everything
             # else rather than earning its own timer.
             self.safely("run_extractions")
+            self.safely("run_narratives")
             if now >= next_digest:
                 args_ = ["--send"] if digest_on else []
                 if digest_to:

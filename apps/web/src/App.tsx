@@ -19,6 +19,7 @@ import { ProjectDetails } from "./screens/ProjectDetails";
 import { ProjectAssets } from "./screens/ProjectAssets";
 import { Inventory } from "./screens/Inventory";
 import { Activity } from "./screens/Activity";
+import { Report } from "./screens/Report";
 import { Reconciliation } from "./screens/Reconciliation";
 import { ProjectField } from "./screens/ProjectField";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -34,6 +35,7 @@ export function App() {
         <Route path="forgot" element={<Forgot />} />
         <Route path="invite/:token" element={<SetPassword kind="invite" />} />
         <Route path="reset/:token" element={<SetPassword kind="reset" />} />
+        <Route path="report" element={<Report />} />
         <Route path="field" element={<FieldShell />}>
           <Route index element={<FieldHome />} />
           <Route path="signin" element={<FieldSignin />} />

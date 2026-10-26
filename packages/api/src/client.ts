@@ -2,7 +2,8 @@
 // Enforces: RBAC (§2), stage gates (§3), actor capture (§4), maker-checker + segregation of duties (§4.13, §5),
 // money & stock rules (§0, §4.4, §4.10, §4.15, §11).
 import { can as canFn, maySelfReview, rolesOn as rolesOnFn, type Permission } from "./rbac";
-import { TOOL_CATEGORIES, STOCK_REQUEST_STATUS_LABEL, kindOfFile, type AttachmentKind, type VoidKind, type StockRequest, type StockRequestStatus, type Expense } from "./types";
+import { TOOL_CATEGORIES, STOCK_REQUEST_STATUS_LABEL, NARRATIVE_TTL_HOURS, kindOfFile, type AttachmentKind, type VoidKind, type StockRequest, type StockRequestStatus, type Expense, type ProjectNarrative } from "./types";
+import { buildProjectReport, demoNarrative } from "./report";
 import { CONTRACT_STATUS_LABEL, VAT_PAYMENT_METHOD_LABEL, VAT_TREATMENT_LABEL, type ContractStatus, type ClientInvoice, type InvoiceReceipt, type VatPayment, type VatPaymentMethod, type VatTreatment } from "./types";
 import { DEFAULT_VAT_RATE, vatOn } from "./vat";
 import { STAGES } from "./gates";
@@ -85,12 +86,13 @@ export class MockApi {
   stockCounts: StockCount[] = clone(seed3.stockCounts);
   stockRequests: StockRequest[] = clone(seed3.stockRequests);
   expenses: Expense[] = [];
+  narratives: ProjectNarrative[] = [];
 
   private listeners = new Set<Listener>();
   private seq = 1000;
   private static KEY = "wyre.tracker.state.v3";
   private static PERSISTED = ["projects","memberships","documents","attachments","events","approvals","thresholds",
-    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","stockRequests","expenses","extractions","clientInvoices","vatPayments","seq"] as const;
+    "vendors","locations","items","costItems","purchaseOrders","goodsReceipts","assets","movements","actuals","changeOrders","retentions","qbBills","visits","issues","commissionings","hseIncidents","warrantyClaims","stockCounts","stockRequests","expenses","narratives","extractions","clientInvoices","vatPayments","seq"] as const;
 
   /** Synchronous key-value storage (web: localStorage). Native apps hydrate asynchronously via serialize()/hydrate() instead. */
   private storage: { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void } | null =
@@ -1226,6 +1228,32 @@ export class MockApi {
     this.log(input.projectId, actorId, "stock_movement", `Return requested — ${it.name} × ${input.qty} (pending check)`, undefined, { model: "StockMovement", id: m.id });
     this.emit(); return m;
   }
+  // ---- period summaries: one Claude paragraph per project and window, reused for 48 h ----
+  /** The paragraph already asked for in the last 48 h for this project and window, unless it failed. */
+  freshNarrative(projectId: string, windowKey: string) {
+    const since = Date.now() - NARRATIVE_TTL_HOURS * 3600_000;
+    return this.narratives.filter((n) => n.projectId === projectId && n.windowKey === windowKey && n.status !== "failed" && new Date(n.requestedAt).getTime() >= since)
+      .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0];
+  }
+  /** Ask for the opening paragraph of each project's period summary. Reuses anything asked for in the last 48 h, so
+   *  opening the report again — or by someone else — never costs a second call. The live server writes it with Claude;
+   *  the demo build states the record counts instead and says so. */
+  requestNarratives(actorId: string, input: { from: string; to: string; windowKey: string; items: { projectId: string; id?: string }[] }): ProjectNarrative[] {
+    if (!input.from || !input.to || input.from > input.to) throw new ApiError("Pick a complete period", "invalid");
+    if (!input.windowKey) throw new ApiError("A period window is required", "invalid");
+    const out: ProjectNarrative[] = []; const at = this.now();
+    for (const it of (input.items ?? []).slice(0, 30)) {
+      this.require(actorId, "project.read", it.projectId); this.raw(it.projectId);
+      const fresh = this.freshNarrative(it.projectId, input.windowKey);
+      if (fresh) { out.push(fresh); continue; }
+      const n: ProjectNarrative = { id: it.id || this.id("nar"), projectId: it.projectId, windowKey: input.windowKey, periodFrom: input.from, periodTo: input.to,
+        status: this.live ? "queued" : "done", text: "", error: "", modelName: this.live ? "" : "demo", costUsd: 0, requestedBy: actorId, requestedAt: at };
+      if (!this.live) { n.text = demoNarrative(buildProjectReport(this, it.projectId, { from: input.from, to: input.to }, { money: false })); n.finishedAt = at; }
+      this.narratives.push(n); out.push(n);
+    }
+    this.emit(); return out;
+  }
+
   // ---- expenses: receipted spend outside a PO, checked by Finance, then an actual ----
   listExpenses(projectId?: string) {
     return this.expenses.filter((e) => !projectId || e.projectId === projectId).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));

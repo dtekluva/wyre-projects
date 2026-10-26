@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 from decimal import Decimal
+from datetime import timedelta
 from typing import Any, Optional
 
+from django.utils import timezone
+
 from . import rbac
-from .models import (ClientInvoice, VatPayment, StockRequest, Expense, Extraction, Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
+from .models import (ClientInvoice, VatPayment, StockRequest, Expense, ProjectNarrative, Extraction, Actual, Approval, Asset, Attachment, ChangeOrder, ChronologyEvent, CommissioningRecord, CostItem, Document, GoodsReceipt, HseIncident, Notification,
                      InventoryItem, Issue, Project, ProjectMembership, PurchaseOrder, QbBill, Retention, SiteVisit, StockCount, StockLocation, StockMovement,
                      Threshold, User, Vendor, WarrantyClaim)
 from .services.base import iso
@@ -198,6 +201,12 @@ def expense(e: Expense) -> dict:
             "payee": e.payee, "description": e.description, "attachmentIds": e.attachment_ids or [], **audit(e), **review(e), **void(e)}
 
 
+def narrative(n: ProjectNarrative) -> dict:
+    return {"id": n.id, "projectId": n.project_id, "windowKey": n.window_key, "periodFrom": n.period_from.isoformat(), "periodTo": n.period_to.isoformat(),
+            "status": n.status, "text": n.text, "error": n.error, "modelName": n.model_name, "costUsd": num(n.cost_usd),
+            "requestedBy": n.requested_by_id, "requestedAt": iso(n.requested_at), "finishedAt": iso(n.finished_at)}
+
+
 def stock_request(r: StockRequest) -> dict:
     return {"id": r.id, "projectId": r.project_id, "lines": r.lines or [], "note": r.note, "neededBy": r.needed_by.isoformat() if r.needed_by else None,
             "status": r.status, "requestedBy": r.requested_by_id, "requestedAt": iso(r.requested_at), "fulfilledBy": r.fulfilled_by_id, "fulfilledAt": iso(r.fulfilled_at),
@@ -296,4 +305,6 @@ def snapshot(u: User) -> dict:
         "stockCounts": [stock_count(s) for s in StockCount.objects.all().order_by("-created_at")] if sees_stock else [],
         "stockRequests": [stock_request(r) for r in scoped(StockRequest.objects.all()).order_by("-requested_at")] if sees_stock else [],
         "expenses": [expense(e) for e in scoped(Expense.objects.all()).order_by("-spent_on", "-created_at")],
+        # only what the 48 h cache can still reuse, plus anything still being written
+        "narratives": [narrative(n) for n in scoped(ProjectNarrative.objects.filter(requested_at__gte=timezone.now() - timedelta(days=3))).order_by("-requested_at")],
     }

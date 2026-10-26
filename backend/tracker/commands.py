@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from . import serializers as S
 from .errors import ApiError
-from .services import billing, accounts, approvals, extractions, documents, field, gates, money, projects, recon, review, stock, voiding, tools
+from .services import billing, accounts, approvals, extractions, documents, field, gates, money, narratives, projects, recon, review, stock, voiding, tools
 
 Handler = Callable[[Any, dict, Any], Any]
 
@@ -65,6 +65,7 @@ COMMANDS: dict[str, Handler] = {
     "declineRequest": lambda a, d, f: S.stock_request(stock.decline_request(a, d.get("requestId"), d.get("reason"))),
     "cancelRequest": lambda a, d, f: S.stock_request(stock.cancel_request(a, d.get("requestId"))),
     "logExpense": lambda a, d, f: S.expense(money.log_expense(a, d.get("projectId"), _in(d))),
+    "requestNarratives": lambda a, d, f: [S.narrative(n) for n in narratives.request_narratives(a, _in(d))],
     "receiveStock": lambda a, d, f: [S.movement(m) for m in stock.receive_stock(a, _in(d))],
     "addLocation": lambda a, d, f: S.location(stock.add_location(a, _in(d))),
     "transferStock": lambda a, d, f: S.movement(stock.transfer_stock(a, _in(d))),

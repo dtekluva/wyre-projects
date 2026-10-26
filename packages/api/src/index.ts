@@ -9,3 +9,4 @@ export * from "./files";
 export * from "./vat";
 export * from "./categories";
 export * from "./dates";
+export * from "./report";

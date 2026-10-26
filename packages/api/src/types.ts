@@ -45,6 +45,16 @@ export type ReviewStatus = "pending" | "checked" | "rejected";
 
 export interface AuditFields { createdAt: string; createdBy: string; updatedAt: string; updatedBy: string }
 
+export type NarrativeStatus = "queued" | "running" | "done" | "failed";
+/** The short Claude-written paragraph at the top of a project's period summary. Cached per project and period window:
+ *  at most one is written every NARRATIVE_TTL_HOURS however often the report is opened (user's rule, 2026-10-26). */
+export interface ProjectNarrative {
+  id: string; projectId: string; windowKey: string; periodFrom: string; periodTo: string;
+  status: NarrativeStatus; text: string; error: string; modelName: string; costUsd: number;
+  requestedBy: string; requestedAt: string; finishedAt?: string;
+}
+export const NARRATIVE_TTL_HOURS = 48;
+
 export type AttachmentKind = "image" | "document" | "video";
 /** What a file IS, from its MIME type first and its name second — the same rule the server applies to the bytes it receives. */
 export function kindOfFile(mime?: string, name?: string): AttachmentKind {

@@ -97,6 +97,10 @@ def id_exp():
     return _nid("exp")
 
 
+def id_nar():
+    return _nid("nar")
+
+
 def id_ntf():
     return _nid("ntf")
 
@@ -738,3 +742,26 @@ class Expense(Audit, Reviewable, Voidable):
     payee = models.CharField(max_length=120, blank=True, null=True)
     description = models.CharField(max_length=200)
     attachment_ids = models.JSONField(default=list)
+
+
+class ProjectNarrative(models.Model):
+    """The short Claude-written paragraph at the top of a project's period summary. Cached per project and window
+    ("7d", "30d", "week", or "custom:<from>:<to>"): at most one is written every 48 h however often the report is
+    opened (user's rule, 2026-10-26). Written from the chronology with money amounts removed."""
+    STATUS = [("queued", "Queued"), ("running", "Running"), ("done", "Done"), ("failed", "Failed")]
+    id = models.CharField(primary_key=True, max_length=40, default=id_nar)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="narratives")
+    window_key = models.CharField(max_length=40)
+    period_from = models.DateField()
+    period_to = models.DateField()
+    status = models.CharField(max_length=10, choices=STATUS, default="queued")
+    text = models.TextField(blank=True, default="")
+    error = models.CharField(max_length=300, blank=True, default="")
+    model_name = models.CharField(max_length=60, blank=True, default="")
+    cost_usd = models.DecimalField(max_digits=10, decimal_places=6, default=0)
+    requested_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
+    requested_at = models.DateTimeField(db_index=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["project", "window_key", "requested_at"])]

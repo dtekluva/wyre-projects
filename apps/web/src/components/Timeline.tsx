@@ -29,7 +29,7 @@ export function Timeline({ events, limit, grouped, showProject, empty = "No acti
     <span className={`ns-timeline__dot ns-timeline__dot--${variantOf(e)}`} />
     <div className="ns-timeline__row">
       <div className="ns-timeline__who">
-        {showProject && <Link to={`/projects/${e.projectId}/timeline`} className="tl__project ns-mono">{api.projectCode(e.projectId)}</Link>}
+        {showProject && <Link to={`/projects/${e.projectId}/timeline`} className="tl__project" title={api.projectCode(e.projectId)}>{api.projects.find((p) => p.id === e.projectId)?.name ?? api.projectCode(e.projectId)}</Link>}
         <span className="tl__type">{LABEL[e.eventType]}</span><b>{api.userName(e.actorId)}</b> · {e.summary}
         {e.detail && <div className="tl__detail">{e.detail}</div>}</div>
       <time className="ns-timeline__when" dateTime={e.occurredAt} title={new Date(e.occurredAt).toLocaleString()}>{grouped ? new Date(e.occurredAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : relative(e.occurredAt)}</time>

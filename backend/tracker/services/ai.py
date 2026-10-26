@@ -255,3 +255,28 @@ def read_stock_dictation(text: str, known: list[str] | None = None) -> dict:
     return {"fields": fields, "transcript": (text or "").strip(),
             "usage": {"model": msg.model, "input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
                       "cost_usd": round(u.input_tokens * PRICE_IN + u.output_tokens * PRICE_OUT, 6)}}
+
+
+# ---- period summaries -> one short paragraph ------------------------------------------------------------
+NARRATIVE_SYSTEM = """You write the opening paragraph of a period summary for one project in the project tracker of a \
+solar engineering company in Nigeria. The readers are the company's directors.
+
+Use only the facts you are given. Never invent progress, dates, people, causes or next steps that the facts do not \
+show. Write 2 to 4 plain sentences, at most 90 words, in the past tense: what moved forward, what was done on site, \
+and what still needs attention. Do not mention money amounts. No headings, no bullet points, no preamble, no sign-off. \
+If little or nothing happened in the period, say so plainly in one sentence."""
+
+
+def write_narrative(facts: str) -> dict:
+    """Return {'text': str, 'usage': {...}} — the opening paragraph for one project's period summary."""
+    client = _client()
+    msg = client.messages.create(model=MODEL, max_tokens=1000, system=NARRATIVE_SYSTEM,
+                                 messages=[{"role": "user", "content": facts}])
+    if msg.stop_reason == "refusal":
+        raise AiError(f"Claude declined to write this summary ({getattr(msg.stop_details, 'category', 'unknown')})")
+    text = "".join(b.text for b in msg.content if b.type == "text").strip()
+    if not text:
+        raise AiError("Claude returned no summary")
+    u = msg.usage
+    return {"text": text[:1500], "usage": {"model": msg.model, "input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
+                                           "cost_usd": round(u.input_tokens * PRICE_IN + u.output_tokens * PRICE_OUT, 6)}}

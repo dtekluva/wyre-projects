@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from tracker.errors import ApiError
@@ -748,6 +749,52 @@ class VisitPhotoTest(TestCase):
         self.assertIsNotNone(Attachment.objects.get(pk=rid).voided_at, "the receipt goes with it")
         serializers.expense(e); self.assertTrue(any(x["id"] == e.id for x in serializers.snapshot(u["u_ft1"])["expenses"]))
         self.assertTrue(any(ev.event_type == "expense" for ev in ChronologyEvent.objects.filter(project_id="p1")))
+
+    def test_period_summary_paragraph_is_cached_48h_and_never_sees_money(self):
+        """Mr. Idris, 2026-10-26: a weekly / monthly summary per project with a written paragraph. The user's rule: Claude
+        writes it at most once every two days per project and window, however often the report is opened."""
+        from datetime import date, timedelta as td
+        from unittest import mock
+        from tracker.models import ProjectNarrative
+        from tracker.services import narratives
+        u = self.u
+        today = date.today(); frm = (today - td(days=6)).isoformat(); to = today.isoformat()
+        ask = lambda who, key="7d", items=None: narratives.request_narratives(u[who], {"from": frm, "to": to, "windowKey": key, "items": items or [{"projectId": "p1"}, {"projectId": "p2"}]})
+        with mock.patch.object(narratives.ai, "configured", return_value=False):
+            self.err("conflict", ask, "u_dir")
+        seen = []
+        def fake(facts):
+            seen.append(facts); return {"text": "The team finished string 3 and closed two issues.", "usage": {"model": "claude-test", "cost_usd": 0.0012}}
+        with mock.patch.object(narratives.ai, "configured", return_value=True), mock.patch.object(narratives.ai, "write_narrative", side_effect=fake):
+            self.err("invalid", narratives.request_narratives, u["u_dir"], {"from": to, "to": frm, "windowKey": "7d", "items": [{"projectId": "p1"}]})
+            self.err("invalid", narratives.request_narratives, u["u_dir"], {"from": frm, "to": to, "windowKey": "", "items": [{"projectId": "p1"}]})
+            self.err("not_found", ask, "u_dir", "7d", [{"projectId": "nope"}])
+            first = ask("u_dir")
+            self.assertEqual([n.status for n in first], ["queued", "queued"])
+            again = ask("u_fin")
+            self.assertEqual([n.id for n in again], [n.id for n in first], "within 48 h the same paragraph is reused, whoever asks")
+            self.assertEqual(ProjectNarrative.objects.count(), 2)
+            self.assertEqual(narratives.run_queued(limit=10), {"done": 2, "failed": 0})
+            self.assertEqual(narratives.run_queued(limit=10), {"done": 0, "failed": 0}, "nothing is written twice")
+            n1 = ProjectNarrative.objects.get(pk=first[0].id)
+            self.assertEqual((n1.status, n1.model_name), ("done", "claude-test")); self.assertIn("string 3", n1.text)
+            self.assertEqual(ask("u_dir")[0].id, n1.id, "a finished paragraph is reused too")
+            self.assertEqual(len(seen), 2)
+            self.assertTrue(all("₦" not in f for f in seen), "the model never sees money amounts")
+            self.assertEqual(narratives.strip_money("Expense logged — Diesel · ₦18,500 (pending)"), "Expense logged — Diesel · (amount) (pending)")
+            self.assertEqual(narratives.strip_money("PO raised ₦1.2M and N450,000"), "PO raised (amount) and (amount)")
+            month = ask("u_dir", "30d", [{"projectId": "p1"}])
+            self.assertNotEqual(month[0].id, n1.id, "a different window is a different paragraph")
+            ProjectNarrative.objects.filter(pk=n1.pk).update(requested_at=timezone.now() - td(hours=49))
+            later = ask("u_dir", "7d", [{"projectId": "p1"}])
+            self.assertNotEqual(later[0].id, n1.id, "after 48 h a fresh one is written")
+        with mock.patch.object(narratives.ai, "configured", return_value=True), mock.patch.object(narratives.ai, "write_narrative", side_effect=RuntimeError("overloaded")):
+            narratives.run_queued(limit=10)
+            failed = ProjectNarrative.objects.get(pk=later[0].id); self.assertEqual(failed.status, "failed"); self.assertIn("overloaded", failed.error)
+            retry = ask("u_dir", "7d", [{"projectId": "p1"}])
+            self.assertNotEqual(retry[0].id, failed.id, "a failed one does not block a retry")
+        serializers.narrative(n1)
+        self.assertTrue(any(x["id"] == n1.id for x in serializers.snapshot(u["u_ft1"])["narratives"]))
 
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u
