@@ -152,6 +152,7 @@ select.ns-input--inline:hover { background-color: var(--ns-color-surface-selecte
 .report__d { display: inline-block; min-width: 88px; color: #666; font-variant-numeric: tabular-nums; }
 .report__day h4 { color: #333; }
 .report__empty { padding: 24px 0; color: #555; }
+.report__quiet h2 { font-size: 16px; margin: 0 0 2px; } .report__plink { color: #111; font-weight: 600; text-decoration: none; }
 .report__foot { margin-top: 30px; padding-top: 8px; border-top: 1px solid #ddd; font-size: 11px; color: #777; }
 @media print {
   @page { size: A4; margin: 14mm 12mm; }

@@ -81,7 +81,13 @@ def facts(p: Project, frm, to) -> str:
     tz = timezone.get_current_timezone()
     start = datetime.combine(frm, time.min, tzinfo=tz); end = datetime.combine(to + timedelta(days=1), time.min, tzinfo=tz)
     evs = list(ChronologyEvent.objects.filter(project=p, occurred_at__gte=start, occurred_at__lt=end).order_by("occurred_at"))
-    lines = [f"{timezone.localtime(e.occurred_at):%a %d %b} · {e.event_type} · {strip_money(e.summary)[:170]}" for e in evs][-200:]
+    # Keep every milestone (creation, gates, stage moves) and fill the rest with the most recent events, 200 in all:
+    # a long window — All time — still tells Claude how the project began, not only what happened last week.
+    milestones = {"project_created", "stage_change", "gate_requested", "approval_decided", "stage_rollback", "contract_received"}
+    keep = [e for e in evs if e.event_type in milestones][:120]
+    rest = [e for e in evs if e.event_type not in milestones][-(200 - len(keep)):]
+    chosen = sorted(keep + rest, key=lambda e: e.occurred_at)
+    lines = [f"{timezone.localtime(e.occurred_at):%a %d %b} · {e.event_type} · {strip_money(e.summary)[:170]}" for e in chosen]
     open_issues = list(Issue.objects.filter(project=p, voided_at__isnull=True).exclude(status__in=["closed", "wont_fix"]))
     sev: dict[str, int] = {}
     for i in open_issues:
@@ -90,7 +96,7 @@ def facts(p: Project, frm, to) -> str:
     head = (f"Project: {p.name} ({p.code}) for {p.client_name}, {p.location}.\n"
             f"Stage now: {stage}. Status: {p.rag}" + (f" — {strip_money(p.rag_reason)}" if p.rag_reason else "") + ".\n"
             f"Period: {frm:%d %b %Y} to {to:%d %b %Y}.\n")
-    body = (f"{len(evs)} recorded events in the period" + (f" (the last {len(lines)} shown)" if len(evs) > len(lines) else "") + ":\n"
+    body = (f"{len(evs)} recorded events in the period" + (f" ({len(lines)} shown: every milestone and the most recent of the rest)" if len(evs) > len(lines) else "") + ":\n"
             + ("\n".join(lines) if lines else "(none)"))
     tail = (f"\nStill open at the end of the period: {len(open_issues)} issue{'' if len(open_issues) == 1 else 's'}"
             + (" (" + ", ".join(f"{n} {k}" for k, n in sorted(sev.items())) + ")" if sev else "") + ".")

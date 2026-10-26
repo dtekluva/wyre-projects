@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
+import { Link } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { COST_CATEGORY_LABEL, DOC_TYPE_LABEL, ISSUE_STATUS_LABEL, MOVEMENT_LABEL, STOCK_REQUEST_STATUS_LABEL, VISIT_TYPE_LABEL,
-  buildProjectReport, fmtDate, fmtDay, inRange, naira, narrativeFor, type ProjectNarrative, type ProjectReport } from "@wyre/api";
+  STAGES, buildProjectReport, fmtDate, fmtDay, inRange, naira, narrativeFor, type ProjectNarrative, type ProjectReport } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useWaitFor } from "../lib/useWaitFor";
@@ -20,23 +21,30 @@ export function Report() {
   const windowKey = q.get("w") || `custom:${range.from}:${range.to}`; const only = q.get("p") || "";
   const seesMoney = api.can(user.id, "money.read");
   const visible = api.listProjects(user.id);
-  const ids = only ? visible.filter((p) => p.id === only).map((p) => p.id)
-    : visible.filter((p) => api.listEvents(p.id).some((e) => inRange(e.occurredAt, range))).map((p) => p.id);
+  const active = (id: string) => api.listEvents(id).some((e) => inRange(e.occurredAt, range));
+  // Every open project belongs in the summary. Ones with activity get a full section; quiet ones are listed at the end so
+  // nobody reads their absence as a missing project (Akanimo, 2026-10-26: "why does it only show 2 projects?").
+  const ids = only ? visible.filter((p) => p.id === only).map((p) => p.id) : visible.filter((p) => active(p.id)).map((p) => p.id);
+  const quiet = only ? [] : visible.filter((p) => p.stage < 8 && !active(p.id));
   const reports: ProjectReport[] = useMemo(() => ids.map((id) => buildProjectReport(api, id, range, { money: seesMoney })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [api, ids.join(","), range.from, range.to, seesMoney, api.events.length, api.narratives.length]);
 
-  // Ask once per open; the server (and the demo engine) reuse anything written in the last 48 h.
-  const asked = useRef(false);
+  // Ask once for each set of projects on the page — again only if the set grows (data still arriving). The server and
+  // the demo engine reuse anything written in the last 48 h, so a repeat ask never costs a second paragraph.
+  const toAsk = ids.filter(active);
+  const asked = useRef("");
   useEffect(() => {
-    if (asked.current || !ids.length || !range.from || !range.to || !user.id) return;
-    asked.current = true;
-    try { api.requestNarratives(user.id, { from: range.from, to: range.to, windowKey, items: ids.map((projectId) => ({ projectId })) }); } catch { /* the page still renders without the paragraph */ }
-  }, [api, ids.join(","), range.from, range.to, windowKey, user.id]);
+    const key = `${windowKey}|${toAsk.join(",")}`;
+    if (asked.current === key || !toAsk.length || !range.from || !range.to || !user.id) return;
+    asked.current = key;
+    try { api.requestNarratives(user.id, { from: range.from, to: range.to, windowKey, items: toAsk.map((projectId) => ({ projectId })) }); } catch { /* the page still renders without the paragraph */ }
+  }, [api, toAsk.join(","), range.from, range.to, windowKey, user.id]);
   const paras = ids.map((id) => narrativeFor(api.narratives, id, windowKey));
   useWaitFor(paras.some((p) => p && (p.status === "queued" || p.status === "running")));
 
-  const period = range.from === range.to ? fmtDay(range.from ?? "") : `${fmtDay(range.from ?? "")} – ${fmtDay(range.to ?? "")}`;
+  const period = windowKey === "all" ? `All time · since ${fmtDay(range.from ?? "")}`
+    : range.from === range.to ? fmtDay(range.from ?? "") : `${fmtDay(range.from ?? "")} – ${fmtDay(range.to ?? "")}`;
   if (!range.from || !range.to) return <div className="report"><p>Pick a period in Activity first.</p></div>;
   return <div className="report">
     <div className="report__bar no-print">
@@ -48,15 +56,26 @@ export function Report() {
     <header className="report__head">
       <img src="/wyre-logo.png" alt="Wyre" className="report__logo" />
       <div><div className="report__kicker">Project summary</div><h1 className="report__title">{period}</h1>
-        <div className="report__meta">{n(reports.length, "project")} · prepared {new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} by {user.name}{seesMoney ? "" : " · money figures not included for this role"}</div></div>
+        <div className="report__meta">{only ? "1 project" : `${n(ids.length, "project")} with activity${quiet.length ? ` · ${quiet.length} with nothing recorded` : ""}`} · prepared {new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} by {user.name}{seesMoney ? "" : " · money figures not included for this role"}</div></div>
     </header>
-    {!reports.length && <p className="report__empty">Nothing was recorded on any project in this period.</p>}
+    {!reports.length && !quiet.length && <p className="report__empty">Nothing was recorded on any project in this period.</p>}
     {reports.map((r, i) => <ProjectSection key={r.projectId} r={r} para={paras[i]} />)}
+    {quiet.length > 0 && <section className="report__project report__quiet">
+      <h2>Nothing recorded in this period</h2>
+      <div className="report__meta">Open projects with no activity between these dates — listed so the summary covers the whole portfolio.</div>
+      <div className="report__block"><table><thead><tr><th>Project</th><th>Stage</th><th>Status</th><th className="num">Open issues</th><th className="num">Waiting for a check</th><th>Last activity</th></tr></thead>
+        <tbody>{quiet.map((p) => { const last = api.listEvents(p.id)[0]; return <tr key={p.id}>
+          <td><Link to={`/projects/${p.id}`} className="report__plink">{p.name}</Link><div className="report__meta">{p.code} · {p.clientName}</div></td>
+          <td>{STAGES.find((s) => s.stage === p.stage)?.short ?? p.stage}</td><td><span className={`report__rag report__rag--${p.rag}`}>{p.rag}</span></td>
+          <td className="num">{api.listIssues({ projectId: p.id, openOnly: true }).length}</td><td className="num">{api.pendingChecks(p.id)}</td>
+          <td>{last ? fmtDate(last.occurredAt) : "never"}</td></tr>; })}</tbody></table></div>
+    </section>}
     <footer className="report__foot">Wyre Projects Tracker · tracker.wyreng.com · figures are from checked records at the time this page was opened</footer>
   </div>;
 }
 
-function Para({ p }: { p?: ProjectNarrative }) {
+function Para({ p, empty }: { p?: ProjectNarrative; empty?: boolean }) {
+  if (empty) return <p className="report__para report__para--wait">Nothing was recorded on this project in the period.</p>;
   if (!p) return null;
   if (p.status === "queued" || p.status === "running") return <p className="report__para report__para--wait">Writing the summary…</p>;
   if (p.status === "failed") return <p className="report__para report__para--wait">The written summary could not be produced this time ({p.error || "unknown error"}). The facts below are complete.</p>;
@@ -73,7 +92,7 @@ function ProjectSection({ r, para }: { r: ProjectReport; para?: ProjectNarrative
       <div><h2>{r.name}</h2><div className="report__meta">{r.code} · {r.client} · {r.location} · PM {api.userName(r.pmId)}</div></div>
       <div className="report__stage"><span className={`report__rag report__rag--${r.rag}`}>{r.rag}</span><b>{r.stageName}</b>{r.ragReason && <div className="report__meta">{r.ragReason}</div>}</div>
     </div>
-    <Para p={para} />
+    <Para p={para} empty={!r.events.length} />
     <div className="report__tiles">{tiles.map(([k, v]) => <div key={k} className="report__tile"><b>{v}</b><span>{k}</span></div>)}</div>
 
     {r.progress.length > 0 && <Block title="Progress through the stages"><ul>{r.progress.map((e) => <li key={e.id}><span className="report__d">{fmtDate(e.occurredAt)}</span>{e.summary}</li>)}</ul></Block>}
