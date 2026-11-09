@@ -99,8 +99,12 @@ def facts(p: Project, frm, to) -> str:
     body = (f"{len(evs)} recorded events in the period" + (f" ({len(lines)} shown: every milestone and the most recent of the rest)" if len(evs) > len(lines) else "") + ":\n"
             + ("\n".join(lines) if lines else "(none)"))
     tail = (f"\nStill open at the end of the period: {len(open_issues)} issue{'' if len(open_issues) == 1 else 's'}"
-            + (" (" + ", ".join(f"{n} {k}" for k, n in sorted(sev.items())) + ")" if sev else "") + ".")
-    return head + body + tail
+            + (" (" + ", ".join(f"{n} {k}" for k, n in sorted(sev.items())) + ")" if sev else "") + "."
+            + ("\nOpen issues: " + "; ".join(f"{strip_money(i.title)} ({i.severity})" for i in open_issues[:10]) if open_issues else ""))
+    from .stock import installed_on, installed_sentence
+    inst = installed_sentence(installed_on(p.id))
+    kit = f"\nEquipment issued to site to date (the tracker counts this as installed): {inst}." if inst else "\nNo equipment has been issued to site yet."
+    return head + body + tail + kit
 
 
 def run_queued(limit: int = 5, ids: Optional[list[str]] = None) -> dict:

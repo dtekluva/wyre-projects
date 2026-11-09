@@ -152,6 +152,14 @@ select.ns-input--inline:hover { background-color: var(--ns-color-surface-selecte
 .report__d { display: inline-block; min-width: 88px; color: #666; font-variant-numeric: tabular-nums; }
 .report__day h4 { color: #333; }
 .report__empty { padding: 24px 0; color: #555; }
+.report__essay p { margin: 0 0 9px; line-height: 1.6; } .report__essay p:last-of-type { margin-bottom: 0; }
+.report__toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.installed { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 14px 16px 6px; }
+.installed__tile { border: var(--ns-border-hairline) solid var(--ns-color-border-default); border-radius: var(--ns-radius-medium); padding: 10px 12px; background: var(--ns-color-surface); }
+.installed__label { font-size: 12px; color: var(--ns-color-text-secondary); }
+.installed__value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; } .installed__unit { font-size: 13px; font-weight: 500; color: var(--ns-color-text-secondary); }
+.installed__sub { font-size: 12px; margin-top: 2px; } .installed__sub--wait { color: var(--ns-color-warning-text, #b45309); }
+.installed__bar { height: 6px; border-radius: 3px; background: var(--ns-color-surface-selected, #eee); margin-top: 6px; overflow: hidden; } .installed__bar span { display: block; height: 100%; background: var(--ns-color-primary); }
 .report__quiet h2 { font-size: 16px; margin: 0 0 2px; } .report__plink { color: #111; font-weight: 600; text-decoration: none; }
 .report__foot { margin-top: 30px; padding-top: 8px; border-top: 1px solid #ddd; font-size: 11px; color: #777; }
 @media print {

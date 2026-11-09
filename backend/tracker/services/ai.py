@@ -258,19 +258,24 @@ def read_stock_dictation(text: str, known: list[str] | None = None) -> dict:
 
 
 # ---- period summaries -> one short paragraph ------------------------------------------------------------
-NARRATIVE_SYSTEM = """You write the opening paragraph of a period summary for one project in the project tracker of a \
-solar engineering company in Nigeria. The readers are the company's directors.
+NARRATIVE_SYSTEM = """You write the narrative of a period summary for one project in the project tracker of a solar \
+engineering company in Nigeria. The readers are the company's directors, who want to understand what happened without \
+reading a log.
 
 Use only the facts you are given. Never invent progress, dates, people, causes or next steps that the facts do not \
-show. Write 2 to 4 plain sentences, at most 90 words, in the past tense: what moved forward, what was done on site, \
-and what still needs attention. Do not mention money amounts. No headings, no bullet points, no preamble, no sign-off. \
-If little or nothing happened in the period, say so plainly in one sentence."""
+show. Write flowing prose in the past tense: 3 to 6 short paragraphs, roughly 150 to 400 words in total, scaled to how \
+much actually happened. Separate paragraphs with one blank line. Cover, in this order and only where the facts support \
+it: where the project stands and what moved forward; work on site and installation progress, including the equipment \
+issued to site; issues raised, resolved and still open; documents, checks and approvals; what still needs attention. \
+Summarise repetitive activity ("several delivery photos were uploaded and checked") instead of listing every action. \
+Do not mention money amounts. No headings, no bullet points, no preamble, no sign-off. If little or nothing happened, \
+write one short paragraph saying so."""
 
 
 def write_narrative(facts: str) -> dict:
     """Return {'text': str, 'usage': {...}} — the opening paragraph for one project's period summary."""
     client = _client()
-    msg = client.messages.create(model=MODEL, max_tokens=1000, system=NARRATIVE_SYSTEM,
+    msg = client.messages.create(model=MODEL, max_tokens=4000, system=NARRATIVE_SYSTEM,
                                  messages=[{"role": "user", "content": facts}])
     if msg.stop_reason == "refusal":
         raise AiError(f"Claude declined to write this summary ({getattr(msg.stop_details, 'category', 'unknown')})")
@@ -278,5 +283,5 @@ def write_narrative(facts: str) -> dict:
     if not text:
         raise AiError("Claude returned no summary")
     u = msg.usage
-    return {"text": text[:1500], "usage": {"model": msg.model, "input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
+    return {"text": text[:5000], "usage": {"model": msg.model, "input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
                                            "cost_usd": round(u.input_tokens * PRICE_IN + u.output_tokens * PRICE_OUT, 6)}}

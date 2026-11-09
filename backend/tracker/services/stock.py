@@ -11,7 +11,7 @@ from django.db import transaction
 
 from .. import rbac
 from ..errors import ApiError
-from ..constants import ASSET_TYPES
+from ..constants import ASSET_TYPES, TOOL_CATEGORIES
 from ..models import Actual, Approval, Asset, InventoryItem, StockCount, StockLocation, StockMovement, StockRequest, User, Vendor
 from . import base as b
 
@@ -665,3 +665,58 @@ def cancel_request(actor: User, request_id: Optional[str]) -> StockRequest:
     r.status = "cancelled"; r.resolved_by = actor; r.resolved_at = b.now(); r.save()
     b.log(r.project_id, actor, "stock_request", f"Stock request withdrawn — {request_label(r)}", None, {"model": "StockRequest", "id": r.id})
     return r
+
+
+# ------------------------------------------------------------------ installed on a project
+# Panels first, then the rest of a solar system in build order. Mirrors report.ts INSTALLED_ORDER.
+INSTALLED_ORDER = ["panel", "inverter", "battery", "meter", "ct", "ats", "cable", "mounting", "consumable", "other"]
+_WATTS = re.compile(r"(\d{2,4})\s*W(?:p|att|atts)?\b", re.I)
+
+
+def watts_of(name: str) -> Optional[int]:
+    """Panel wattage from its name — "Jinko solar panels, 650 W", "Tiger Neo 615W", "580Wp". Mirrors report.ts wattsOf."""
+    m = _WATTS.search(name or "")
+    return int(m.group(1)) if m else None
+
+
+def installed_on(project_id: Optional[str]) -> dict:
+    """What has gone into a project: stock issued to it and checked, less checked returns, per item — the tracker's record
+    of "installed" (Akanimo, 2026-11-04). Unchecked issues are counted apart; tools and PPE are left out.
+    Mirrors packages/api/src/report.ts installedOn."""
+    p = b.project(project_id)
+    rows: dict[str, dict] = {}
+    for m in (StockMovement.objects.filter(project_id=p.id, voided_at__isnull=True, movement_type__in=("issue", "return"))
+              .select_related("item").order_by("created_at")):
+        it = m.item
+        if it.category in TOOL_CATEGORIES:
+            continue
+        r = rows.setdefault(it.id, {"itemId": it.id, "name": it.name, "category": it.category, "unit": it.unit, "issued": Decimal(0),
+                                    "returned": Decimal(0), "pending": Decimal(0), "watts": watts_of(it.name) if it.category == "panel" else None})
+        q = b.dec(m.qty)
+        if m.review_status == "checked":
+            r["issued" if m.movement_type == "issue" else "returned"] += q
+        elif m.review_status == "pending" and m.movement_type == "issue":
+            r["pending"] += q
+    items = []
+    for r in rows.values():
+        r["net"] = r["issued"] - r["returned"]
+        items.append(r)
+    items.sort(key=lambda r: (INSTALLED_ORDER.index(r["category"]) if r["category"] in INSTALLED_ORDER else len(INSTALLED_ORDER), -r["net"]))
+    kwp = sum((r["net"] * r["watts"] for r in items if r["watts"]), Decimal(0)) / 1000
+    cap = b.dec(p.system_capacity_kwp) if p.system_capacity_kwp else None
+    return {"items": items, "panelsKwp": kwp, "capacityKwp": cap}
+
+
+def installed_sentence(inst: dict) -> str:
+    """'13 pcs Jinko solar panels, 650 W; 2 pcs Deye inverters — panels 8.45 kWp of 40 kWp (21%)'"""
+    q = lambda d: f"{b.dec(d).normalize():f}"
+    parts = [f"{q(r['net'])} {r['unit']} {r['name']}" for r in inst["items"] if r["net"] > 0]
+    if not parts:
+        return ""
+    kwp = inst["panelsKwp"]
+    tail = ""
+    if kwp:
+        tail = f" — panels {q(round(kwp, 2))} kWp"
+        if inst["capacityKwp"]:
+            tail += f" of {q(inst['capacityKwp'])} kWp ({int(round(kwp / inst['capacityKwp'] * 100))}%)"
+    return "; ".join(parts) + tail

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { MOVEMENT_LABEL, fmtDate, naira, relative, type Project } from "@wyre/api";
+import { CATEGORY_LABEL, MOVEMENT_LABEL, fmtDate, fmtQty, installedOn, naira, relative, type Project } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useSafe } from "../lib/toast";
@@ -22,11 +22,12 @@ export function ProjectAssets() {
   const soon = (d?: string) => d && new Date(d).getTime() - Date.now() < 90 * 86400000;
   return (
     <div className="stack" style={{ gap: 20 }}>
+      <InstalledCard p={p} />
       <div className="card table--wrap"><div className="card__head"><div className="card__title">Asset register</div><span className="sm muted">{assets.length} serialised assets on this project</span></div>
         {assets.length ? <table className="table ledger"><thead><tr><th>Type</th><th>Make / model</th><th>Serial</th><th className="num">Unit cost</th><th>Installed</th><th>Warranty to</th><th>Status</th></tr></thead>
           <tbody>{assets.map((a) => <tr key={a.id}><td>{a.assetType}</td><td>{a.make} {a.model}</td><td className="ns-mono">{a.serial}</td><td className="num ns-mono">{naira(a.unitCost)}</td><td className="sm">{fmtDate(a.installDate)}</td>
             <td className="sm">{fmtDate(a.warrantyEnd)} {soon(a.warrantyEnd) && a.status === "installed" && <Badge variant="warning">expiring</Badge>}</td><td><Badge variant={ASSET_BADGE[a.status]}>{a.status.replace("_", " ")}</Badge></td></tr>)}</tbody></table>
-          : <div className="card__body"><Empty title="No assets installed yet" hint="Assets appear here when serialised stock is issued to the project and checked." /></div>}</div>
+          : <div className="card__body"><Empty title="No serial-tracked units on this project" hint="Units taken into stock with serial numbers are listed here one by one once they are issued to the project. The counts above cover everything else." /></div>}</div>
 
       <div className="workspace" style={{ gridTemplateColumns: "1fr 1fr" }}>
         {/* Two doors into the same ledger. The store keeper issues directly (someone else checks). Everyone else
@@ -65,4 +66,34 @@ export function ProjectAssets() {
           : <div className="card__body"><Empty title="No stock movements yet" /></div>}</div>
     </div>
   );
+}
+
+/**
+ * How much has gone into this project — Akanimo, 2026-11-04. The tracker's record of "installed" is stock issued to the
+ * project and checked, less checked returns; issues still waiting for their check are shown apart. Tools and PPE are left out.
+ */
+function InstalledCard({ p }: { p: Project }) {
+  const api = useApi();
+  const inst = installedOn(api, p.id);
+  const pending = inst.lines.reduce((s, l) => s + l.pending, 0);
+  return <div className="card">
+    <div className="card__head"><div className="card__title">Installed on this project</div>
+      <span className="sm muted">issued to site and checked, less returns{pending ? ` · ${fmtQty(pending)} more waiting for a check` : ""}</span></div>
+    {!inst.lines.length ? <div className="card__body"><Empty title="Nothing issued to this site yet" hint="Equipment counts here once it is issued to the project — from the store, a stock request or a visit — and checked." /></div> : <>
+      <div className="installed">
+        {inst.byCategory.map((c) => <div key={c.category} className="installed__tile">
+          <div className="installed__label">{CATEGORY_LABEL[c.category] ?? c.category}</div>
+          <div className="installed__value">{fmtQty(c.net)}{c.unit ? <span className="installed__unit"> {c.unit}</span> : null}</div>
+          {c.category === "panel" && inst.panelsKwp > 0 && <div className="installed__sub"><b>{fmtQty(inst.panelsKwp)} kWp</b>{inst.capacityKwp ? ` of ${fmtQty(inst.capacityKwp)} kWp` : ""}</div>}
+          {c.category === "panel" && inst.capacityKwp ? <div className="installed__bar" title={`${inst.pct}% of the planned system`}><span style={{ width: `${Math.min(100, inst.pct ?? 0)}%` }} /></div> : null}
+          {c.pending > 0 && <div className="installed__sub installed__sub--wait">+{fmtQty(c.pending)} waiting for a check</div>}
+        </div>)}
+      </div>
+      <div className="table--wrap"><table className="table"><thead><tr><th>Item</th><th>Type</th><th className="num">Issued</th><th className="num">Returned</th><th className="num">Installed</th><th className="num">Waiting for a check</th></tr></thead>
+        <tbody>{inst.lines.map((l) => <tr key={l.itemId}><td>{l.name}{l.watts ? <span className="sm muted"> · {l.watts} W each</span> : null}</td><td className="sm">{CATEGORY_LABEL[l.category] ?? l.category}</td>
+          <td className="num ns-mono">{fmtQty(l.issued)}</td><td className="num ns-mono">{l.returned ? fmtQty(l.returned) : "—"}</td><td className="num ns-mono"><b>{fmtQty(l.net)}</b> {l.unit}</td>
+          <td className="num ns-mono">{l.pending ? fmtQty(l.pending) : "—"}</td></tr>)}</tbody></table></div>
+      {inst.panelsKwp > 0 && !inst.capacityKwp && <div className="card__foot sm muted">Add the system size on the Details tab to see installed panels against the plan.</div>}
+    </>}
+  </div>;
 }

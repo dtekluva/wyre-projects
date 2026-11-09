@@ -1,5 +1,5 @@
 // Period summaries: the report builder, spend in a date range, and the 48 h narrative cache (demo build).
-import { MockApi, ApiError, spendInRange, buildProjectReport, windowKeyFor, rangeFor, narrativeFor } from "../dist/api.mjs";
+import { MockApi, ApiError, spendInRange, buildProjectReport, windowKeyFor, rangeFor, narrativeFor, installedOn, installedSentence, wattsOf } from "../dist/api.mjs";
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log("FAIL:", m); } else console.log("ok  :", m); };
 const throws = (fn, code, m) => { try { fn(); ok(false, `${m} (no throw)`); } catch (e) { ok(e instanceof ApiError && e.code === code, `${m} → ${e.code ?? e.message}`); } };
@@ -46,6 +46,29 @@ first[0].requestedAt = new Date(Date.now() - 49 * 3600_000).toISOString();
 const later = api.requestNarratives("u_dir", { from: wk.from, to: wk.to, windowKey: "7d", items: [{ projectId: "p1" }] });
 ok(later[0].id !== first[0].id && api.narratives.length === 4, "after 48 h a fresh one is written");
 ok(narrativeFor(api.narratives, "p1", "7d").id === later[0].id, "the newest one is the one shown");
+
+// installed = issued to the project and checked, less checked returns; pending apart; tools and PPE left out
+ok(wattsOf("Jinko solar panels, 650 W") === 650 && wattsOf("Tiger Neo 615W panel") === 615 && wattsOf("JA 580Wp") === 580 && wattsOf("400 Watt mono") === 400, "panel wattage from the name");
+ok(wattsOf("Deye inverter 10 kW") === undefined && wattsOf("650 ways") === undefined, "not from a kW rating or a word");
+const fresh = new MockApi();
+const sk = "u_sk", fin = "u_fin";
+const before = installedOn(fresh, "p2");
+const cable = fresh.items.find((i) => i.id === "it_cable");
+const iss = fresh.issueStock(sk, { itemId: cable.id, qty: 40, projectId: "p2" });
+let inst = installedOn(fresh, "p2"); let row = inst.lines.find((l) => l.itemId === cable.id);
+ok(row && row.pending - (before.lines.find((l) => l.itemId === cable.id)?.pending ?? 0) === 40 && row.net === (before.lines.find((l) => l.itemId === cable.id)?.net ?? 0), "an unchecked issue is pending, not installed");
+fresh.check("stock_movement", iss.id, fin, "checked");
+const ret = fresh.returnStock(sk, { itemId: cable.id, qty: 5, projectId: "p2", reason: "spare" }); fresh.check("stock_movement", ret.id, fin, "checked");
+inst = installedOn(fresh, "p2"); row = inst.lines.find((l) => l.itemId === cable.id);
+const b0 = before.lines.find((l) => l.itemId === cable.id);
+ok(row.issued - (b0?.issued ?? 0) === 40 && row.returned - (b0?.returned ?? 0) === 5 && row.net - (b0?.net ?? 0) === 35, "checked issue counts, checked return comes off");
+ok(inst.byCategory.find((c) => c.category === "cable").net === inst.lines.filter((l) => l.category === "cable").reduce((s, l) => s + l.net, 0), "category totals add up");
+ok(inst.lines.every((l) => !["tool", "ppe"].includes(l.category)), "tools and PPE are never 'installed'");
+const ip1 = installedOn(fresh, "p1"); const pan = ip1.lines.find((l) => l.category === "panel");
+ok(!pan || ip1.panelsKwp === Math.round(ip1.lines.reduce((s, l) => s + (l.watts ? l.net * l.watts : 0), 0) / 10) / 100, "kWp = panels × watts");
+ok(installedSentence({ lines: [{ itemId: "x", name: "Jinko solar panels, 650 W", category: "panel", unit: "pcs", issued: 13, returned: 0, net: 13, pending: 0, watts: 650 }], byCategory: [], panelsKwp: 8.45, capacityKwp: 40, pct: 21 })
+   === "13 pcs Jinko solar panels, 650 W — panels 8.45 kWp of 40 kWp (21%)", "the sentence the PDF prints");
+ok(buildProjectReport(fresh, "p2", all, { money: false }).installed.lines.length === inst.lines.length, "the report carries the same installed figures");
 
 if (fails) { console.log(`\n${fails} failing`); process.exit(1); }
 console.log("\nreport: all passed");

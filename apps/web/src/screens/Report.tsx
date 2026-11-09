@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { COST_CATEGORY_LABEL, DOC_TYPE_LABEL, ISSUE_STATUS_LABEL, MOVEMENT_LABEL, STOCK_REQUEST_STATUS_LABEL, VISIT_TYPE_LABEL,
-  STAGES, buildProjectReport, fmtDate, fmtDay, inRange, naira, narrativeFor, type ProjectNarrative, type ProjectReport } from "@wyre/api";
+  STAGES, buildProjectReport, fmtDate, fmtDay, inRange, installedSentence, naira, narrativeFor, type ProjectNarrative, type ProjectReport } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useWaitFor } from "../lib/useWaitFor";
@@ -19,6 +19,10 @@ export function Report() {
   const api = useApi(); const { user } = useAuth(); const [q] = useSearchParams();
   const range = { from: q.get("from") ?? undefined, to: q.get("to") ?? undefined };
   const windowKey = q.get("w") || `custom:${range.from}:${range.to}`; const only = q.get("p") || "";
+  // v2 = the essay (Akanimo, 2026-11-04: "make it an essay … the list could be summarised"). A new key so the short v1
+  // paragraphs already cached are not reused; the 48 h rule applies to the essay as before.
+  const cacheKey = `v2:${windowKey}`;
+  const [details, setDetails] = useState(false);
   const seesMoney = api.can(user.id, "money.read");
   const visible = api.listProjects(user.id);
   const active = (id: string) => api.listEvents(id).some((e) => inRange(e.occurredAt, range));
@@ -35,12 +39,12 @@ export function Report() {
   const toAsk = ids.filter(active);
   const asked = useRef("");
   useEffect(() => {
-    const key = `${windowKey}|${toAsk.join(",")}`;
+    const key = `${cacheKey}|${toAsk.join(",")}`;
     if (asked.current === key || !toAsk.length || !range.from || !range.to || !user.id) return;
     asked.current = key;
-    try { api.requestNarratives(user.id, { from: range.from, to: range.to, windowKey, items: toAsk.map((projectId) => ({ projectId })) }); } catch { /* the page still renders without the paragraph */ }
-  }, [api, toAsk.join(","), range.from, range.to, windowKey, user.id]);
-  const paras = ids.map((id) => narrativeFor(api.narratives, id, windowKey));
+    try { api.requestNarratives(user.id, { from: range.from, to: range.to, windowKey: cacheKey, items: toAsk.map((projectId) => ({ projectId })) }); } catch { /* the page still renders without the paragraph */ }
+  }, [api, toAsk.join(","), range.from, range.to, cacheKey, user.id]);
+  const paras = ids.map((id) => narrativeFor(api.narratives, id, cacheKey));
   useWaitFor(paras.some((p) => p && (p.status === "queued" || p.status === "running")));
 
   const period = windowKey === "all" ? `All time · since ${fmtDay(range.from ?? "")}`
@@ -49,6 +53,7 @@ export function Report() {
   return <div className="report">
     <div className="report__bar no-print">
       <span className="sm muted">Use <b>Save as PDF</b> as the printer to keep a copy.</span>
+      <label className="sm report__toggle"><input type="checkbox" checked={details} onChange={(e) => setDetails(e.target.checked)} /> Include the detailed records and full activity log</label>
       <span className="grow" />
       <button className="ns-btn ns-btn--primary ns-btn--sm" onClick={() => window.print()}>Save as PDF</button>
       <button className="ns-btn ns-btn--ghost ns-btn--sm" onClick={() => window.close()}>Close</button>
@@ -59,7 +64,7 @@ export function Report() {
         <div className="report__meta">{only ? "1 project" : `${n(ids.length, "project")} with activity${quiet.length ? ` · ${quiet.length} with nothing recorded` : ""}`} · prepared {new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} by {user.name}{seesMoney ? "" : " · money figures not included for this role"}</div></div>
     </header>
     {!reports.length && !quiet.length && <p className="report__empty">Nothing was recorded on any project in this period.</p>}
-    {reports.map((r, i) => <ProjectSection key={r.projectId} r={r} para={paras[i]} />)}
+    {reports.map((r, i) => <ProjectSection key={r.projectId} r={r} para={paras[i]} details={details} />)}
     {quiet.length > 0 && <section className="report__project report__quiet">
       <h2>Nothing recorded in this period</h2>
       <div className="report__meta">Open projects with no activity between these dates — listed so the summary covers the whole portfolio.</div>
@@ -74,17 +79,23 @@ export function Report() {
   </div>;
 }
 
+const isEssay = (p?: ProjectNarrative) => !!p && p.status === "done" && p.modelName !== "demo";
+
 function Para({ p, empty }: { p?: ProjectNarrative; empty?: boolean }) {
   if (empty) return <p className="report__para report__para--wait">Nothing was recorded on this project in the period.</p>;
   if (!p) return null;
-  if (p.status === "queued" || p.status === "running") return <p className="report__para report__para--wait">Writing the summary…</p>;
-  if (p.status === "failed") return <p className="report__para report__para--wait">The written summary could not be produced this time ({p.error || "unknown error"}). The facts below are complete.</p>;
-  return <div className="report__para"><p>{p.text}</p>
+  if (p.status === "queued" || p.status === "running") return <p className="report__para report__para--wait">Writing the summary… the detailed records are shown below until it is ready.</p>;
+  if (p.status === "failed") return <p className="report__para report__para--wait">The written summary could not be produced this time ({p.error || "unknown error"}). The detailed records below are complete.</p>;
+  return <div className="report__para report__essay">{p.text.split(/\n\s*\n/).map((t, i) => <p key={i}>{t.trim()}</p>)}
     <div className="report__by">{p.modelName === "demo" ? "Demo build — no Claude" : `Written by Claude from the tracker's records on ${fmtDate(p.finishedAt ?? p.requestedAt)} · refreshed at most every 48 h`}</div></div>;
 }
 
-function ProjectSection({ r, para }: { r: ProjectReport; para?: ProjectNarrative }) {
+function ProjectSection({ r, para, details }: { r: ProjectReport; para?: ProjectNarrative; details: boolean }) {
   const api = useApi();
+  // The essay carries the story; the lists it was written from stay available behind the toolbar switch. Until the essay
+  // exists (being written, failed, demo build) the lists are what the reader has, so they show.
+  const show = details || !isEssay(para);
+  const kit = installedSentence(r.installed);
   const tiles: [string, string | number][] = [["Events", r.events.length], ["Site visits", r.visits.length], ["Issues raised", r.issuesRaised.length], ["Issues resolved", r.issuesResolved.length],
     ["Documents", r.documents.length], ["Checks passed", r.checksPassed], ...(r.money ? [["Spent", naira(r.money.spend.total, true)] as [string, string]] : [])];
   return <section className="report__project">
@@ -94,31 +105,33 @@ function ProjectSection({ r, para }: { r: ProjectReport; para?: ProjectNarrative
     </div>
     <Para p={para} empty={!r.events.length} />
     <div className="report__tiles">{tiles.map(([k, v]) => <div key={k} className="report__tile"><b>{v}</b><span>{k}</span></div>)}</div>
+    <Block title="Installed so far"><p>{kit ? <>Issued to site to date: {kit}.</> : "Nothing has been issued to site yet."}{r.installed.lines.some((l) => l.pending) ? ` Still waiting for a check: ${r.installed.lines.filter((l) => l.pending).map((l) => `${l.pending} ${l.unit} ${l.name}`).join("; ")}.` : ""}</p></Block>
+    {!show && r.highlights.length > 0 && <Block title="Key moments"><ul>{r.highlights.map((e) => <li key={e.id}><span className="report__d">{fmtDate(e.occurredAt)}</span>{e.summary}</li>)}</ul></Block>}
 
-    {r.progress.length > 0 && <Block title="Progress through the stages"><ul>{r.progress.map((e) => <li key={e.id}><span className="report__d">{fmtDate(e.occurredAt)}</span>{e.summary}</li>)}</ul></Block>}
-    {(r.visits.length > 0 || r.issuesRaised.length > 0 || r.issuesResolved.length > 0) && <Block title="On site">
+    {show && r.progress.length > 0 && <Block title="Progress through the stages"><ul>{r.progress.map((e) => <li key={e.id}><span className="report__d">{fmtDate(e.occurredAt)}</span>{e.summary}</li>)}</ul></Block>}
+    {show && (r.visits.length > 0 || r.issuesRaised.length > 0 || r.issuesResolved.length > 0) && <Block title="On site">
       {r.visits.length > 0 && <table><thead><tr><th>Date</th><th>Visit</th><th>By</th><th>Found / did</th></tr></thead><tbody>{r.visits.map((v) => <tr key={v.id}>
         <td>{fmtDate(v.startedAt)}</td><td>{VISIT_TYPE_LABEL[v.visitType]}</td><td>{v.technicianIds.map((t) => api.userName(t)).join(", ")}</td><td>{v.findings}{v.actionsTaken ? ` — ${v.actionsTaken}` : ""}</td></tr>)}</tbody></table>}
       {r.issuesRaised.length > 0 && <><h4>Issues raised</h4><ul>{r.issuesRaised.map((i) => <li key={i.id}><span className="report__d">{fmtDate(i.raisedAt)}</span><b>{i.severity}</b> · {i.title} · {ISSUE_STATUS_LABEL[i.status]}</li>)}</ul></>}
       {r.issuesResolved.length > 0 && <><h4>Issues resolved</h4><ul>{r.issuesResolved.map((i) => <li key={i.id}><span className="report__d">{fmtDate(i.resolvedAt)}</span>{i.title}{i.resolution ? ` — ${i.resolution}` : ""}</li>)}</ul></>}
     </Block>}
-    {(r.documents.length > 0 || r.files > 0 || r.checksPassed + r.checksRejected > 0) && <Block title="Documents and evidence">
+    {show && (r.documents.length > 0 || r.files > 0 || r.checksPassed + r.checksRejected > 0) && <Block title="Documents and evidence">
       <p>{n(r.documents.length, "document")} and {n(r.files, "photo or file", "photos and files")} added · {n(r.checksPassed, "check")} passed{r.checksRejected ? `, ${r.checksRejected} rejected` : ""}.</p>
       {r.documents.length > 0 && <ul>{r.documents.map((d) => <li key={d.id}><span className="report__d">{fmtDate(d.submittedAt)}</span>{DOC_TYPE_LABEL[d.docType]} — {d.title} · {d.reviewStatus}</li>)}</ul>}
     </Block>}
-    {(r.stock.length > 0 || r.requests.length > 0) && <Block title="Stock">
+    {show && (r.stock.length > 0 || r.requests.length > 0) && <Block title="Stock">
       {r.stock.length > 0 && <ul>{r.stock.map((m) => <li key={m.id}><span className="report__d">{fmtDate(m.createdAt)}</span>{MOVEMENT_LABEL[m.movementType]} · {api.itemName(m.itemId)} × {m.qty} · {m.reviewStatus}</li>)}</ul>}
       {r.requests.length > 0 && <><h4>Requests to the store</h4><ul>{r.requests.map((q) => <li key={q.id}><span className="report__d">{fmtDate(q.requestedAt)}</span>{q.lines.map((l) => `${api.itemName(l.itemId)} × ${l.qty}`).join(", ")} · {STOCK_REQUEST_STATUS_LABEL[q.status]}</li>)}</ul></>}
     </Block>}
     {r.money && <Block title="Money in the period">
       <p>Spent <b>{naira(r.money.spend.total)}</b>{r.money.spend.pendingTotal ? `, plus ${naira(r.money.spend.pendingTotal)} in expenses waiting for Finance` : ""} · {n(r.money.pos.length, "purchase order")} raised{r.money.invoiced ? ` · invoiced ${naira(r.money.invoiced)} gross` : ""}{r.money.vatPaid ? ` · VAT paid ${naira(r.money.vatPaid)}` : ""}.</p>
       {r.money.spend.byCategory.length > 0 && <table><thead><tr><th>Category</th><th className="num">Spent</th></tr></thead><tbody>{r.money.spend.byCategory.map((c) => <tr key={c.category}><td>{COST_CATEGORY_LABEL[c.category]}</td><td className="num">{naira(c.amount)}</td></tr>)}</tbody></table>}
-      {r.money.pos.length > 0 && <ul>{r.money.pos.map((po) => <li key={po.id}><span className="report__d">{fmtDate(po.raisedAt)}</span>{po.poNumber} · {api.vendorName(po.vendorId)} · {naira(po.total)} · {po.status.replace(/_/g, " ")}</li>)}</ul>}
+      {show && r.money.pos.length > 0 && <ul>{r.money.pos.map((po) => <li key={po.id}><span className="report__d">{fmtDate(po.raisedAt)}</span>{po.poNumber} · {api.vendorName(po.vendorId)} · {naira(po.total)} · {po.status.replace(/_/g, " ")}</li>)}</ul>}
     </Block>}
     <Block title="Still open">
       <p>{n(r.open.issues.length, "open issue")}{r.open.issues.length ? ` (${["critical", "high", "medium", "low"].map((s) => [s, r.open.issues.filter((i) => i.severity === s).length] as const).filter(([, k]) => k).map(([s, k]) => `${k} ${s}`).join(", ")})` : ""} · {n(r.open.pendingChecks, "item")} waiting for a check · {n(r.open.requestsWaiting, "stock request")} waiting at the store.</p>
     </Block>
-    {r.days.length > 0 && <Block title="Day by day">{r.days.map((g) => <div key={g.day} className="report__day"><h4>{fmtDay(g.day)}</h4>
+    {details && r.days.length > 0 && <Block title="Full activity log">{r.days.map((g) => <div key={g.day} className="report__day"><h4>{fmtDay(g.day)}</h4>
       <ul>{g.items.slice().reverse().map((e) => <li key={e.id}><span className="report__d">{time(e.occurredAt)}</span><b>{api.userName(e.actorId)}</b> · {e.summary}</li>)}</ul></div>)}</Block>}
   </section>;
 }

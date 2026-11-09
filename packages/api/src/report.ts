@@ -1,7 +1,8 @@
 import type { MockApi } from "./client";
 import { groupByDay, inRange, type DateRange, type RangePreset } from "./dates";
 import { STAGES } from "./gates";
-import type { ActualSource, ChronologyEvent, CostCategory, Document, Issue, ProjectNarrative, PurchaseOrder, SiteVisit, StockMovement, StockRequest } from "./types";
+import { TOOL_CATEGORIES } from "./types";
+import type { ActualSource, ChronologyEvent, CostCategory, Document, Issue, ItemCategory, ProjectNarrative, PurchaseOrder, SiteVisit, StockMovement, StockRequest } from "./types";
 
 /** The cache key for a period: the preset itself ("7d", "30d", "week"…) so "Last 7 days" reuses one paragraph for 48 h
  *  even though its dates shift daily; a custom range is keyed by its exact dates. */
@@ -34,6 +35,61 @@ export function spendInRange(api: MockApi, range: DateRange, projectIds?: Set<st
     byProject: group((l) => l.projectId).map((x) => ({ projectId: x.k, amount: x.amount })), pending, pendingTotal: sum(pending) };
 }
 
+/** Panel wattage from its name — "Jinko solar panels, 650 W", "Tiger Neo 615W", "580Wp", "400 Watt". Mirrors stock.watts_of. */
+export const wattsOf = (name: string) => { const m = /(\d{2,4})\s*W(?:p|att|atts)?\b/i.exec(name ?? ""); return m ? Number(m[1]) : undefined; };
+
+/** Panels first — they are what a director asks about — then the rest of a solar system in build order. Mirrors stock.INSTALLED_ORDER. */
+export const INSTALLED_ORDER = ["panel", "inverter", "battery", "meter", "ct", "ats", "cable", "mounting", "consumable", "other"];
+
+export interface InstalledLine { itemId: string; name: string; category: ItemCategory; unit: string; issued: number; returned: number; net: number; pending: number; watts?: number }
+export interface Installed {
+  lines: InstalledLine[];
+  byCategory: { category: ItemCategory; net: number; pending: number; unit: string }[];
+  panelsKwp: number; capacityKwp?: number; pct?: number;
+}
+
+/**
+ * What has gone into a project: stock issued to it and checked, less checked returns, per item — the tracker's record of
+ * "installed" (Akanimo, 2026-11-04). Issues still waiting for their check are counted apart. Tools and PPE are the team's
+ * kit, not the project's, and are left out. Mirrors backend stock.installed_on.
+ */
+export function installedOn(api: MockApi, projectId: string): Installed {
+  const rows = new Map<string, InstalledLine>();
+  for (const m of api.movements) {
+    if (m.projectId !== projectId || m.voidedAt || !["issue", "return"].includes(m.movementType)) continue;
+    const it = api.items.find((i) => i.id === m.itemId); if (!it || TOOL_CATEGORIES.includes(it.category)) continue;
+    const r = rows.get(it.id) ?? { itemId: it.id, name: it.name, category: it.category, unit: it.unit, issued: 0, returned: 0, net: 0, pending: 0, watts: it.category === "panel" ? wattsOf(it.name) : undefined };
+    if (m.reviewStatus === "checked") { if (m.movementType === "issue") r.issued += m.qty; else r.returned += m.qty; }
+    else if (m.reviewStatus === "pending" && m.movementType === "issue") r.pending += m.qty;
+    rows.set(it.id, r);
+  }
+  const rank = (c: string) => { const i = INSTALLED_ORDER.indexOf(c); return i < 0 ? INSTALLED_ORDER.length : i; };
+  const lines = [...rows.values()].map((r) => ({ ...r, net: r.issued - r.returned }))
+    .sort((a, b) => rank(a.category) - rank(b.category) || b.net - a.net);
+  const cats = new Map<ItemCategory, { category: ItemCategory; net: number; pending: number; unit: string }>();
+  for (const l of lines) {
+    const c = cats.get(l.category) ?? { category: l.category, net: 0, pending: 0, unit: l.unit };
+    c.net += l.net; c.pending += l.pending; if (c.unit !== l.unit) c.unit = "";
+    cats.set(l.category, c);
+  }
+  const panelsKwp = Math.round(lines.reduce((s, l) => s + (l.watts ? l.net * l.watts : 0), 0) / 10) / 100;
+  const capacityKwp = api.projects.find((p) => p.id === projectId)?.systemCapacityKwp || undefined;
+  return { lines, byCategory: [...cats.values()], panelsKwp, capacityKwp, pct: capacityKwp ? Math.round((panelsKwp / capacityKwp) * 100) : undefined };
+}
+
+const qty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ""));
+/** "13 pcs Jinko solar panels, 650 W; 2 pcs Deye inverters — panels 8.45 kWp of 40 kWp (21%)" */
+export function installedSentence(i: Installed): string {
+  const parts = i.lines.filter((l) => l.net > 0).map((l) => `${qty(l.net)} ${l.unit} ${l.name}`);
+  if (!parts.length) return "";
+  const kwp = i.panelsKwp ? ` — panels ${qty(i.panelsKwp)} kWp${i.capacityKwp ? ` of ${qty(i.capacityKwp)} kWp (${i.pct}%)` : ""}` : "";
+  return parts.join("; ") + kwp;
+}
+export const fmtQty = qty;
+
+/** The few events worth a line each in a summary — stage moves, gates, issues opened and closed, deliveries, hand-overs. */
+export const HIGHLIGHT_TYPES = ["project_created", "stage_change", "gate_requested", "approval_decided", "stage_rollback", "contract_received", "issue_raised", "issue_closed", "delivery", "stock_request", "commissioning", "hse"];
+
 export interface ProjectReport {
   projectId: string; name: string; code: string; client: string; location: string; stageName: string; rag: string; ragReason?: string; pmId: string;
   events: ChronologyEvent[]; days: { day: string; items: ChronologyEvent[] }[];
@@ -43,6 +99,7 @@ export interface ProjectReport {
   stock: StockMovement[]; requests: StockRequest[];
   money?: { spend: SpendSummary; pos: PurchaseOrder[]; invoiced: number; vatPaid: number; expensesLogged: number };
   open: { issues: Issue[]; pendingChecks: number; requestsWaiting: number };
+  installed: Installed; highlights: ChronologyEvent[];
 }
 
 /** Everything the period summary says about one project, from records only — the same facts the paragraph is written from. */
@@ -67,6 +124,8 @@ export function buildProjectReport(api: MockApi, projectId: string, range: DateR
     requests: api.stockRequests.filter((r) => r.projectId === projectId && inRange(r.requestedAt, range)),
     open: { issues: api.listIssues({ projectId, openOnly: true }), pendingChecks: api.pendingChecks(projectId),
       requestsWaiting: api.stockRequests.filter((r) => r.projectId === projectId && r.status === "requested").length },
+    installed: installedOn(api, projectId),
+    highlights: events.filter((e) => HIGHLIGHT_TYPES.includes(e.eventType)).slice(0, 12).reverse(),
   };
   if (opts.money) {
     report.money = {

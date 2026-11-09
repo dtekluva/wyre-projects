@@ -796,6 +796,39 @@ class VisitPhotoTest(TestCase):
         serializers.narrative(n1)
         self.assertTrue(any(x["id"] == n1.id for x in serializers.snapshot(u["u_ft1"])["narratives"]))
 
+    def test_installed_on_counts_checked_issues_less_returns(self):
+        """Akanimo, 2026-11-04: show how many panels and other equipment have gone into a project. Mirrors report.ts installedOn."""
+        u = self.u
+        self.assertEqual(stock.watts_of("Jinko solar panels, 650 W"), 650); self.assertEqual(stock.watts_of("Tiger Neo 615W panel"), 615)
+        self.assertEqual(stock.watts_of("JA 580Wp"), 580); self.assertIsNone(stock.watts_of("Deye inverter 10 kW"))
+        att = [self.photo(u["u_sk"], "p2", caption="delivery")]
+        rc = stock.receive_stock(u["u_sk"], {"reason": "x", "attachmentIds": att, "lines": [
+            {"name": "Installed test panel 620W", "qty": 20, "unitCost": 100_000, "category": "panel"},
+            {"name": "Installed test cable", "qty": 100, "unitCost": 1_000, "unit": "m", "category": "cable"},
+            {"name": "Installed test helmet", "qty": 4, "unitCost": 5_000, "category": "ppe"}]})
+        for m in rc:
+            review.check(u["u_fin"], "stock_movement", m.id, "checked")
+        panel, cable, helmet = (m.item for m in rc)
+        Project.objects.filter(pk="p2").update(system_capacity_kwp=Decimal("12.4"))
+        a = stock.issue_stock(u["u_sk"], {"itemId": panel.id, "qty": 12, "projectId": "p2"}); review.check(u["u_fin"], "stock_movement", a.id, "checked")
+        stock.issue_stock(u["u_sk"], {"itemId": panel.id, "qty": 3, "projectId": "p2"})                     # waiting for its check
+        c = stock.issue_stock(u["u_sk"], {"itemId": cable.id, "qty": 40, "projectId": "p2"}); review.check(u["u_fin"], "stock_movement", c.id, "checked")
+        h = stock.issue_stock(u["u_sk"], {"itemId": helmet.id, "qty": 1, "projectId": "p2"}); review.check(u["u_fin"], "stock_movement", h.id, "checked")
+        r = stock.return_stock(u["u_sk"], {"itemId": panel.id, "qty": 2, "projectId": "p2", "reason": "spare"}); review.check(u["u_fin"], "stock_movement", r.id, "checked")
+        rj = stock.issue_stock(u["u_sk"], {"itemId": cable.id, "qty": 7, "projectId": "p2"}); review.check(u["u_fin"], "stock_movement", rj.id, "rejected", "wrong project")
+        inst = stock.installed_on("p2")
+        row = next(x for x in inst["items"] if x["itemId"] == panel.id)
+        self.assertEqual((row["issued"], row["returned"], row["net"], row["pending"], row["watts"]), (12, 2, 10, 3, 620))
+        self.assertEqual(next(x for x in inst["items"] if x["itemId"] == cable.id)["net"], 40, "a rejected issue never counts")
+        self.assertFalse(any(x["itemId"] == helmet.id for x in inst["items"]), "PPE is the team's kit, not the project's")
+        mine = sum((x["net"] * x["watts"] for x in inst["items"] if x["watts"]), Decimal(0)) / 1000
+        self.assertEqual(inst["panelsKwp"], mine); self.assertEqual(inst["capacityKwp"], Decimal("12.4"))
+        self.assertIn("10 pcs Installed test panel 620W", stock.installed_sentence(inst))
+        self.assertIn("kWp of 12.4 kWp", stock.installed_sentence(inst))
+        from datetime import date, timedelta as td
+        from tracker.services import narratives
+        self.assertIn("Equipment issued to site to date", narratives.facts(Project.objects.get(pk="p2"), date.today() - td(days=6), date.today()))
+
     def test_adding_to_a_checked_visit_reopens_the_review(self):
         u = self.u
         v = field.log_visit(u["u_ft1"], "p1", {"visitType": "inspection", "startedAt": "2026-09-10T09:00:00Z", "endedAt": "2026-09-10T10:00:00Z",
