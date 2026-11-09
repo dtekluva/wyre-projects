@@ -1,8 +1,8 @@
 import type { MockApi } from "./client";
-import { groupByDay, inRange, type DateRange, type RangePreset } from "./dates";
+import { groupByDay, inRange, ymd, type DateRange, type RangePreset } from "./dates";
 import { STAGES } from "./gates";
 import { TOOL_CATEGORIES } from "./types";
-import type { ActualSource, ChronologyEvent, CostCategory, Document, Issue, ItemCategory, ProjectNarrative, PurchaseOrder, SiteVisit, StockMovement, StockRequest } from "./types";
+import type { ActualSource, ChronologyEvent, CostCategory, Document, EventType, Issue, ItemCategory, Stage, ProjectNarrative, PurchaseOrder, SiteVisit, StockMovement, StockRequest } from "./types";
 
 /** The cache key for a period: the preset itself ("7d", "30d", "week"…) so "Last 7 days" reuses one paragraph for 48 h
  *  even though its dates shift daily; a custom range is keyed by its exact dates. */
@@ -90,6 +90,49 @@ export const fmtQty = qty;
 /** The few events worth a line each in a summary — stage moves, gates, issues opened and closed, deliveries, hand-overs. */
 export const HIGHLIGHT_TYPES = ["project_created", "stage_change", "gate_requested", "approval_decided", "stage_rollback", "contract_received", "issue_raised", "issue_closed", "delivery", "stock_request", "commissioning", "hse"];
 
+/** The five kinds of work the activity chart stacks, in fixed colour order (dataviz: hues by slot, never by rank). */
+export type ActivityGroup = "site" | "evidence" | "money" | "stock" | "other";
+export const ACTIVITY_GROUPS: { key: ActivityGroup; label: string }[] = [
+  { key: "site", label: "Site work" }, { key: "evidence", label: "Documents & checks" }, { key: "money", label: "Money" },
+  { key: "stock", label: "Stock" }, { key: "other", label: "Other" },
+];
+const GROUP_OF: Partial<Record<EventType, ActivityGroup>> = {
+  visit: "site", issue_raised: "site", issue_closed: "site", issue: "site", commissioning: "site", hse: "site", warranty: "site", commissioning_assigned: "site",
+  document_added: "evidence", attachment_added: "evidence", check_passed: "evidence", check_rejected: "evidence",
+  po_raised: "money", po_approved: "money", bill_received: "money", payment: "money", change_order: "money", invoice: "money", contract_updated: "money",
+  contract_received: "money", cost_item: "money", retention: "money", expense: "money", reconciliation: "money",
+  stock_movement: "stock", stock_request: "stock", stock_count: "stock", delivery: "stock",
+};
+export const activityGroupOf = (t: EventType): ActivityGroup => GROUP_OF[t] ?? "other";
+/** Marked with a diamond on the activity chart. */
+export const MILESTONE_TYPES: EventType[] = ["project_created", "stage_change", "approval_decided", "stage_rollback", "contract_received"];
+
+export interface ActivityBucket { start: string; end: string; label: string; unit: "day" | "week" | "month"; counts: Record<ActivityGroup, number>; total: number; milestones: ChronologyEvent[] }
+
+const dayOf = (s: string) => new Date(`${s}T00:00:00`);
+const plusDays = (d: Date, k: number) => { const x = new Date(d); x.setDate(x.getDate() + k); return x; };
+/** Events counted per day (periods up to 45 days), per Monday-start week (up to a year), or per month — by kind. */
+export function activityBuckets(events: ChronologyEvent[], range: DateRange): ActivityBucket[] {
+  const oldest = events.length ? ymd(new Date(events[events.length - 1].occurredAt)) : ymd(new Date());
+  const a = dayOf(range.from ?? oldest), b = dayOf(range.to ?? ymd(new Date()));
+  const days = Math.round((b.getTime() - a.getTime()) / 86_400_000) + 1;
+  const unit: ActivityBucket["unit"] = days <= 45 ? "day" : days <= 366 ? "week" : "month";
+  const label = (d: Date) => d.toLocaleDateString("en-GB", unit === "month" ? { month: "short", year: "2-digit" } : { day: "numeric", month: "short" });
+  const out: ActivityBucket[] = [];
+  const push = (s: Date, e: Date) => out.push({ start: ymd(s < a ? a : s), end: ymd(e > b ? b : e), label: label(s < a ? a : s), unit,
+    counts: { site: 0, evidence: 0, money: 0, stock: 0, other: 0 }, total: 0, milestones: [] });
+  if (unit === "day") for (let d = a; d <= b; d = plusDays(d, 1)) push(d, d);
+  else if (unit === "week") for (let d = plusDays(a, -((a.getDay() + 6) % 7)); d <= b; d = plusDays(d, 7)) push(d, plusDays(d, 6));
+  else for (let d = new Date(a.getFullYear(), a.getMonth(), 1); d <= b; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) push(d, new Date(d.getFullYear(), d.getMonth() + 1, 0));
+  for (const ev of events) {
+    const day = ymd(new Date(ev.occurredAt));
+    const bk = out.find((x) => x.start <= day && day <= x.end); if (!bk) continue;
+    bk.counts[activityGroupOf(ev.eventType)]++; bk.total++;
+    if (MILESTONE_TYPES.includes(ev.eventType)) bk.milestones.push(ev);
+  }
+  return out;
+}
+
 export interface ProjectReport {
   projectId: string; name: string; code: string; client: string; location: string; stageName: string; rag: string; ragReason?: string; pmId: string;
   events: ChronologyEvent[]; days: { day: string; items: ChronologyEvent[] }[];
@@ -97,9 +140,11 @@ export interface ProjectReport {
   visits: SiteVisit[]; issuesRaised: Issue[]; issuesResolved: Issue[];
   documents: Document[]; files: number; checksPassed: number; checksRejected: number;
   stock: StockMovement[]; requests: StockRequest[];
-  money?: { spend: SpendSummary; pos: PurchaseOrder[]; invoiced: number; vatPaid: number; expensesLogged: number };
+  money?: { spend: SpendSummary; pos: PurchaseOrder[]; invoiced: number; vatPaid: number; expensesLogged: number; budget: { planned: number; actual: number; burnPct: number } };
   open: { issues: Issue[]; pendingChecks: number; requestsWaiting: number };
   installed: Installed; highlights: ChronologyEvent[];
+  stage: Stage; stagePlanned: Partial<Record<Stage, string>>; stageActual: Partial<Record<Stage, string>>;
+  activity: ActivityBucket[]; activeDays: number;
 }
 
 /** Everything the period summary says about one project, from records only — the same facts the paragraph is written from. */
@@ -126,6 +171,8 @@ export function buildProjectReport(api: MockApi, projectId: string, range: DateR
       requestsWaiting: api.stockRequests.filter((r) => r.projectId === projectId && r.status === "requested").length },
     installed: installedOn(api, projectId),
     highlights: events.filter((e) => HIGHLIGHT_TYPES.includes(e.eventType)).slice(0, 12).reverse(),
+    stage: p.stage, stagePlanned: p.stagePlanned ?? {}, stageActual: p.stageActual ?? {},
+    activity: activityBuckets(events, range), activeDays: new Set(events.map((e) => ymd(new Date(e.occurredAt)))).size,
   };
   if (opts.money) {
     report.money = {
@@ -134,6 +181,7 @@ export function buildProjectReport(api: MockApi, projectId: string, range: DateR
       invoiced: mine(api.clientInvoices).filter((i) => inRange(i.issuedAt, range)).reduce((s, i) => s + i.grossAmount, 0),
       vatPaid: mine(api.vatPayments).filter((v) => v.reviewStatus === "checked" && inRange(`${v.paidOn.slice(0, 10)}T12:00:00`, range)).reduce((s, v) => s + v.amount, 0),
       expensesLogged: mine(api.expenses).filter((e) => inRange(e.createdAt, range)).length,
+      budget: (({ planned, actual, burnPct }) => ({ planned, actual, burnPct }))(api.money(projectId)),
     };
   }
   return report;

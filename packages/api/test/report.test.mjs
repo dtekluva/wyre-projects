@@ -1,5 +1,5 @@
 // Period summaries: the report builder, spend in a date range, and the 48 h narrative cache (demo build).
-import { MockApi, ApiError, spendInRange, buildProjectReport, windowKeyFor, rangeFor, narrativeFor, installedOn, installedSentence, wattsOf } from "../dist/api.mjs";
+import { MockApi, ApiError, spendInRange, buildProjectReport, windowKeyFor, rangeFor, narrativeFor, installedOn, installedSentence, wattsOf, activityBuckets, activityGroupOf } from "../dist/api.mjs";
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log("FAIL:", m); } else console.log("ok  :", m); };
 const throws = (fn, code, m) => { try { fn(); ok(false, `${m} (no throw)`); } catch (e) { ok(e instanceof ApiError && e.code === code, `${m} → ${e.code ?? e.message}`); } };
@@ -69,6 +69,19 @@ ok(!pan || ip1.panelsKwp === Math.round(ip1.lines.reduce((s, l) => s + (l.watts 
 ok(installedSentence({ lines: [{ itemId: "x", name: "Jinko solar panels, 650 W", category: "panel", unit: "pcs", issued: 13, returned: 0, net: 13, pending: 0, watts: 650 }], byCategory: [], panelsKwp: 8.45, capacityKwp: 40, pct: 21 })
    === "13 pcs Jinko solar panels, 650 W — panels 8.45 kWp of 40 kWp (21%)", "the sentence the PDF prints");
 ok(buildProjectReport(fresh, "p2", all, { money: false }).installed.lines.length === inst.lines.length, "the report carries the same installed figures");
+
+// activity chart buckets: day ≤ 45 days, week ≤ a year, month beyond; every event in range lands once
+const evs = fresh.listEvents("p1");
+const wk7 = buildProjectReport(fresh, "p1", { from: "2026-09-01", to: "2026-09-07" }, { money: false });
+ok(wk7.activity.length === 7 && wk7.activity.every((b) => b.unit === "day"), "a week is seven daily columns");
+ok(wk7.activity.reduce((s, b) => s + b.total, 0) === wk7.events.length, "every event in the week is counted once");
+ok(wk7.activity.every((b) => b.total === Object.values(b.counts).reduce((s, k) => s + k, 0)), "kinds add up to each column");
+const two = activityBuckets(evs, { from: "2026-07-01", to: "2026-09-08" });
+ok(two.every((b) => b.unit === "week") && two[0].start === "2026-07-01" && two[two.length - 1].end === "2026-09-08", "two months are weekly columns, clipped to the range");
+const yr = activityBuckets(evs, { from: "2025-01-01", to: "2026-09-30" });
+ok(yr.every((b) => b.unit === "month") && yr.length === 21, "over a year is monthly");
+ok(activityGroupOf("visit") === "site" && activityGroupOf("check_passed") === "evidence" && activityGroupOf("expense") === "money" && activityGroupOf("stock_request") === "stock" && activityGroupOf("note") === "other", "event kinds");
+ok(wk7.stage === fresh.projects.find((p) => p.id === "p1").stage && typeof wk7.activeDays === "number", "stage and active days on the report");
 
 if (fails) { console.log(`\n${fails} failing`); process.exit(1); }
 console.log("\nreport: all passed");

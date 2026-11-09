@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
-import { COST_CATEGORY_LABEL, DOC_TYPE_LABEL, ISSUE_STATUS_LABEL, MOVEMENT_LABEL, STOCK_REQUEST_STATUS_LABEL, VISIT_TYPE_LABEL,
+import { DOC_TYPE_LABEL, ISSUE_STATUS_LABEL, MOVEMENT_LABEL, STOCK_REQUEST_STATUS_LABEL, VISIT_TYPE_LABEL,
   STAGES, buildProjectReport, fmtDate, fmtDay, inRange, installedSentence, naira, narrativeFor, type ProjectNarrative, type ProjectReport } from "@wyre/api";
 import { useApi } from "../lib/useApi";
 import { useAuth } from "../lib/auth";
 import { useWaitFor } from "../lib/useWaitFor";
+import { ActivityChart, BudgetMeter, Figure, InstalledFigure, KeyMoments, MiniBar, OpenFigure, SpendBars, StageTrack } from "../components/ReportCharts";
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
@@ -64,6 +65,7 @@ export function Report() {
         <div className="report__meta">{only ? "1 project" : `${n(ids.length, "project")} with activity${quiet.length ? ` · ${quiet.length} with nothing recorded` : ""}`} · prepared {new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} by {user.name}{seesMoney ? "" : " · money figures not included for this role"}</div></div>
     </header>
     {!reports.length && !quiet.length && <p className="report__empty">Nothing was recorded on any project in this period.</p>}
+    {reports.length > 1 && <Portfolio reports={reports} money={seesMoney} />}
     {reports.map((r, i) => <ProjectSection key={r.projectId} r={r} para={paras[i]} details={details} />)}
     {quiet.length > 0 && <section className="report__project report__quiet">
       <h2>Nothing recorded in this period</h2>
@@ -90,23 +92,84 @@ function Para({ p, empty }: { p?: ProjectNarrative; empty?: boolean }) {
     <div className="report__by">{p.modelName === "demo" ? "Demo build — no Claude" : `Written by Claude from the tracker's records on ${fmtDate(p.finishedAt ?? p.requestedAt)} · refreshed at most every 48 h`}</div></div>;
 }
 
+/** Page one of a multi-project summary: every active project on one line, so the period reads at a glance. */
+function Portfolio({ reports, money }: { reports: ProjectReport[]; money: boolean }) {
+  const maxEv = Math.max(...reports.map((r) => r.events.length));
+  const maxSp = money ? Math.max(...reports.map((r) => r.money?.spend.total ?? 0)) : 0;
+  const totEv = reports.reduce((t, r) => t + r.events.length, 0);
+  const totSp = reports.reduce((t, r) => t + (r.money?.spend.total ?? 0), 0);
+  const totOpen = reports.reduce((t, r) => t + r.open.issues.length, 0);
+  const totKwp = reports.reduce((t, r) => t + r.installed.panelsKwp, 0);
+  return <section className="report__project report__overview">
+    <h2>Portfolio at a glance</h2>
+    <div className="report__tiles">
+      <div className="report__tile"><b>{reports.length}</b><span>Projects with activity</span></div>
+      <div className="report__tile"><b>{totEv}</b><span>Actions recorded</span></div>
+      {money && <div className="report__tile"><b>{naira(totSp, true)}</b><span>Spent in the period</span></div>}
+      <div className="report__tile"><b>{totOpen}</b><span>Open issues now</span></div>
+      <div className="report__tile"><b>{fmtQtyKwp(totKwp)}</b><span>Panels installed to date</span></div>
+    </div>
+    <table className="ptable"><thead><tr><th>Project</th><th>Stage</th><th>Actions in period</th>{money && <th>Spent in period</th>}<th className="num">Open issues</th><th className="num">Installed</th></tr></thead>
+      <tbody>{reports.map((r) => <tr key={r.projectId}>
+        <td><b>{r.name}</b><div className="report__meta">{r.code} · <span className={`report__rag report__rag--${r.rag}`}>{r.rag}</span></div></td>
+        <td><StageTrack stage={r.stage} planned={r.stagePlanned} actual={r.stageActual} compact /><div className="report__meta">{r.stageName}</div></td>
+        <td><MiniBar value={r.events.length} max={maxEv} label={String(r.events.length)} /></td>
+        {money && <td><MiniBar value={r.money?.spend.total ?? 0} max={maxSp} label={naira(r.money?.spend.total ?? 0, true)} /></td>}
+        <td className="num">{r.open.issues.length}{r.open.issues.some((i) => i.severity === "critical") ? <div className="report__meta">{r.open.issues.filter((i) => i.severity === "critical").length} critical</div> : null}</td>
+        <td className="num">{r.installed.panelsKwp ? `${fmtQtyKwp(r.installed.panelsKwp)}` : "—"}</td>
+      </tr>)}</tbody></table>
+    <div className="rfig__note">Bars compare projects within this summary. Stage blocks: filled = reached, outlined = current, grey = still to come. Installed = panels issued to site and checked, to date.</div>
+  </section>;
+}
+const fmtQtyKwp = (k: number) => `${Math.round(k * 100) / 100} kWp`;
+
 function ProjectSection({ r, para, details }: { r: ProjectReport; para?: ProjectNarrative; details: boolean }) {
   const api = useApi();
   // The essay carries the story; the lists it was written from stay available behind the toolbar switch. Until the essay
   // exists (being written, failed, demo build) the lists are what the reader has, so they show.
   const show = details || !isEssay(para);
   const kit = installedSentence(r.installed);
-  const tiles: [string, string | number][] = [["Events", r.events.length], ["Site visits", r.visits.length], ["Issues raised", r.issuesRaised.length], ["Issues resolved", r.issuesResolved.length],
-    ["Documents", r.documents.length], ["Checks passed", r.checksPassed], ...(r.money ? [["Spent", naira(r.money.spend.total, true)] as [string, string]] : [])];
+  const lastVisit = r.visits.map((v) => v.startedAt).sort().pop();
+  const unit = r.activity[0]?.unit ?? "day";
+  const tiles: [string, string | number, string][] = [
+    ["Actions recorded", r.events.length, `on ${n(r.activeDays, "day")}`],
+    ["Site visits", r.visits.length, lastVisit ? `last ${fmtDate(lastVisit)}` : "none in the period"],
+    ["Issues raised", r.issuesRaised.length, `${r.issuesResolved.length} resolved`],
+    ["Documents added", r.documents.length, `+ ${n(r.files, "photo or file", "photos and files")}`],
+    ["Checks passed", r.checksPassed, r.checksRejected ? `${r.checksRejected} rejected` : "none rejected"],
+    ...(r.money ? [["Spent", naira(r.money.spend.total, true), r.money.spend.pendingTotal ? `+ ${naira(r.money.spend.pendingTotal, true)} awaiting Finance` : "checked, in the period"] as [string, string, string]] : []),
+  ];
   return <section className="report__project">
     <div className="report__phead">
       <div><h2>{r.name}</h2><div className="report__meta">{r.code} · {r.client} · {r.location} · PM {api.userName(r.pmId)}</div></div>
       <div className="report__stage"><span className={`report__rag report__rag--${r.rag}`}>{r.rag}</span><b>{r.stageName}</b>{r.ragReason && <div className="report__meta">{r.ragReason}</div>}</div>
     </div>
+    <Figure title="Where the project stands" note="Filled blocks are stages reached, with the date reached; the outlined block is the current stage; grey blocks are still to come, with their planned dates.">
+      <StageTrack stage={r.stage} planned={r.stagePlanned} actual={r.stageActual} />
+    </Figure>
     <Para p={para} empty={!r.events.length} />
-    <div className="report__tiles">{tiles.map(([k, v]) => <div key={k} className="report__tile"><b>{v}</b><span>{k}</span></div>)}</div>
-    <Block title="Installed so far"><p>{kit ? <>Issued to site to date: {kit}.</> : "Nothing has been issued to site yet."}{r.installed.lines.some((l) => l.pending) ? ` Still waiting for a check: ${r.installed.lines.filter((l) => l.pending).map((l) => `${l.pending} ${l.unit} ${l.name}`).join("; ")}.` : ""}</p></Block>
-    {!show && r.highlights.length > 0 && <Block title="Key moments"><ul>{r.highlights.map((e) => <li key={e.id}><span className="report__d">{fmtDate(e.occurredAt)}</span>{e.summary}</li>)}</ul></Block>}
+    <div className="report__tiles">{tiles.map(([k, v, sub]) => <div key={k} className="report__tile"><b>{v}</b><span>{k}</span><em>{sub}</em></div>)}</div>
+    <Figure title={`Activity in the period, per ${unit}`} note={<>Every action recorded on the project, by kind — hover a column on screen for its counts. <span className="km-diamond">◆</span> marks a stage move or gate decision.</>}>
+      <ActivityChart buckets={r.activity} />
+    </Figure>
+    <div className="report__cols">
+      <Figure title="Installed so far" note={kit ? <>To date, issued to site and checked, less returns: {kit}.</> : "Counts equipment issued to the project and checked."}>
+        <InstalledFigure inst={r.installed} />
+      </Figure>
+      <Figure title="Still open" note="Open issues as of today, worst first.">
+        <OpenFigure issues={r.open.issues} pendingChecks={r.open.pendingChecks} requestsWaiting={r.open.requestsWaiting} />
+      </Figure>
+    </div>
+    {r.money && <div className="report__cols">
+      <Figure title="Spent in the period, by category" note={<>Checked costs dated in the period · {n(r.money.pos.length, "purchase order")} raised{r.money.invoiced ? ` · invoiced ${naira(r.money.invoiced, true)} gross` : ""}{r.money.vatPaid ? ` · VAT paid ${naira(r.money.vatPaid, true)}` : ""}.</>}>
+        <SpendBars spend={r.money.spend} />
+      </Figure>
+      <Figure title="Budget used to date" note="All checked spend on the project against its checked budget lines.">
+        <BudgetMeter {...r.money.budget} />
+      </Figure>
+    </div>}
+    {!show && r.highlights.length > 0 && <Figure title="Key moments" note="Solid dots are stage moves, gate decisions and contract events; hollow dots are other notable events.">
+      <KeyMoments events={r.highlights} /></Figure>}
 
     {show && r.progress.length > 0 && <Block title="Progress through the stages"><ul>{r.progress.map((e) => <li key={e.id}><span className="report__d">{fmtDate(e.occurredAt)}</span>{e.summary}</li>)}</ul></Block>}
     {show && (r.visits.length > 0 || r.issuesRaised.length > 0 || r.issuesResolved.length > 0) && <Block title="On site">
@@ -115,22 +178,14 @@ function ProjectSection({ r, para, details }: { r: ProjectReport; para?: Project
       {r.issuesRaised.length > 0 && <><h4>Issues raised</h4><ul>{r.issuesRaised.map((i) => <li key={i.id}><span className="report__d">{fmtDate(i.raisedAt)}</span><b>{i.severity}</b> · {i.title} · {ISSUE_STATUS_LABEL[i.status]}</li>)}</ul></>}
       {r.issuesResolved.length > 0 && <><h4>Issues resolved</h4><ul>{r.issuesResolved.map((i) => <li key={i.id}><span className="report__d">{fmtDate(i.resolvedAt)}</span>{i.title}{i.resolution ? ` — ${i.resolution}` : ""}</li>)}</ul></>}
     </Block>}
-    {show && (r.documents.length > 0 || r.files > 0 || r.checksPassed + r.checksRejected > 0) && <Block title="Documents and evidence">
-      <p>{n(r.documents.length, "document")} and {n(r.files, "photo or file", "photos and files")} added · {n(r.checksPassed, "check")} passed{r.checksRejected ? `, ${r.checksRejected} rejected` : ""}.</p>
+    {show && (r.documents.length > 0 || r.files > 0) && <Block title="Documents and evidence">
       {r.documents.length > 0 && <ul>{r.documents.map((d) => <li key={d.id}><span className="report__d">{fmtDate(d.submittedAt)}</span>{DOC_TYPE_LABEL[d.docType]} — {d.title} · {d.reviewStatus}</li>)}</ul>}
     </Block>}
     {show && (r.stock.length > 0 || r.requests.length > 0) && <Block title="Stock">
       {r.stock.length > 0 && <ul>{r.stock.map((m) => <li key={m.id}><span className="report__d">{fmtDate(m.createdAt)}</span>{MOVEMENT_LABEL[m.movementType]} · {api.itemName(m.itemId)} × {m.qty} · {m.reviewStatus}</li>)}</ul>}
       {r.requests.length > 0 && <><h4>Requests to the store</h4><ul>{r.requests.map((q) => <li key={q.id}><span className="report__d">{fmtDate(q.requestedAt)}</span>{q.lines.map((l) => `${api.itemName(l.itemId)} × ${l.qty}`).join(", ")} · {STOCK_REQUEST_STATUS_LABEL[q.status]}</li>)}</ul></>}
     </Block>}
-    {r.money && <Block title="Money in the period">
-      <p>Spent <b>{naira(r.money.spend.total)}</b>{r.money.spend.pendingTotal ? `, plus ${naira(r.money.spend.pendingTotal)} in expenses waiting for Finance` : ""} · {n(r.money.pos.length, "purchase order")} raised{r.money.invoiced ? ` · invoiced ${naira(r.money.invoiced)} gross` : ""}{r.money.vatPaid ? ` · VAT paid ${naira(r.money.vatPaid)}` : ""}.</p>
-      {r.money.spend.byCategory.length > 0 && <table><thead><tr><th>Category</th><th className="num">Spent</th></tr></thead><tbody>{r.money.spend.byCategory.map((c) => <tr key={c.category}><td>{COST_CATEGORY_LABEL[c.category]}</td><td className="num">{naira(c.amount)}</td></tr>)}</tbody></table>}
-      {show && r.money.pos.length > 0 && <ul>{r.money.pos.map((po) => <li key={po.id}><span className="report__d">{fmtDate(po.raisedAt)}</span>{po.poNumber} · {api.vendorName(po.vendorId)} · {naira(po.total)} · {po.status.replace(/_/g, " ")}</li>)}</ul>}
-    </Block>}
-    <Block title="Still open">
-      <p>{n(r.open.issues.length, "open issue")}{r.open.issues.length ? ` (${["critical", "high", "medium", "low"].map((s) => [s, r.open.issues.filter((i) => i.severity === s).length] as const).filter(([, k]) => k).map(([s, k]) => `${k} ${s}`).join(", ")})` : ""} · {n(r.open.pendingChecks, "item")} waiting for a check · {n(r.open.requestsWaiting, "stock request")} waiting at the store.</p>
-    </Block>
+    {show && r.money && r.money.pos.length > 0 && <Block title="Purchase orders raised"><ul>{r.money.pos.map((po) => <li key={po.id}><span className="report__d">{fmtDate(po.raisedAt)}</span>{po.poNumber} · {api.vendorName(po.vendorId)} · {naira(po.total)} · {po.status.replace(/_/g, " ")}</li>)}</ul></Block>}
     {details && r.days.length > 0 && <Block title="Full activity log">{r.days.map((g) => <div key={g.day} className="report__day"><h4>{fmtDay(g.day)}</h4>
       <ul>{g.items.slice().reverse().map((e) => <li key={e.id}><span className="report__d">{time(e.occurredAt)}</span><b>{api.userName(e.actorId)}</b> · {e.summary}</li>)}</ul></div>)}</Block>}
   </section>;
